@@ -15,6 +15,7 @@ import {
   sanitizeForStore,
   scrubSecrets,
   shouldWarnLongRunning,
+  shouldWarnSuppressedSpawn,
   shouldWarnWaitLoop,
   stripQuotedSpans,
 } from "./src/patterns"
@@ -233,10 +234,24 @@ export const Dejavu: Plugin = async ({ directory, client }) => {
               `[dejavu] WAIT-LOOP — this looks like a polling loop (while/until/for + sleep) with NO timeout guard; it will hang until the bash timeout (~2 min) if the condition never arrives. Add a bound: \`curl --max-time N\`, \`Invoke-WebRequest -TimeoutSec N\`, or a max-iteration counter with \`break\`. If intentional, append "# dejavu:proceed".`,
             )
           }
+          // Proactive suppressed-spawn guard (compensating measure for
+          // anomalyco/opencode#29831 — remove when the upstream fix ships): a
+          // detached daemon spawned while stdout is piped/redirected keeps the
+          // pipe open in the daemon, and opencode ends a bash call only on
+          // stdio EOF — the call hangs forever. Same bounded-class philosophy
+          // as the long-running guard.
+          if (!proceeded && shouldWarnSuppressedSpawn(command)) {
+            throw new GateSignal(
+              `[dejavu] SUPPRESSED-SPAWN — this spawns a detached daemon while piping/redirecting stdout; opencode ends a bash call only on stdio EOF and the living daemon keeps the pipe open, so this call hangs forever (upstream anomalyco/opencode#29831). CORRECTION: run the spawn WITHOUT any pipe or stdout redirect (it prints only 1-3 lines) and poll its status in a SEPARATE call. If you truly need this shape, append the trailing comment "# dejavu:proceed".`,
+            )
+          }
           // Visibility: an agent that bypasses the long-running guard may hang;
           // log it so "why did my subagent hang" is answerable after the fact.
           if (proceeded && shouldWarnLongRunning(command)) {
             logClient("warn", `dejavu: long-running guard bypassed via dejavu:proceed — command may hang: ${command.slice(0, 200)}`).catch(() => {})
+          }
+          if (proceeded && shouldWarnSuppressedSpawn(command)) {
+            logClient("warn", `dejavu: suppressed-spawn guard bypassed via dejavu:proceed — command may hang: ${command.slice(0, 200)}`).catch(() => {})
           }
         }
 

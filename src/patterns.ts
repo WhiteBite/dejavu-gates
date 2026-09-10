@@ -1252,6 +1252,46 @@ export function shouldWarnWaitLoop(command: string): boolean {
   return WAIT_LOOP.some((rule) => rule.test(command))
 }
 
+// --- Detached spawn + suppressed stdout guard ---------------------------------
+
+/**
+ * Compensating measure for anomalyco/opencode#29831 (+ #42756): opencode ends
+ * a bash call only on stdio EOF, so a call that spawns a DETACHED daemon while
+ * piping/redirecting stdout hands the open pipe to the living daemon — the call
+ * hangs forever. Static, bounded class like SERVER_STARTERS. REMOVE this guard
+ * when the upstream fix ships. The spawner matches the RAW statement (quoted
+ * spans included), so `echo "siphon-supervisor.mjs start" > log` flags — rare,
+ * accepted, same raw-match philosophy as the long-running guard.
+ */
+const DETACHED_SPAWNERS: RegExp[] = [/\bsiphon-supervisor\.mjs["']?\s+(?:start|restart)\b/i] // quoted exe/script paths are the norm on Windows
+
+/** stdout redirects (`>`, `>>`, `1>`, `1>>`) — never `2>`/`2>&1` (the digit
+ * lookbehind), never `>&1` (the lookahead). Runs on the quote-stripped
+ * statement so `"log > file"` inside a string is not a redirect. */
+const STDOUT_REDIRECT = /(?<![\d>&])1?>>?(?![>&])/
+
+/** True when ONE statement (chain segments + their pipe tails) contains both a
+ * known detached-spawner and stdout suppression — the exact hang shape. A pipe
+ * anywhere in the statement counts (it keeps a stdout handle open); `2>`/`2>&1`
+ * alone do not. */
+export function shouldWarnSuppressedSpawn(command: string): boolean {
+  let stmt = ""
+  let hasPipe = false
+  const flagged = (): boolean =>
+    stmt !== "" && DETACHED_SPAWNERS.some((rule) => rule.test(stmt)) && (hasPipe || STDOUT_REDIRECT.test(stripQuotedSpans(stmt)))
+  for (const segment of splitChainTagged(command)) {
+    if (segment.pipeTail && stmt !== "") {
+      stmt += " | " + segment.text
+      hasPipe = true
+      continue
+    }
+    if (flagged()) return true
+    stmt = segment.text
+    hasPipe = false
+  }
+  return flagged()
+}
+
 // --- Default corrections ------------------------------------------------------
 
 /**

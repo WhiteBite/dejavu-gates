@@ -24,6 +24,7 @@ import {
   looksLikeSuccess,
   nonTransparentProducers,
   shouldWarnLongRunning,
+  shouldWarnSuppressedSpawn,
   shouldWarnWaitLoop,
   normalizeCommand,
   parameterizeError,
@@ -2061,6 +2062,61 @@ check("longrun: before-hook interrupts foreground server with LONG-RUNNING note"
 check("longrun: dejavu:proceed bypasses the guard", (await lrAttempt("npm run dev # dejavu:proceed")) === null)
 check("longrun: detached server is not interrupted", (await lrAttempt("npm run dev &")) === null)
 check("longrun: one-shot command is not interrupted", (await lrAttempt("npm run build")) === null)
+
+// --- 97. suppressed-spawn guard (compensating measure for anomalyco/opencode#29831):
+// detached daemon + piped/redirected stdout hangs the call forever (stdio EOF
+// never comes from the living daemon). Predicate level first. ---
+const SPAWN = "node scripts/siphon-supervisor.mjs"
+check("spawnwarn: spawn + pipe warns", shouldWarnSuppressedSpawn(`${SPAWN} start | Out-Null`))
+check("spawnwarn: spawn + stdout redirect warns", shouldWarnSuppressedSpawn(`${SPAWN} start > $null`))
+check("spawnwarn: spawn + attached redirect warns", shouldWarnSuppressedSpawn(`${SPAWN} start>$null`))
+check("spawnwarn: spawn + 1> redirect warns", shouldWarnSuppressedSpawn(`${SPAWN} start 1> log.txt`))
+check("spawnwarn: spawn + append redirect warns", shouldWarnSuppressedSpawn(`${SPAWN} start >> log.txt`))
+check("spawnwarn: restart verb warns", shouldWarnSuppressedSpawn(`${SPAWN} restart | Out-Null`))
+check("spawnwarn: double-quoted spawner path warns", shouldWarnSuppressedSpawn(`node "D:/x/siphon-supervisor.mjs" restart | Out-Null`))
+check("spawnwarn: single-quoted spawner path warns", shouldWarnSuppressedSpawn("node 'scripts/siphon-supervisor.mjs' start > $null"))
+check("spawnwarn: bare spawn does NOT warn", !shouldWarnSuppressedSpawn(`${SPAWN} start`))
+check("spawnwarn: stop + pipe does NOT warn (not a spawn verb)", !shouldWarnSuppressedSpawn(`${SPAWN} stop | Out-Null`))
+check("spawnwarn: status + pipe does NOT warn", !shouldWarnSuppressedSpawn(`${SPAWN} status | ConvertFrom-Json`))
+check("spawnwarn: stderr-only redirect does NOT warn", !shouldWarnSuppressedSpawn(`${SPAWN} start 2> $null`))
+check("spawnwarn: stderr merge does NOT warn", !shouldWarnSuppressedSpawn(`${SPAWN} start 2>&1`))
+check("spawnwarn: suppression in ANOTHER segment does NOT warn", !shouldWarnSuppressedSpawn(`${SPAWN} start; echo done > $null`))
+check("spawnwarn: quoted redirect text does NOT warn", !shouldWarnSuppressedSpawn(`${SPAWN} start "log > file"`))
+check("spawnwarn: unrelated command with redirect does NOT warn", !shouldWarnSuppressedSpawn("npm run build > build.log"))
+check("spawnwarn: chained spawn + pipe warns (segment-scoped)", shouldWarnSuppressedSpawn(`echo a; ${SPAWN} start | Out-Null; echo b`))
+check("spawnwarn: spawn piped mid-chain warns", shouldWarnSuppressedSpawn(`${SPAWN} start | Out-Null && echo done`))
+
+// Hook level: the guard interrupts, and the escape hatch bypasses with a warn log.
+const ssDir = join(tmp, "spawnwarn-project")
+const ssLogs: string[] = []
+const hooksSS = await Dejavu({
+  directory: ssDir,
+  client: {
+    app: {
+      log: async (opts: { body?: { message?: unknown } }) => {
+        ssLogs.push(String(opts?.body?.message ?? ""))
+        return {}
+      },
+    },
+  },
+} as unknown as Ctx)
+const ssAttempt = async (command: string): Promise<Error | null> => {
+  try {
+    await (hooksSS["tool.execute.before"] as BeforeHook)(
+      { tool: "bash", sessionID: "ss1", callID: `ss-${ssLogs.length}-${command.length}` } as unknown as BeforeInput,
+      { args: { command } } as unknown as BeforeOutput,
+    )
+    return null
+  } catch (error) {
+    return error as Error
+  }
+}
+const ssBlocked = await ssAttempt(`${SPAWN} start | Out-Null`)
+check("spawnwarn: before-hook interrupts spawn+pipe with SUPPRESSED-SPAWN", ssBlocked !== null && ssBlocked.message.includes("SUPPRESSED-SPAWN"))
+check("spawnwarn: bare spawn is not interrupted", (await ssAttempt(`${SPAWN} start`)) === null)
+check("spawnwarn: stderr-only redirect is not interrupted", (await ssAttempt(`${SPAWN} start 2> $null`)) === null)
+check("spawnwarn: dejavu:proceed bypasses the guard", (await ssAttempt(`${SPAWN} start | Out-Null # dejavu:proceed`)) === null)
+check("spawnwarn: bypass logs a warning", ssLogs.some((m) => m.includes("suppressed-spawn guard bypassed")))
 
 // --- 87. self-maintenance additions (2.25.0). Run before 86: 87b uses its own
 // DEJAVU_HOME, but the rest touch the shared global store that 86 corrupts. ---

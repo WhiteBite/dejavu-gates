@@ -2,6 +2,9 @@
 
 ## 2.28.0 — 2026-09-10
 
+### Added (proactive guards)
+- **SUPPRESSED-SPAWN guard** — compensating measure for anomalyco/opencode#29831 (+ #42756); **remove it when the upstream fix ships**. opencode ends a bash call only on stdio EOF, so a call that spawns a detached daemon while piping/redirecting stdout (`… start | Out-Null`, `… start > $null`) hands the open pipe to the living daemon and hangs forever. A static, bounded list of known spawn commands (`DETACHED_SPAWNERS`, v1: `siphon-supervisor.mjs start|restart`) is interrupted in the before-hook with the correction "run the spawn bare — it prints 1-3 lines — and poll status in a separate call". Bare spawns, non-spawn verbs (`stop`/`status`), and stderr-only redirects (`2>`, `2>&1`) pass; `# dejavu:proceed` bypasses (logged).
+
 ### Fixed (concurrency + persistence safety)
 - **Same-process critical sections serialize on an in-process queue before the file lock.** Parallel tool calls in ONE window used to poll the file lock for 3s and then degrade to unlocked — losing updates exactly when two sections raced (e.g. a 3s+ section under a flood). The degrade path is now cross-process only.
 - **A transiently-unreadable store no longer reads as empty.** `load()`/`loadIndex()` distinguish ENOENT (legitimately absent) from other read errors (EISDIR/EPERM/AV lock → throw, fail-open at the hook level), so a failed read can never let the next `save()` clobber real gates.
