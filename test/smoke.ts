@@ -33,7 +33,7 @@ import {
   stripControl,
   suggestCorrection,
 } from "../src/patterns"
-import { DEMOTE_OVERRIDES, GateStore, MAX_SESSIONS, PLUGIN_VERSION, Stores, mergeGate, type Gate } from "../src/store"
+import { DEMOTE_OVERRIDES, GLOBAL_PROJECTS, GateStore, MAX_SESSIONS, NOISE_TTL_DAYS, PLUGIN_VERSION, Stores, TTL_DAYS, mergeGate, type Gate } from "../src/store"
 import { repairGate } from "../src/validate"
 
 type Ctx = Parameters<typeof Dejavu>[0]
@@ -61,6 +61,7 @@ interface GateRow {
   remindedSessions?: Record<string, number>
   failedSessions?: Record<string, number>
   overrideCount?: number
+  overrideSessions?: string[]
   feedbackDemoted?: boolean
   succeededAfterGate?: number
   reoffenseSessions?: string[]
@@ -614,9 +615,9 @@ await writeFile(
 )
 const idxStores = new Stores(new GateStore(idxGlobalDir), new GateStore(join(idxProjectDir, ".opencode", "dejavu")))
 await idxStores.reconcileAll()
-const idxAfter = await new GateStore(idxGlobalDir).loadIndex(true)
-const idxGlobalGates = await new GateStore(idxGlobalDir).load(true)
-const idxProjectGates = await new GateStore(join(idxProjectDir, ".opencode", "dejavu")).load(true)
+const idxAfter = await new GateStore(idxGlobalDir).loadIndexForMutation()
+const idxGlobalGates = await new GateStore(idxGlobalDir).loadForMutation()
+const idxProjectGates = await new GateStore(join(idxProjectDir, ".opencode", "dejavu")).loadForMutation()
 check("orphan index key survives reconcile (may live in another project)", idxAfter.keys["ffff00000001"] !== undefined)
 check("missing index entry rebuilt from the global gate", idxAfter.keys["dddd00000001"] !== undefined)
 check(
@@ -1207,17 +1208,18 @@ const orGate = orGates.find((g) => g.key === patternKey(OV_REM_SIG))
 check("reminding-tier overrides are not counted on the gate", orGate?.overrideCount === 0)
 check("reminding gate survives mass overrides (no demotion)", orGate?.status === "reminding" && orGate?.feedbackDemoted !== true)
 
-// --- 58. index churn gate: first-ever failure is not indexed, the second is ---
+// --- 58. index churn: EVERY failure is indexed (the old count<2 skip starved
+// once-per-project patterns of cross-project escalation evidence) ---
 const idxGateDir = join(tmp, "index-gate-project")
 const hooksIG = await Dejavu({ directory: idxGateDir, client: { app: { log: async () => ({}) } } } as unknown as Ctx)
 const IDX_CMD = "index gate probe cmd"
 const idxKey = patternKey(callSignature("bash", { command: IDX_CMD }) ?? "")
 await failOn(hooksIG)(IDX_CMD, "ig1", "ig1")
 const idxAfterOne = JSON.parse(await readFile(join(tmp, "global", "index.json"), "utf8")) as { keys: Record<string, unknown> }
-check("first-ever failure of a new pattern is not indexed", idxAfterOne.keys[idxKey] === undefined)
+check("first failure is indexed (cross-project escalation evidence)", idxAfterOne.keys[idxKey] !== undefined)
 await failOn(hooksIG)(IDX_CMD, "ig1", "ig2")
 const idxAfterTwo = JSON.parse(await readFile(join(tmp, "global", "index.json"), "utf8")) as { keys: Record<string, unknown> }
-check("second failure indexes the pattern (escalation stays alive)", idxAfterTwo.keys[idxKey] !== undefined)
+check("second failure keeps the pattern indexed", idxAfterTwo.keys[idxKey] !== undefined)
 
 // --- 59. garbage dates cannot make a gate immortal ---
 const dateDir = join(tmp, "dates-project")
@@ -1860,7 +1862,7 @@ const monoSig = "bash:monotonic evidence cmd"
 const monoKey = patternKey(monoSig)
 await monoStores.recordFailure({ key: monoKey, signature: monoSig, tool: "bash", sessionID: "ms1", projectDir: monoDir, snippet: "Error: real failure line", globalProjects: 99 })
 await monoStores.recordFailure({ key: monoKey, signature: monoSig, tool: "bash", sessionID: "ms1", projectDir: monoDir, snippet: "17 passed (3.1m)", globalProjects: 99 })
-const monoGate = (await new GateStore(monoDir).load(true)).find((g) => g.key === monoKey)
+const monoGate = (await new GateStore(monoDir).loadForMutation()).find((g) => g.key === monoKey)
 check("success-shaped snippet does not overwrite a failure-shaped one", monoGate?.snippet === "Error: real failure line")
 
 // --- 87f. infrastructure noise is classified (server-side unavailability),
@@ -1914,7 +1916,7 @@ check("reminding taught retirement is logged", (await readFile(join(rtDir, ".ope
 const livDir = join(tmp, "liv-project")
 const livStore = new GateStore(livDir)
 await livStore.runLocked(async () => {
-  const gates = await livStore.load(true)
+  const gates = await livStore.loadForMutation()
   gates.push({
     key: "000000000099",
     signature: "bash:liv test",
@@ -2101,14 +2103,15 @@ check("orphan candidacy set for a fresh invisible key", orphIndex.keys["orphanfr
 check("orphan candidacy prunes a key absent past the window", orphIndex.keys["orphanold"] === undefined)
 check("orphan candidacy cleared when a visible gate holds the key", orphIndex.keys[hasgateKey] !== undefined && orphIndex.keys[hasgateKey]?.orphanCandidateSince === undefined)
 
-// 87c. override demotion bar is 3: a blocking gate with 3 overrides demotes on repair
+// 87c. override demotion bar is 3 across 2+ sessions: a blocking gate with
+// 3 overrides from distinct sessions demotes on repair
 const ov3Dir = join(tmp, "ov3-project")
 const OV3_CMD = "deploy --prod --force"
 const ov3Key = patternKey(callSignature("bash", { command: OV3_CMD }) ?? "")
-await seedGates(ov3Dir, [seedGate({ key: ov3Key, signature: `bash:${OV3_CMD}`, status: "blocking", overrideCount: 3 })])
+await seedGates(ov3Dir, [seedGate({ key: ov3Key, signature: `bash:${OV3_CMD}`, status: "blocking", overrideCount: 3, overrideSessions: ["o1", "o2"] })])
 await Dejavu({ directory: ov3Dir, client: { app: { log: async () => ({}) } } } as unknown as Ctx)
 const ov3Gate = (await readJson(join(ov3Dir, ".opencode", "dejavu", "gates.json"))).find((g) => g.key === ov3Key)
-check("3 overrides demote a blocking gate on repair", ov3Gate?.status === "watching" && ov3Gate?.feedbackDemoted === true)
+check("3 overrides from 2 sessions demote a blocking gate on repair", ov3Gate?.status === "watching" && ov3Gate?.feedbackDemoted === true)
 
 // 87d. startup logs a health event for NOT TEACHING gates
 const healthDir = join(tmp, "health-project")
@@ -2143,6 +2146,136 @@ check("heal-aware: the chain stays armed (remindedSessions set)", haGate?.remind
 check("heal-aware: no reminder counted (nothing was shown)", (haGate?.remindedCount ?? 0) === 0)
 await failOn(hooksHA)(HA_CMD, "ha1", "ha2")
 check("heal-aware: a repeat failure after the armed run still blocks", (await attemptWith(hooksHA)(HA_CMD, "ha1", "ha3"))?.message.includes("[dejavu] BLOCKED") === true)
+
+// --- 90. in-process concurrency: a critical section outliving LOCK_WAIT_MS must not
+// let a same-process waiter degrade to unlocked and lose updates (parallel tool calls) ---
+const concDir = join(tmp, "concurrency-project")
+const concStore = new GateStore(join(concDir, ".opencode", "dejavu"))
+await concStore.runLocked(async () => {
+  const gates = await concStore.loadForMutation()
+  gates.push(seedGate({ key: "cccc00000001", signature: "bash:concurrency probe cmd", status: "watching", count: 0 }) as unknown as Gate)
+  await concStore.save()
+})
+await Promise.all(
+  [0, 1].map(() =>
+    concStore.runLocked(async () => {
+      const gates = await concStore.loadForMutation()
+      const gate = gates.find((g) => g.key === "cccc00000001")
+      if (gate !== undefined) {
+        gate.count += 1
+        await new Promise((resolve) => setTimeout(resolve, 3200)) // holder outlives LOCK_WAIT_MS
+        await concStore.save()
+      }
+    }),
+  ),
+)
+await concStore.flushDeferred()
+const concCount = (await readJson(join(concDir, ".opencode", "dejavu", "gates.json"))).find((g) => g.key === "cccc00000001")?.count
+check("same-process locked sections serialize (no lost update past LOCK_WAIT_MS)", concCount === 2)
+const concLog = await readFile(join(concDir, ".opencode", "dejavu", "log.jsonl"), "utf8").catch(() => "")
+check("same-process contention never degrades to unlocked", !concLog.includes('"type":"degraded"'))
+
+// --- 91. a transiently-unreadable gates.json (here: a directory at the file path)
+// is NOT an empty store: load must throw and save must stay a no-op, never wipe ---
+const unreadDir = join(tmp, "unreadable-project", ".opencode", "dejavu")
+await mkdir(join(unreadDir, "gates.json"), { recursive: true })
+const unreadStore = new GateStore(unreadDir)
+let unreadThrew = false
+try {
+  await unreadStore.loadForMutation()
+} catch {
+  unreadThrew = true
+}
+check("unreadable gates.json throws instead of parsing as an empty store", unreadThrew)
+let saveThrew = false
+try {
+  await unreadStore.save()
+} catch {
+  saveThrew = true
+}
+check("save after an unreadable load is a no-op (never clobbers)", !saveThrew && existsSync(join(unreadDir, "gates.json")))
+
+// --- 92. override demotion needs 2+ DISTINCT sessions: one stubborn or
+// prompt-injected session must not disarm a gate for everyone ---
+const ov1Dir = join(tmp, "override-single-session")
+const OVS_CMD = "deploy --to single-session"
+const ovsKey = patternKey(callSignature("bash", { command: OVS_CMD }) ?? "")
+await seedGates(ov1Dir, [seedGate({ key: ovsKey, signature: `bash:${OVS_CMD}` })])
+const hooksOVS = await Dejavu({ directory: ov1Dir, client: { app: { log: async () => ({}) } } } as unknown as Ctx)
+for (let i = 0; i < DEMOTE_OVERRIDES + 2; i++) {
+  await attemptWith(hooksOVS)(`${OVS_CMD} # dejavu:proceed`, "ovs-same", `ovs${i}`)
+}
+const ovsGate = (await readJson(join(ov1Dir, ".opencode", "dejavu", "gates.json"))).find((g) => g.key === ovsKey)
+check(
+  "overrides from ONE session count but do not demote",
+  ovsGate?.overrideCount === DEMOTE_OVERRIDES + 2 && ovsGate?.status === "blocking" && (ovsGate?.overrideSessions?.length ?? 0) === 1,
+)
+await attemptWith(hooksOVS)(`${OVS_CMD} # dejavu:proceed`, "ovs-other", "ovsX")
+const ovsGate2 = (await readJson(join(ov1Dir, ".opencode", "dejavu", "gates.json"))).find((g) => g.key === ovsKey)
+check("overrides across 2 distinct sessions demote the gate", ovsGate2?.status === "watching" && ovsGate2?.feedbackDemoted === true)
+
+// --- 93. a pattern failing once per project is an agent habit: the index churn gate
+// must not starve cross-project escalation (first failure of count<2 was skipped) ---
+const escGlobal = join(tmp, "escalate-global")
+const escProjA = join(tmp, "escalate-a")
+const escProjB = join(tmp, "escalate-b")
+const R93_CMD = "some-cli deploy --thing"
+const r93Sig = callSignature("bash", { command: R93_CMD }) ?? ""
+const escKey = patternKey(r93Sig)
+const escStoresA = new Stores(new GateStore(escGlobal), new GateStore(join(escProjA, ".opencode", "dejavu")))
+const escStoresB = new Stores(new GateStore(escGlobal), new GateStore(join(escProjB, ".opencode", "dejavu")))
+await escStoresA.recordFailure({ key: escKey, signature: r93Sig, tool: "bash", sessionID: "ea1", projectDir: escProjA, snippet: "boom failed", globalProjects: GLOBAL_PROJECTS })
+await escStoresB.recordFailure({ key: escKey, signature: r93Sig, tool: "bash", sessionID: "eb1", projectDir: escProjB, snippet: "boom failed", globalProjects: GLOBAL_PROJECTS })
+const r93GlobalGates = await readJson(join(escGlobal, "gates.json")).catch(() => [] as GateRow[])
+check("once-per-project pattern escalates to the global store", r93GlobalGates.some((g) => g.key === escKey))
+
+// --- 94. noise TTL is for TRUE one-offs: a twice-seen watching pattern gets the
+// full TTL so slow recurrences (every 8+ days) can still reach the promotion bar ---
+const r94Dir = join(tmp, "ttl-project-r94", ".opencode", "dejavu")
+const ttlStore = new GateStore(r94Dir)
+const tenDaysAgo = new Date(Date.now() - 10 * 24 * 60 * 60 * 1000).toISOString()
+await mkdir(r94Dir, { recursive: true })
+await writeFile(
+  join(r94Dir, "gates.json"),
+  JSON.stringify({
+    version: 1,
+    gates: [
+      seedGate({ key: "dddd00000001", signature: "bash:ttl oneoff cmd", status: "watching", count: 1, lastSeen: tenDaysAgo, firstSeen: tenDaysAgo }),
+      seedGate({ key: "dddd00000002", signature: "bash:ttl slow recurrence cmd", status: "watching", count: 2, lastSeen: tenDaysAgo, firstSeen: tenDaysAgo }),
+    ],
+  }),
+  "utf8",
+)
+await ttlStore.runLocked(async () => {
+  await ttlStore.expire(TTL_DAYS, NOISE_TTL_DAYS)
+})
+const ttlLeft = await readJson(join(r94Dir, "gates.json"))
+check("one-off watching pattern still rots on the noise TTL", !ttlLeft.some((g) => g.key === "dddd00000001"))
+check("twice-seen watching pattern survives past the noise TTL", ttlLeft.some((g) => g.key === "dddd00000002"))
+
+// --- 95. chain bypass through command substitution: a gate must fire when the
+// command hides inside $(...) or backticks ---
+const substDir = join(tmp, "subst-project")
+const SUBST_CMD = "custom-subst-tool --deploy-now"
+const substKey = patternKey(callSignature("bash", { command: SUBST_CMD }) ?? "")
+await seedGates(substDir, [seedGate({ key: substKey, signature: `bash:${SUBST_CMD}` })])
+const hooksSUB = await Dejavu({ directory: substDir, client: { app: { log: async () => ({}) } } } as unknown as Ctx)
+const substHit = await attemptWith(hooksSUB)(`echo prefix $(${SUBST_CMD}) suffix-more-text`, "sub1", "sub1")
+check("gate fires through $(...) command substitution", substHit !== null && substHit.message.includes("[dejavu] REMINDER"))
+const substHit2 = await attemptWith(hooksSUB)("echo prefix `" + SUBST_CMD + "` suffix-more-text", "sub2", "sub2")
+check("gate fires through backtick substitution", substHit2 !== null && substHit2.message.includes("[dejavu] REMINDER"))
+
+// --- 96. before-hook fallback covers UNGATED calls: an after-hook that arrives
+// without args must still record a NEW pattern via the pendingCalls signature ---
+await attempt("brand-new-failing-tool --x", "s-pf", "pf1")
+await after(
+  { tool: "bash", sessionID: "s-pf", callID: "pf1" } as unknown as AfterInput,
+  { title: "brand-new-failing-tool --x", output: "command not found", metadata: { exit: 127 } } as unknown as AfterOutput,
+)
+check(
+  "pendingCalls fallback records a new pattern when the after-hook lacks args",
+  (await readGates()).some((g) => g.signature === "bash:brand-new-failing-tool --x"),
+)
 
 // --- 86. round-8 invariant: a corrupt GLOBAL gates.json is quarantined under the
 // gates lock by reconcile(); the unlocked routing peeks in reconcileAll (escalation

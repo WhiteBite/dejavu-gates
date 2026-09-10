@@ -55,7 +55,7 @@ if (repair) {
   // True-orphan pruning is safe HERE and only here: doctor sees EVERY
   // discovered scope at once, unlike a single plugin process — which must
   // never prune (the gate may live in another project's store it cannot see).
-  // load() is non-force on purpose: load(true) could quarantine an
+  // load() is non-force on purpose: loadForMutation() could quarantine an
   // unparseable file WITHOUT the store lock while the live plugin is running.
   const knownKeys = new Set<string>()
   for (const g of await new GateStore(globalDir).load()) knownKeys.add(g.key)
@@ -65,7 +65,7 @@ if (repair) {
   const idxStore = new GateStore(globalDir)
   let pruned = 0
   await idxStore.runLockedIndex(async () => {
-    const idx = await idxStore.loadIndex(true)
+    const idx = await idxStore.loadIndexForMutation()
     for (const key of Object.keys(idx.keys)) {
       if (!knownKeys.has(key)) {
         delete idx.keys[key]
@@ -131,9 +131,11 @@ async function loadScope(dir: string, isGlobal: boolean): Promise<Scope> {
   let doubleCounts = 0
   // FLAPPY monitor: promote→heal/retire oscillation. `count`/`sessions` are
   // lifetime-cumulative (not in the lifecycle-reset list), so a healed or
-  // retired gate re-promotes on the very next single failure — in flaky
-  // environments that is promote→heal→promote forever. Data-gathering only;
-  // damping is not justified until this report shows it matters.
+  // retired gate would re-promote on the very next single failure — in flaky
+  // environments that is promote→heal→promote forever. `retireBaseline` now
+  // damps it (re-promotion needs a full fresh bar of failures); this log-based
+  // count still surfaces gates that oscillated before damping, or that flap
+  // despite it. Report-only — review, delete, or rewrite the correction.
   const transitions = new Map<string, { promoted: number; resolved: number }>()
   try {
     const raw = await readFile(join(dir, "log.jsonl"), "utf8")
@@ -264,7 +266,7 @@ for (const scope of scopes) {
   }
 
   if (scope.flappy.length > 0) {
-    console.log(`   note: FLAPPY (${scope.flappy.length}) — promoted 2+ AND resolved 2+ times; promote→heal oscillation (data-gathering; damping not yet justified):`)
+    console.log(`   note: FLAPPY (${scope.flappy.length}) — promoted 2+ AND resolved 2+ times; promote→heal oscillation (retireBaseline damps re-promotion; these flapped before or despite it):`)
     for (const f of scope.flappy.slice(0, 10)) console.log(`     - promoted ${f.promoted} | resolved ${f.resolved} | ${keySignature.get(f.key) ?? f.key}`)
   }
 

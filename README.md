@@ -33,7 +33,7 @@ Design decisions (post-mortem of existing approaches):
 - **Two scopes.** Repo-specific gotchas live in `<repo>/.opencode/dejavu/` (committable); patterns seen in 2+ project dirs are agent-level habits and move to `~/.config/opencode/dejavu/`. No single store can see all projects, so a global pattern index (`index.json`) counts distinct project dirs per key and drives the escalation.
 - **Gates rot — so they expire.** 60 days without recurrence and a gate is dropped. A gate blocked 10+ times without the error going away gets `review: true` for manual inspection.
 - **The metric is recurrence-after-gate.** Tracked per gate as `recurredAfterGate` — if gates don't reduce recurrence, the whole approach is wrong and you'll see it in the data.
-- **Enforcement has negative feedback.** The metric acts: a gate that keeps failing after promotion (3+ recurrences across 2+ sessions that reoffended after a reminder) or keeps getting explicitly bypassed (5+ `dejavu:proceed` overrides on a blocking gate — reminding-gate overrides are logged but not counted) is friction, not teaching — it demotes itself to `watching` and never re-promotes mechanically (`feedbackDemoted`). A human can re-enforce by setting `status` back and clearing `feedbackDemoted` in `gates.json`; the gate then gets a fresh grace window.
+- **Enforcement has negative feedback.** The metric acts: a gate that keeps failing after promotion (3+ recurrences across 2+ sessions that reoffended after a reminder) or keeps getting explicitly bypassed (3+ `dejavu:proceed` overrides across 2+ distinct sessions on a blocking gate — reminding-gate overrides are logged but not counted, and a single stubborn/injected session cannot disarm a gate) is friction, not teaching — it demotes itself to `watching` and never re-promotes mechanically (`feedbackDemoted`). A human can re-enforce by setting `status` back and clearing `feedbackDemoted` in `gates.json`; the gate then gets a fresh grace window.
 - **No identity, no teeth.** A signature whose substance was entirely parameterized away (`cmd <path> <str>`, `node <str>`) matches a whole command family and can never enforce — it may only watch. Over-generic shapes degrade to evidence instead of punishing unrelated calls.
 
 ## Install
@@ -73,7 +73,7 @@ Restart OpenCode. Gates appear automatically as failures recur — nothing to co
 - **Aborted ≠ failed** — cancelled/aborted tool executions ("Tool execution aborted") are infrastructure noise and are never counted as failures.
 - **Long-running guard** — a FOREGROUND dev-server/watcher start (`npm run dev`, `next dev`, `vite`, `flask run`, `uvicorn`, `python -m http.server`, `mvn spring-boot:run`, `gradle bootRun`, …) would block the bash call until its ~2-min timeout and strand an orphan process. dejavu interrupts it in the before-hook with a "run detached" reminder (tmux / `nohup … &` / `Start-Process` / a startup script that spawns detached). Detached forms (trailing `&`, `nohup`, `tmux`, `Start-Process`) and one-shots/builds (`vite build`, `npm run build`) pass silently; `# dejavu:proceed` allows a deliberate foreground run. The starter list is deliberately conservative (ambiguous `node <file>`, `go run`, `dotnet run` are not flagged).
 - **File content is not command output** — text failure signatures are scanned for `bash` only; `read`/`edit`/`write` failures come exclusively from the event channel (a file containing "TypeError" is not a failure).
-- **Concurrency** — gates.json mutations run under an exclusive lockfile; log appends and rotation take their own lock (every OpenCode window shares the global log); writes are tmp+rename with EPERM/EACCES/EBUSY retry (Windows AV/indexer). NT long paths get the `\\?\` prefix. If a lock cannot be acquired within 3s the critical section degrades to unlocked (the tool pipeline must never hang) and emits a `degraded` log event — the only window where updates can be lost is visible.
+- **Concurrency** — gates.json mutations run under an exclusive lockfile; log appends and rotation take their own lock (every OpenCode window shares the global log); writes are tmp+rename with EPERM/EACCES/EBUSY retry (Windows AV/indexer). NT long paths get the `\\?\` prefix. Parallel tool calls in the SAME window serialize on an in-process queue before ever touching the file lock — two concurrent sections of one process can no longer degrade-and-clobber each other. Across processes, if a lock cannot be acquired within 3s the critical section degrades to unlocked (the tool pipeline must never hang) and emits a `degraded` log event — the only window where updates can be lost is visible (gates, index AND log locks all report it). A transiently-unreadable store (AV lock, `EISDIR`) throws instead of parsing as empty, so a failed read can never let the next save clobber real gates.
 - **Multi-window safe** — the remind→block escalation chain is persisted on the gate itself (`remindedSessions`/`failedSessions`), not in process memory: several OpenCode windows on one store — and process restarts — all see the same chain. Enforcement always reads fresh gate state under the store lock.
 - **Near-duplicate consolidation** — new failures merge into existing patterns via normalized Levenshtein ≤ 0.3 with an absolute floor of 3 edits (replaces token Jaccard, which collapsed all `<str>` placeholders; the floor stops `git push` vs `git pull`-style merges).
 - **Bounded memory** — per-session maps are capped (50 entries per gate) and freed on `session.deleted`; handled part IDs evict FIFO; TTL expiry and log rotation re-run every 6 h in long-lived processes.
@@ -95,7 +95,7 @@ Restart OpenCode. Gates appear automatically as failures recur — nothing to co
 |---|---|
 | `tool.execute.after` + `metadata.exit` | bash failures (non-zero exit, TS errors, test failures, stack traces) |
 | `message.part.updated` event scan | tool-level failures (read of missing file, rejected edits) that never reach the after-hook; error text is Sentry-style parameterized (uuid/ip/url/hex/date → placeholders) |
-| chain-segment matching | gates fire even when the gated command hides inside `x && gated-cmd` chains |
+| chain-segment matching | gates fire even when the gated command hides inside `x && gated-cmd` chains, `cmd /c "..."` wrappers, or `$(...)` / backtick substitutions |
 | companion skill | agent behavior protocol (how to react, when to annotate) |
 | `/dejavu` command | status report: active gates, recurrence metric, review flags |
 
@@ -119,9 +119,14 @@ Both are human-editable. Removing a gate object disables it. Editing `correction
 bun install
 bun run typecheck        # tsc --noEmit (index.ts, src/**, scripts/**, test/**)
 bun test/smoke.ts        # behavioral smoke test, no framework needed
+bun test/property.ts     # seeded generator: normalization/fuzzy invariants
+bun test/fuzz.ts         # mutation fuzz: no crash, no invariant break
+bun run lint:ast         # ast-grep structural gates (needs ast-grep on PATH)
 ```
 
-Tunables are named constants at the top of `index.ts` and `src/store.ts`: `PROMOTE_COUNT` (3), `PROMOTE_COUNT_PROBE` (5), `PROMOTE_SESSIONS` (2), `GLOBAL_PROJECTS` (2), `TTL_DAYS` (60), `NOISE_TTL_DAYS` (7), `REVIEW_FIRES` (10), `MAX_GATES` (2000), `HEAL_SUCCESSES` (3), `DEMOTE_RECURRENCES` (3), `DEMOTE_REOFFENSE_SESSIONS` (2), `DEMOTE_OVERRIDES` (3), `TAUGHT_REMINDERS` (5), `ORPHAN_CANDIDATE_DAYS` (7).
+Tunables are named constants at the top of `index.ts` and `src/store.ts`: `PROMOTE_COUNT` (3), `PROMOTE_COUNT_PROBE` (5), `PROMOTE_SESSIONS` (2), `GLOBAL_PROJECTS` (2), `TTL_DAYS` (60), `NOISE_TTL_DAYS` (7, only for never-recurred one-offs), `REVIEW_FIRES` (10), `MAX_GATES` (2000), `HEAL_SUCCESSES` (3), `DEMOTE_RECURRENCES` (3), `DEMOTE_REOFFENSE_SESSIONS` (2), `DEMOTE_OVERRIDES` (3), `DEMOTE_OVERRIDE_SESSIONS` (2), `TAUGHT_REMINDERS` (5), `ORPHAN_CANDIDATE_DAYS` (7).
+
+Structural gates live in `.ast-grep/rules/` (run by `bun run lint:ast` and CI): `no-load-force-flag` forbids `load(true)`/`loadIndex(true)` — the write-capable read is named `loadForMutation()`/`loadIndexForMutation()` so the capability is not hidden behind a boolean.
 
 ## Roadmap
 

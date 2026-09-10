@@ -6,6 +6,18 @@ const OVERRIDE_MARKER = /#?\s*dejavu:proceed/gi
 /** Agent commentary lines ("# probing the api...") carry no signal — strip them. */
 const COMMENT_LINE = /(^|\n)[ \t]*#[^\n]*/g
 
+/** Quoted spans, toggled (PowerShell-first: backslash is NOT an escape char —
+ * backtick is, and `""` doubles a literal quote, which toggling handles). Bash
+ * `\"` escapes are a documented limitation: the same bytes mean different things
+ * per shell dialect and the parser cannot know which. */
+const QUOTED_SPAN = /"[^"]*"|'[^']*'/g
+
+/** Replace quoted spans with a space — override-marker detection strips these
+ * so data inside strings cannot smuggle `# dejavu:proceed`. */
+export function stripQuotedSpans(text: string): string {
+  return text.replace(QUOTED_SPAN, " ")
+}
+
 // --- Secret scrubbing --------------------------------------------------------
 
 /**
@@ -166,7 +178,7 @@ export function normalizeCommand(command: string): string {
   // path rules keeps normalization idempotent — a <str> replacement inserts
   // spaces that would otherwise expose an adjacent "/" to the path rule only
   // on a second pass.
-  s = s.replace(/"[^"]*"|'[^']*'/g, " <str> ")
+  s = s.replace(QUOTED_SPAN, " <str> ")
   s = s.replace(/[a-z]:[\\/][^\s"']+/gi, " <path> ")
   s = s.replace(/(^|\s)\/[^\s"']+/g, "$1<path> ")
   // lookbehind: never re-parameterize the <code:...> fingerprint hex
@@ -667,12 +679,87 @@ export function splitChain(command: string): string[] {
   return segments
 }
 
+/** $(...) and `...` payloads, quote-aware (toggled — see QUOTED_SPAN for the
+ * PowerShell-first escaping rationale). Both shells expand $() inside DOUBLE
+ * quotes, so those are scanned too; single-quoted spans are inert in bash and
+ * PowerShell alike. Unbalanced input yields nothing (the enclosing segment
+ * still signs as a whole). Backtick substitution is bash-shaped; in PowerShell
+ * a backtick is an escape char, so a stray pair may over-extract — extraction
+ * only ADDS candidate signatures (fail-safe: an extra candidate matches a gate
+ * only on exact/fuzzy identity), never removes one. */
+function extractSubstitutions(text: string): string[] {
+  const out: string[] = []
+  let quote: string | null = null
+  let i = 0
+  while (i < text.length) {
+    const ch = text.charAt(i)
+    const next = text.charAt(i + 1)
+    if (quote !== null) {
+      if (ch === quote) {
+        quote = null
+        i += 1
+        continue
+      }
+      // $() and backticks still expand inside DOUBLE quotes (both shells)
+      if (quote !== '"') {
+        i += 1
+        continue
+      }
+    } else if (ch === '"' || ch === "'") {
+      quote = ch
+      i += 1
+      continue
+    }
+    if (ch === "$" && next === "(") {
+      let depth = 1
+      let q: string | null = null
+      let j = i + 2
+      while (j < text.length && depth > 0) {
+        const c = text.charAt(j)
+        if (q !== null) {
+          if (c === q) q = null
+          j += 1
+          continue
+        }
+        if (c === '"' || c === "'") {
+          q = c
+          j += 1
+          continue
+        }
+        if (c === "(") depth += 1
+        else if (c === ")") {
+          depth -= 1
+          if (depth === 0) break
+        }
+        j += 1
+      }
+      if (depth === 0 && j > i + 2) {
+        out.push(text.slice(i + 2, j))
+        i = j + 1
+        continue
+      }
+    }
+    if (ch === "`") {
+      const close = text.indexOf("`", i + 1)
+      if (close > i + 1) {
+        out.push(text.slice(i + 1, close))
+        i = close + 1
+        continue
+      }
+    }
+    i += 1
+  }
+  return out
+}
+
 /**
  * Per-segment signatures for a bash command (bypass protection for chains).
  * cmd wrappers expand recursively: quote-aware splitChain keeps
  * `cmd /c "a && gated"` as ONE segment, so the inner chain must unfold here —
- * a gate on the inner command must fire through the wrapper. Depth-bounded:
- * nested wrappers are pathological.
+ * a gate on the inner command must fire through the wrapper. $(...) and
+ * backtick payloads unfold too: splitChain keeps a substitution inside its
+ * enclosing segment, so `echo $(gated)` would otherwise hide the gate.
+ * Depth-bounded: nested wrappers/substitutions are pathological.
  */
 export function bashSegmentSignatures(command: string): string[] {
   const clean = command.replace(OVERRIDE_MARKER, "")
@@ -680,10 +767,13 @@ export function bashSegmentSignatures(command: string): string[] {
   const expand = (text: string, depth: number): void => {
     for (const segment of splitChain(text)) {
       const payload = depth < 3 ? cmdWrapperPayload(segment) : null
-      if (payload === null) {
-        signatures.push(`bash:${normalizeCommand(segment)}`)
-      } else {
+      if (payload !== null) {
         expand(payload, depth + 1)
+        continue
+      }
+      signatures.push(`bash:${normalizeCommand(segment)}`)
+      if (depth < 3) {
+        for (const sub of extractSubstitutions(segment)) expand(sub, depth + 1)
       }
     }
   }
@@ -763,6 +853,41 @@ export function levenshtein(a: string, b: string): number {
   return prev[n] ?? 0
 }
 
+/** Levenshtein with an early exit: returns the distance, or maxDist+1 once
+ * every cell of a row exceeds maxDist (no later row can lower it). The flood
+ * path calls fuzzySimilar per gate under the gates lock — the exit turns the
+ * DP cost cliff on long dissimilar pairs into a partial scan. */
+export function levenshteinCapped(a: string, b: string, maxDist: number): number {
+  if (a === b) return 0
+  const m = a.length
+  const n = b.length
+  if (m === 0) return n
+  if (n === 0) return m
+  if (Math.abs(m - n) > maxDist) return maxDist + 1
+  let prev = new Array<number>(n + 1)
+  let curr = new Array<number>(n + 1)
+  for (let j = 0; j <= n; j++) prev[j] = j
+  for (let i = 1; i <= m; i++) {
+    curr[0] = i
+    const ca = a.charAt(i - 1)
+    let rowMin = i
+    for (let j = 1; j <= n; j++) {
+      const cost = ca === b.charAt(j - 1) ? 0 : 1
+      const del = (prev[j] ?? 0) + 1
+      const ins = (curr[j - 1] ?? 0) + 1
+      const sub = (prev[j - 1] ?? 0) + cost
+      const v = Math.min(del, ins, sub)
+      curr[j] = v
+      if (v < rowMin) rowMin = v
+    }
+    if (rowMin > maxDist) return maxDist + 1
+    const tmp = prev
+    prev = curr
+    curr = tmp
+  }
+  return prev[n] ?? 0
+}
+
 /** Code fingerprints are IDENTITY, not data — they must match exactly. */
 const CODE_FINGERPRINTS = /<code:[0-9a-f]+>/g
 
@@ -832,8 +957,12 @@ export function fuzzySimilar(a: string, b: string): boolean {
   const flagsA = flagTokens(a)
   const flagsB = flagTokens(b)
   if (!flagSubset(flagsA, flagsB) && !flagSubset(flagsB, flagsA)) return false
-  const distance = levenshtein(a, b)
-  return distance >= 3 && distance / maxLen <= 0.3
+  // distance/maxLen <= 0.3 ⟺ distance <= floor(0.3*maxLen) for integer
+  // distances; below 3 the ratio bar and the absolute floor cannot both hold.
+  const cutoff = Math.floor(maxLen * 0.3)
+  if (cutoff < 3) return false
+  const distance = levenshteinCapped(a, b, cutoff)
+  return distance >= 3 && distance <= cutoff
 }
 
 // --- Failure detection -------------------------------------------------------

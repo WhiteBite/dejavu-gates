@@ -5,7 +5,7 @@ import { canBlock, canRemind, fuzzySimilar, FUZZY_MAX_LEN, hasResidualIdentity, 
 import { coerceGateShape, repairGate } from "./validate"
 
 /** Bumped on behavior changes; stamped into init log events so stale sessions are visible. */
-export const PLUGIN_VERSION = "2.27.0"
+export const PLUGIN_VERSION = "2.28.0"
 
 export interface Gate {
   /** sha1 signature prefix — the pattern identity */
@@ -35,6 +35,10 @@ export interface Gate {
   /** explicit bypasses (dejavu:proceed) against this gate — negative feedback:
    * a gate the agent keeps overriding is friction, not teaching */
   overrideCount: number
+  /** distinct sessions that explicitly bypassed this gate (capped). Override
+   * demotion needs votes from several of them: one stubborn or prompt-injected
+   * session must not be able to disarm a gate for everyone. */
+  overrideSessions?: string[]
   /** demoted once by behavioral feedback (recurrences/overrides). Such gates
    * never re-promote mechanically — a human re-enforces by clearing the flag */
   feedbackDemoted?: boolean
@@ -162,7 +166,9 @@ const LOAD_CACHE_TTL_MS = 1000
 export const GLOBAL_PROJECTS = 2
 /** gates expire when the pattern has not recurred for this many days */
 export const TTL_DAYS = 60
-/** weak one-off patterns (below promotion threshold, never enforced) rot this fast */
+/** one-off patterns that NEVER recurred (watching, count ≤ 1) rot this fast; a
+ * twice-seen pattern has proven recurrence and gets the full TTL_DAYS instead,
+ * so slow recurrences can still accumulate to the promotion bar */
 export const NOISE_TTL_DAYS = 7
 /** failures required before a pattern becomes an enforced gate */
 export const PROMOTE_COUNT = 3
@@ -184,6 +190,10 @@ export const DEMOTE_RECURRENCES = 3
 /** enforcement feedback: this many explicit bypasses mean the agent considers
  * the gate friction — demote it regardless of recurrence */
 export const DEMOTE_OVERRIDES = 3
+/** override demotion additionally requires this many DISTINCT bypassing
+ * sessions — mirror of DEMOTE_REOFFENSE_SESSIONS: one stubborn/injected
+ * session must not disarm a gate for everyone */
+export const DEMOTE_OVERRIDE_SESSIONS = 2
 /** recurrence demotion additionally requires this many DISTINCT sessions that
  * reoffended after a reminder — one bad session (or one bad model in a shared
  * store) must not be able to demote a gate for everyone else */
@@ -229,13 +239,42 @@ async function atomicWrite(path: string, content: string): Promise<void> {
 const LOCK_STALE_MS = 5000
 const LOCK_WAIT_MS = 3000
 
+/** Same-process critical sections serialize here FIRST: the file lock is
+ * cross-process only — two async contexts of one process (parallel tool calls)
+ * contending on it would burn LOCK_WAIT_MS polling and then degrade to
+ * unlocked, losing updates. The in-process queue is unbounded on purpose:
+ * our own sections always complete, unlike a foreign process we cannot trust. */
+const processQueues = new Map<string, Promise<unknown>>()
+
+async function withLock<T>(
+  lockTarget: string,
+  fn: () => Promise<T>,
+  onDegrade?: () => void,
+  onSteal?: (heldMs: number, previousPid: string) => void,
+): Promise<T> {
+  const prev = processQueues.get(lockTarget) ?? Promise.resolve()
+  let release!: () => void
+  const turn = new Promise<void>((resolve) => {
+    release = resolve
+  })
+  const chained = prev.then(() => turn)
+  processQueues.set(lockTarget, chained)
+  await prev
+  try {
+    return await withFileLock(lockTarget, fn, onDegrade, onSteal)
+  } finally {
+    release()
+    if (processQueues.get(lockTarget) === chained) processQueues.delete(lockTarget)
+  }
+}
+
 /**
  * Exclusive lockfile ("wx" create) with stale-lock stealing and graceful
  * degradation: if the lock cannot be acquired within LOCK_WAIT_MS the
  * critical section runs unlocked rather than hanging the tool pipeline.
  * Stealing is pid-liveness-gated and reported via onSteal.
  */
-async function withLock<T>(
+async function withFileLock<T>(
   lockTarget: string,
   fn: () => Promise<T>,
   onDegrade?: () => void,
@@ -370,7 +409,7 @@ export class GateStore {
   async flushDeferred(): Promise<void> {
     if (this.deferredEvents.length === 0) return
     let salient: LogEvent[] = []
-    await withLock(this.logPath, async () => {
+    await this.withLogLock(async () => {
       if (this.deferredEvents.length === 0) return
       const batch = this.deferredEvents
       this.deferredEvents = []
@@ -389,7 +428,7 @@ export class GateStore {
    * batch is fully captured before this runs, so nothing here can be lost. */
   async appendBatch(events: LogEvent[]): Promise<void> {
     if (events.length === 0) return
-    await withLock(this.logPath, async () => {
+    await this.withLogLock(async () => {
       await mkdir(ntPath(this.dir), { recursive: true })
       for (const e of events) {
         const line = `${JSON.stringify({ ts: new Date().toISOString(), ...e })}\n`
@@ -425,11 +464,24 @@ export class GateStore {
   }
 
   /**
-   * force=true bypasses the mtime cache (always used inside locks).
-   * Every record crosses the validation boundary: hopeless records are
-   * dropped, repairable ones coerced — enforcement never sees raw state.
+   * Read-only load (hot path). Never writes — an unparseable file is treated
+   * as an empty in-memory view, quarantine happens only in loadForMutation().
    */
-  async load(force = false): Promise<Gate[]> {
+  async load(): Promise<Gate[]> {
+    return this.loadGates(false)
+  }
+
+  /**
+   * Mutation load — call ONLY while holding the store lock. Bypasses the mtime
+   * cache and quarantines an unparseable file (a WRITE). Every record crosses
+   * the validation boundary: hopeless records are dropped, repairable ones
+   * coerced — enforcement never sees raw state.
+   */
+  async loadForMutation(): Promise<Gate[]> {
+    return this.loadGates(true)
+  }
+
+  private async loadGates(force: boolean): Promise<Gate[]> {
     // TTL fast path: the hot path (every tool call) must not pay a stat per
     // call. Gates change rarely (promotion, manual edit); 1s staleness is
     // invisible to enforcement and our own saves refresh the cache directly.
@@ -445,8 +497,15 @@ export class GateStore {
         return this.gates
       }
       raw = await readFile(ntPath(this.gatesPath), "utf8")
-    } catch {
-      // missing or unreadable gates.json — treat as an empty store
+    } catch (error) {
+      const code = (error as { code?: string }).code ?? ""
+      if (code !== "ENOENT") {
+        // A transient read failure (AV/indexer lock, EISDIR, EPERM) is NOT an
+        // empty store: proceeding with [] would let the next save() clobber
+        // the real gates.json. Fail loud; hook-level catches stay fail-open.
+        throw new Error(`dejavu: gates store unreadable (${code || "unknown error"}): ${this.gatesPath}`)
+      }
+      // missing gates.json — legitimately an empty store
       if (this.gates === null) {
         this.gates = []
         this.keyIndex = new Map()
@@ -529,8 +588,17 @@ export class GateStore {
     this.cacheUntilMs = Date.now() + LOAD_CACHE_TTL_MS
   }
 
-  /** Cross-project pattern index; meaningful only on the global store. */
-  async loadIndex(force = false): Promise<IndexFile> {
+  /** Cross-project pattern index; meaningful only on the global store. Read-only. */
+  async loadIndex(): Promise<IndexFile> {
+    return this.loadIndexFile(false)
+  }
+
+  /** Mutation load of the index — call ONLY while holding the index lock. */
+  async loadIndexForMutation(): Promise<IndexFile> {
+    return this.loadIndexFile(true)
+  }
+
+  private async loadIndexFile(force: boolean): Promise<IndexFile> {
     try {
       const info = await stat(ntPath(this.indexPath))
       if (!force && this.index !== null && info.mtimeMs === this.indexMtimeMs) {
@@ -542,8 +610,15 @@ export class GateStore {
       this.index = { version: 1, keys: keys !== null && typeof keys === "object" ? keys : {} }
       this.indexMtimeMs = info.mtimeMs
       return this.index
-    } catch {
-      // missing or unreadable index — treat as empty
+    } catch (error) {
+      const code = (error as { code?: string }).code ?? ""
+      // ENOENT and parse failures rebuild (the index is derived evidence);
+      // a transient read failure must not masquerade as an empty index —
+      // the next saveIndex() would clobber cross-project escalation evidence.
+      if (code !== "ENOENT" && !(error instanceof SyntaxError)) {
+        if (this.index !== null) return this.index
+        throw new Error(`dejavu: index unreadable (${code || "unknown error"}): ${this.indexPath}`)
+      }
       if (this.index === null) this.index = { version: 1, keys: {} }
       return this.index
     }
@@ -574,6 +649,17 @@ export class GateStore {
     )
   }
 
+  /** Log critical section under the log lock, reporting degradation. The log
+   * lock is a leaf (never held while holding gates/index), shared by every
+   * window on the global log — contention here must be as visible as the gates
+   * lock's, or unlocked interleaving (broken JSON lines) goes unexplained. The
+   * degrade event is deferred and flushed by the next log()/flushDeferred(). */
+  private async withLogLock<T>(fn: () => Promise<T>): Promise<T> {
+    return withLock(this.logPath, fn, () => {
+      this.deferEvent({ type: "degraded", key: "log.lock", snippet: `log lock contention exceeded ${LOCK_WAIT_MS}ms; append ran unlocked` })
+    })
+  }
+
   /**
    * Append under the log lock: every OpenCode window shares the global log,
    * and unlocked concurrent appends interleave into broken JSON lines.
@@ -584,7 +670,7 @@ export class GateStore {
    */
   async log(event: LogEvent): Promise<void> {
     let salientDeferred: LogEvent[] = []
-    await withLock(this.logPath, async () => {
+    await this.withLogLock(async () => {
       const batch = this.deferredEvents
       this.deferredEvents = []
       // Route only the deferred batch — it bypassed logAll. The direct `event`
@@ -608,13 +694,13 @@ export class GateStore {
    * never recurred enough to matter is noise, not memory.
    */
   async expire(ttlDays: number, noiseTtlDays: number): Promise<Gate[]> {
-    const gates = await this.load(true)
+    const gates = await this.loadForMutation()
     const now = Date.now()
     const expired = gates.filter((g) => {
-      // The long TTL belongs to patterns that reached THEIR promotion bar —
-      // probe tools promote at 5, so a probe gate at count 3-4 is still noise.
-      const threshold = PROBE_TOOLS.has(g.tool) ? PROMOTE_COUNT_PROBE : PROMOTE_COUNT
-      const ttl = g.status !== "watching" || g.count >= threshold ? ttlDays : noiseTtlDays
+      // Noise TTL is for TRUE one-offs (never recurred): a twice-seen pattern
+      // has proven recurrence and gets the full TTL even below the promotion
+      // bar, so slow recurrences (every 8+ days) can still reach promotion.
+      const ttl = g.status !== "watching" || g.count >= 2 ? ttlDays : noiseTtlDays
       return Date.parse(g.lastSeen) < now - ttl * DAY_MS
     })
     if (expired.length === 0) return []
@@ -639,7 +725,7 @@ export class GateStore {
   }
 
   async rotateLog(rotateBytes: number = LOG_ROTATE_BYTES): Promise<void> {
-    await withLock(this.logPath, async () => {
+    await this.withLogLock(async () => {
       try {
         const info = await stat(ntPath(this.logPath))
         if (info.size < rotateBytes) return
@@ -748,7 +834,7 @@ export class GateStore {
    * (concurrent OpenCode startups all reconcile at once). */
   private async exciseCorruptLogLines(): Promise<void> {
     let excised = 0
-    await withLock(this.logPath, async () => {
+    await this.withLogLock(async () => {
       let raw: string
       try {
         raw = await readFile(ntPath(this.logPath), "utf8")
@@ -853,6 +939,13 @@ export function mergeGate(target: Gate, source: Gate): void {
     }
     if (target.reoffenseSessions.length > MAX_SESSIONS) target.reoffenseSessions = target.reoffenseSessions.slice(-MAX_SESSIONS)
   }
+  if (source.overrideSessions !== undefined) {
+    if (target.overrideSessions === undefined) target.overrideSessions = []
+    for (const session of source.overrideSessions) {
+      if (!target.overrideSessions.includes(session)) target.overrideSessions.push(session)
+    }
+    if (target.overrideSessions.length > MAX_SESSIONS) target.overrideSessions = target.overrideSessions.slice(-MAX_SESSIONS)
+  }
 }
 
 /**
@@ -875,13 +968,45 @@ export function checkFeedbackDemotion(gate: Gate): boolean {
   const baseOverrides = gate.feedbackBaseline?.overrides ?? 0
   const recurredEnough = gate.recurredAfterGate - baseRecurred >= DEMOTE_RECURRENCES
   const reoffenseVotes = gate.reoffenseSessions?.length ?? 0
-  if ((recurredEnough && reoffenseVotes >= DEMOTE_REOFFENSE_SESSIONS) || gate.overrideCount - baseOverrides >= DEMOTE_OVERRIDES) {
+  const overrideVotes = gate.overrideSessions?.length ?? 0
+  const overridesEnough = gate.overrideCount - baseOverrides >= DEMOTE_OVERRIDES && overrideVotes >= DEMOTE_OVERRIDE_SESSIONS
+  if ((recurredEnough && reoffenseVotes >= DEMOTE_REOFFENSE_SESSIONS) || overridesEnough) {
     gate.status = "watching"
     gate.feedbackDemoted = true
     gate.feedbackBaseline = { recurred: gate.recurredAfterGate, overrides: gate.overrideCount }
     return true
   }
   return false
+}
+
+/**
+ * Soft retirement (taught): the reminder works, so the agent changed behavior
+ * and no success will ever heal the gate. Demote to watching and capture a
+ * re-promotion damping baseline. No feedbackDemoted mark — re-promotion on a
+ * fresh bar of failures stays possible. Caller saves and logs.
+ */
+export function retireTaught(gate: Gate): void {
+  gate.status = "watching"
+  gate.retireBaseline = { count: gate.count }
+}
+
+/**
+ * Anti-nag retirement (the negative twin of taught): reminders are consistently
+ * ignored, so the gate nags instead of teaching. Demote to watching, mark
+ * feedbackDemoted (no mechanical re-promotion — behavior already voted against
+ * it), capture the feedback baseline, and reset the reminder counters so a
+ * manual re-enforce gets a genuinely fresh start. Returns the pre-reset counts
+ * for the caller's log snippet. Caller saves and logs.
+ */
+export function retireAntiNag(gate: Gate): { reminded: number; reoffended: number } {
+  const reminded = gate.remindedCount
+  const reoffended = gate.recurredAfterReminder
+  gate.status = "watching"
+  gate.feedbackDemoted = true
+  gate.feedbackBaseline = { recurred: gate.recurredAfterGate, overrides: gate.overrideCount }
+  gate.remindedCount = 0
+  gate.recurredAfterReminder = 0
+  return { reminded, reoffended }
 }
 
 /**
@@ -992,7 +1117,7 @@ export class Stores {
     }
     // The cross-project index rots on the same schedule as the gates.
     await this.globalStore.runLockedIndex(async () => {
-      const index = await this.globalStore.loadIndex(true)
+      const index = await this.globalStore.loadIndexForMutation()
       const now = Date.now()
       const cutoff = now - ttlDays * DAY_MS
       let changed = false
@@ -1043,7 +1168,7 @@ export class Stores {
   async forgetSession(sessionID: string): Promise<void> {
     for (const store of this.scopes()) {
       await store.runLocked(async () => {
-        const gates = await store.load(true)
+        const gates = await store.loadForMutation()
         let changed = false
         for (const gate of gates) {
           if (gate.remindedSessions && gate.remindedSessions[sessionID] !== undefined) {
@@ -1078,7 +1203,7 @@ export class Stores {
         // full per-gate scan. Policy re-checks still run on every load via
         // repairGate, and new gates are created compliant, so the stamp is safe.
         if (!force && store.migratedVersion === PLUGIN_VERSION) return
-        const gates = await store.load(true)
+        const gates = await store.loadForMutation()
         let changed = false
         for (const gate of gates) {
           if (gate.status === "blocking" && !canBlock(gate.tool, gate.signature)) {
@@ -1177,12 +1302,12 @@ export class Stores {
     const projectStore = this.projectStore
     if (projectStore) {
       await projectStore.runLocked(async () => {
-        const projGates = await projectStore.load(true)
+        const projGates = await projectStore.loadForMutation()
         const globalKeys = new Set((await this.globalStore.load()).map((g) => g.key))
         const dupes = projGates.filter((g) => globalKeys.has(g.key))
         if (dupes.length === 0) return
         await this.globalStore.runLocked(async () => {
-          const globalGates = await this.globalStore.load(true)
+          const globalGates = await this.globalStore.loadForMutation()
           for (const dupe of dupes) {
             const target = globalGates.find((g) => g.key === dupe.key)
             if (target) {
@@ -1215,7 +1340,7 @@ export class Stores {
     if (projectStore) {
       const index = await this.globalStore.loadIndex()
       // Non-force load: this is a routing-hint read (the authoritative
-      // load(true) happens under the locks below). The force path would
+      // loadForMutation() happens under the locks below). The force path would
       // quarantine an unparseable file WITHOUT the gates lock — the very
       // write-without-lock class round 3 fixed in doctor.
       const toEscalate = (await projectStore.load()).filter((g) => {
@@ -1231,7 +1356,7 @@ export class Stores {
       if (toEscalate.length > 0) {
         await projectStore.runLocked(async () => {
           await this.globalStore.runLocked(async () => {
-            const globalGates = await this.globalStore.load(true)
+            const globalGates = await this.globalStore.loadForMutation()
             for (const gate of toEscalate) {
               const target = globalGates.find((g) => g.key === gate.key)
               if (target) {
@@ -1265,7 +1390,7 @@ export class Stores {
     // section at exactly init-storm time).
     let rebuilt = 0
     await this.globalStore.runLockedIndex(async () => {
-      const index = await this.globalStore.loadIndex(true)
+      const index = await this.globalStore.loadIndexForMutation()
       // Non-force load: we hold the INDEX lock, not the gates lock — the force
       // path could quarantine global gates.json without its lock. reconcile()
       // refreshed this cache moments ago, so the peek is fresh.
@@ -1324,7 +1449,7 @@ export class Stores {
     const phase1 = await store.runLocked(async (): Promise<{ moved: Gate | null; ephemeral: Gate | null; promoted: boolean }> => {
       let promoted = false
       let ephemeral: Gate | null = null
-      const gates = await store.load(true)
+      const gates = await store.loadForMutation()
       let gate = gates.find((g) => g.key === input.key)
       let fuzzyConsolidated = false
       // Consolidation: same tool + near-duplicate signature merges into the
@@ -1478,6 +1603,7 @@ export class Stores {
           gate.succeededAfterGate = 0
           delete gate.feedbackBaseline
           delete gate.reoffenseSessions
+          delete gate.overrideSessions
           delete gate.remindedSessions
           delete gate.failedSessions
           // The damping baseline is consumed by this promotion — the next
@@ -1528,13 +1654,12 @@ export class Stores {
     // gate, orphaning the entry and starving the gate's escalation.
     let indexProjects = 0
     await this.globalStore.runLockedIndex(async () => {
-      const index = await this.globalStore.loadIndex(true)
+      const index = await this.globalStore.loadIndexForMutation()
       let entry = index.keys[movedGate.key]
-      // Index churn gate: the FIRST failure of a brand-new pattern (no entry
-      // yet, seen once) carries no escalation value — skip the machine-wide
-      // rewrite. Anything already indexed or recurring updates as before, so
-      // cross-project escalation sees the same evidence minus one-off noise.
-      if (entry === undefined && movedGate.count < 2) return
+      // Every failure indexes, including the first: a pattern failing ONCE per
+      // project across N projects is the canonical agent habit — skipping
+      // count<2 starved exactly the sparse cross-project evidence the global
+      // store exists to collect (it could never reach GLOBAL_PROJECTS).
       if (!entry) {
         entry = { projects: [], lastSeen: now }
         index.keys[movedGate.key] = entry
@@ -1567,7 +1692,7 @@ export class Stores {
       // else escalated/expired it — abort (a duplicate heals, never a hole).
       let gateCopy: Gate | null = null
       await store.runLocked(async () => {
-        const fresh = (await store.load(true)).find((g) => g.key === movedGate.key)
+        const fresh = (await store.loadForMutation()).find((g) => g.key === movedGate.key)
         if (fresh !== undefined) gateCopy = JSON.parse(JSON.stringify(fresh)) as Gate
       })
       if (gateCopy !== null) {
@@ -1576,7 +1701,7 @@ export class Stores {
         // the local one, so a crash between the two writes leaves a duplicate
         // (healed by migrate), never a hole.
         await this.globalStore.runLocked(async () => {
-          const globalGates = await this.globalStore.load(true)
+          const globalGates = await this.globalStore.loadForMutation()
           const existing = globalGates.find((g) => g.key === movedGate.key)
           if (existing) {
             mergeGate(existing, copy)
@@ -1587,7 +1712,7 @@ export class Stores {
         })
         // 3c — project gates lock: remove the now-escalated local copy.
         await store.runLocked(async () => {
-          const gates = await store.load(true)
+          const gates = await store.loadForMutation()
           const idx = gates.findIndex((g) => g.key === movedGate.key)
           if (idx >= 0) gates.splice(idx, 1)
           await store.save()
@@ -1635,7 +1760,7 @@ export class Stores {
     const gateKey = input.key
     let healedEvent: LogEvent | null = null
     await store.runLocked(async () => {
-      const fresh = (await store.load(true)).find((g) => g.key === gateKey)
+      const fresh = (await store.loadForMutation()).find((g) => g.key === gateKey)
       if (fresh === undefined || fresh.status === "watching") return
       fresh.succeededAfterGate = (fresh.succeededAfterGate ?? 0) + 1
       if (fresh.remindedSessions !== undefined && fresh.remindedSessions[input.sessionID] !== undefined) {

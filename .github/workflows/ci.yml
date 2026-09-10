@@ -15,3 +15,7 @@ jobs:
       - run: bun test/smoke.ts
       - run: bun test/property.ts
       - run: bun test/fuzz.ts
+      - name: Install ast-grep
+        run: npm install -g @ast-grep/cli@0.45
+      - name: AST gates (no-load-force-flag)
+        run: ast-grep scan

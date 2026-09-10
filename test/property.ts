@@ -8,8 +8,10 @@
  * Run: bun test/property.ts
  */
 import {
+  bashSegmentSignatures,
   callSignature,
   fuzzySimilar,
+  levenshtein,
   normalizeCommand,
   parameterizeError,
   scrubSecrets,
@@ -75,6 +77,7 @@ function genCommand(): string {
     else if (roll < 0.7) parts.push(`cd ${pick(PATHS)}`)
     else if (roll < 0.8) parts.push(`echo ${pick(NUMS)}`)
     else if (roll < 0.9) parts.push(`git log ${pick(HEXES)}`)
+    else if (roll < 0.95) parts.push(`echo $(${pick(VERBS)})`)
     else parts.push(pick(COMMENTS))
   }
   let cmd = parts.join(pick(CHAINS))
@@ -189,6 +192,65 @@ for (let i = 0; i < 500; i++) {
   if (fuzzySimilar(a, b) !== fuzzySimilar(b, a)) {
     fail("fuzzySimilar not symmetric", `${JSON.stringify(a)} vs ${JSON.stringify(b)}`)
     break
+  }
+}
+
+// capped-DP fuzzy must be indistinguishable from the reference semantics
+// (full Levenshtein + ratio rule) — the early exit may only skip work, never
+// change verdicts. Mutated pairs sit near the distance/ratio boundary.
+function refFuzzySimilar(a: string, b: string): boolean {
+  if (a === b) return true
+  const maxLen = Math.max(a.length, b.length)
+  if (maxLen === 0) return true
+  if (maxLen > 300) return false
+  if (Math.abs(a.length - b.length) / maxLen > 0.3) return false
+  const codesA = a.match(/<code:[0-9a-f]+>/g)
+  const codesB = b.match(/<code:[0-9a-f]+>/g)
+  if (codesA !== null || codesB !== null) {
+    if (codesA === null || codesB === null || codesA.join("\u0000") !== codesB.join("\u0000")) return false
+  }
+  const flags = (s: string): string[] => s.split(/\s+/).filter((t) => t.startsWith("-")).sort()
+  const subset = (x: string[], y: string[]): boolean => {
+    const set = new Set(y)
+    return x.every((t) => set.has(t))
+  }
+  const fa = flags(a)
+  const fb = flags(b)
+  if (!subset(fa, fb) && !subset(fb, fa)) return false
+  const distance = levenshtein(a, b)
+  return distance >= 3 && distance / maxLen <= 0.3
+}
+function mutate(s: string): string {
+  let out = s
+  const k = 1 + rint(8)
+  for (let j = 0; j < k; j++) {
+    const op = rint(3)
+    const pos = out.length > 0 ? rint(out.length) : 0
+    if (op === 0) out = out.slice(0, pos) + pick(["x", "-", " ", "7"]) + out.slice(pos)
+    else if (op === 1 && out.length > 1) out = out.slice(0, pos) + out.slice(pos + 1)
+    else if (out.length > 0) out = out.slice(0, pos) + pick(["y", "_", "Q"]) + out.slice(pos + 1)
+  }
+  return out
+}
+for (let i = 0; i < 2000; i++) {
+  const a = `bash:${genCommand()}`
+  const b = i % 2 === 0 ? mutate(a) : `bash:${genCommand()}`
+  if (fuzzySimilar(a, b) !== refFuzzySimilar(a, b)) {
+    fail("capped fuzzy diverges from reference", `${JSON.stringify(a)} vs ${JSON.stringify(b)}`)
+    break
+  }
+}
+
+// a command hidden inside $(...) or backticks must still surface as a segment
+// signature — substitutions are a chain-bypass hole if the scanner misses them
+for (const verb of VERBS) {
+  const inner = callSignature("bash", { command: verb })
+  if (inner === null) continue
+  const wrapped = [`echo prefix $(${verb}) suffix-more`, "echo prefix `" + verb + "` suffix-more", `X=$(${verb}) && echo done`, `echo "$(${verb})" | tee log.txt`]
+  for (const w of wrapped) {
+    if (!bashSegmentSignatures(w).includes(inner)) {
+      fail("substitution hid a gated command", `${JSON.stringify(w)} -> ${JSON.stringify(bashSegmentSignatures(w))}`)
+    }
   }
 }
 

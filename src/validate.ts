@@ -74,6 +74,10 @@ export function coerceGateShape(raw: unknown): Gate | null {
     const sessions = r.reoffenseSessions.filter((x): x is string => typeof x === "string")
     if (sessions.length > 0) gate.reoffenseSessions = sessions.slice(-SESSION_STATE_CAP)
   }
+  if (Array.isArray(r.overrideSessions)) {
+    const sessions = r.overrideSessions.filter((x): x is string => typeof x === "string")
+    if (sessions.length > 0) gate.overrideSessions = sessions.slice(-SESSION_STATE_CAP)
+  }
   if (r.feedbackBaseline !== null && typeof r.feedbackBaseline === "object" && !Array.isArray(r.feedbackBaseline)) {
     const b = r.feedbackBaseline as Record<string, unknown>
     const recurred = typeof b.recurred === "number" && Number.isFinite(b.recurred) && b.recurred >= 0 ? Math.floor(b.recurred) : 0

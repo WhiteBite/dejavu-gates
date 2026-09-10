@@ -1,0 +1,9 @@
+id: no-load-force-flag
+language: typescript
+severity: error
+message: "load(true)/loadIndex(true) is a WRITE-capable read (force bypasses the cache and may quarantine a corrupt file). Call loadForMutation()/loadIndexForMutation() instead — and only while holding the store lock — so the write capability is visible in the name, not hidden behind a boolean."
+note: "Root cause: a getter whose boolean flag silently turns it into a writer. The name must carry the capability. See src/store.ts load()/loadForMutation()."
+rule:
+  any:
+    - pattern: $OBJ.load(true)
+    - pattern: $OBJ.loadIndex(true)

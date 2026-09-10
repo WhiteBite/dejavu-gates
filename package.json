@@ -1,6 +1,6 @@
 {
   "name": "opencode-dejavu",
-  "version": "2.27.0",
+  "version": "2.28.0",
   "description": "Cross-session memory prosthesis for OpenCode: detects recurring tool-call failures and promotes them into enforced gates. Remind first, block on same-session repeat offense.",
   "type": "module",
   "main": "index.ts",
@@ -32,7 +32,8 @@
   "bugs": "https://github.com/WhiteBite/opencode-dejavu/issues",
   "scripts": {
     "typecheck": "tsc --noEmit",
-    "test": "bun test/smoke.ts"
+    "test": "bun test/smoke.ts",
+    "lint:ast": "ast-grep scan"
   },
   "license": "MIT",
   "devDependencies": {

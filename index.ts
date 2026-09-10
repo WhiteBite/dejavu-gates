@@ -16,8 +16,9 @@ import {
   scrubSecrets,
   shouldWarnLongRunning,
   shouldWarnWaitLoop,
+  stripQuotedSpans,
 } from "./src/patterns"
-import { checkFeedbackDemotion, GateStore, GLOBAL_PROJECTS, MAX_SESSIONS, NOISE_TTL_DAYS, Stores, TTL_DAYS, type Gate, type LogEvent, PLUGIN_VERSION } from "./src/store"
+import { checkFeedbackDemotion, GateStore, GLOBAL_PROJECTS, MAX_SESSIONS, NOISE_TTL_DAYS, retireAntiNag, retireTaught, Stores, TTL_DAYS, type Gate, type LogEvent, PLUGIN_VERSION } from "./src/store"
 
 // --- Tunables ---------------------------------------------------------------
 
@@ -218,7 +219,7 @@ export const Dejavu: Plugin = async ({ directory, client }) => {
         // escape hatch still allows a deliberate foreground run.
         if (input.tool === "bash" && typeof rawArgs.command === "string") {
           const command = rawArgs.command
-          const proceeded = /#[ \t]*dejavu:proceed\b/.test(command.replace(/"[^"]*"|'[^']*'/g, " "))
+          const proceeded = /#[ \t]*dejavu:proceed\b/.test(stripQuotedSpans(command))
           if (!proceeded && shouldWarnLongRunning(command)) {
             throw new GateSignal(
               `[dejavu] LONG-RUNNING — this looks like a dev server / watcher started in FOREGROUND bash; it will block until the bash timeout and leave an orphan process. Do NOT give up on it — start it DETACHED and continue: PowerShell \`Start-Process npm -ArgumentList 'run','dev'\` (or \`Start-Process powershell -ArgumentList '-File','start-dev.ps1'\`), bash \`nohup npm run dev > server.log 2>&1 &\`, or \`tmux new-session -d\`. For e2e/browser tests: start it detached, then read the ACTUAL port from the server's startup log (with strictPort off the server picks a FREE port, so the configured port may be wrong — polling a wrong port hangs forever), poll THAT port until it answers, run your tests against it, then kill the process. If you truly need it in foreground, append the trailing comment "# dejavu:proceed".`,
@@ -239,6 +240,19 @@ export const Dejavu: Plugin = async ({ directory, client }) => {
           }
         }
 
+        // Track every call that gets past the proactive guards: the after-hook
+        // may arrive without args, and the fallback must cover NEW patterns
+        // too, not just ones that matched a gate. Gate-aborted calls are
+        // dropped on the throw path; the FIFO cap bounds the rest.
+        if (typeof input.callID === "string") {
+          pendingCalls.set(input.callID, signature)
+          while (pendingCalls.size > PENDING_CAP) {
+            const oldest = pendingCalls.keys().next()
+            if (oldest.done) break
+            pendingCalls.delete(oldest.value)
+          }
+        }
+
         // Chain-bypass protection: a gate on "rm -rf /" must also fire when the
         // command hides inside "git status && rm -rf /".
         const candidates = [signature]
@@ -256,16 +270,6 @@ export const Dejavu: Plugin = async ({ directory, client }) => {
           }
         }
         if (!found) return
-        // Only track calls that will actually run: an aborted (thrown) call never
-        // reaches the after-hook, so recording it earlier would leak forever.
-        if (typeof input.callID === "string") {
-          pendingCalls.set(input.callID, signature)
-          while (pendingCalls.size > PENDING_CAP) {
-            const oldest = pendingCalls.keys().next()
-            if (oldest.done) break
-            pendingCalls.delete(oldest.value)
-          }
-        }
 
         const gate = found.gate
         const via = found.via
@@ -292,7 +296,7 @@ export const Dejavu: Plugin = async ({ directory, client }) => {
         // The marker must be a COMMENT (`# dejavu:proceed`): quote-stripping
         // alone left unquoted markers smuggled as data (`echo dejavu:proceed
         // && gated-cmd`, `tool --message dejavu:proceed`) bypassing gates.
-        if (/#[ \t]*dejavu:proceed\b/.test(markerText.replace(/"[^"]*"|'[^']*'/g, " "))) {
+        if (/#[ \t]*dejavu:proceed\b/.test(stripQuotedSpans(markerText))) {
           await stores.logAll({ type: "override", key: gate.key, tool: gate.tool, session, project: directory })
           // Overrides are the sanctioned bypass — surface them loudly; a
           // prompt-injected agent overriding everything must be noticeable.
@@ -301,9 +305,16 @@ export const Dejavu: Plugin = async ({ directory, client }) => {
            const overrideTarget = found
           let demotedEvent: LogEvent | null = null
           await overrideTarget.store.runLocked(async () => {
-            const fresh = (await overrideTarget.store.load(true)).find((g) => g.key === gate.key)
+            const fresh = (await overrideTarget.store.loadForMutation()).find((g) => g.key === gate.key)
             if (fresh === undefined || fresh.status !== "blocking") return
             fresh.overrideCount += 1
+            // Distinct-session votes: one stubborn/injected session must not
+            // disarm the gate for everyone (mirror of reoffenseSessions).
+            if (fresh.overrideSessions === undefined) fresh.overrideSessions = []
+            if (!fresh.overrideSessions.includes(session)) {
+              fresh.overrideSessions.push(session)
+              if (fresh.overrideSessions.length > MAX_SESSIONS) fresh.overrideSessions = fresh.overrideSessions.slice(-MAX_SESSIONS)
+            }
             const demoted = checkFeedbackDemotion(fresh)
             await overrideTarget.store.save()
             if (demoted) {
@@ -344,7 +355,7 @@ export const Dejavu: Plugin = async ({ directory, client }) => {
         // holding the gates lock cascades into degrade storms.
         const pendingLogs: LogEvent[] = []
         await target.store.runLocked(async () => {
-          const fresh = (await target.store.load(true)).find((g) => g.key === gate.key)
+          const fresh = (await target.store.loadForMutation()).find((g) => g.key === gate.key)
           if (fresh === undefined) return // gate deleted between find and lock
 
           // Repeat offense: reminded, retried, failed again -> hard block.
@@ -387,10 +398,7 @@ export const Dejavu: Plugin = async ({ directory, client }) => {
             // Retire softly: this is the last reminder, re-promotion on new
             // failures stays possible (no feedbackDemoted mark).
             if (firstEncounter && fresh.remindedCount >= TAUGHT_REMINDERS && fresh.recurredAfterReminder === 0 && fresh.recurredAfterGate === 0) {
-              fresh.status = "watching"
-              // Oscillation damping: capture the count at retirement (mirror of
-              // the heal path) so re-promotion needs a full fresh bar.
-              fresh.retireBaseline = { count: fresh.count }
+              retireTaught(fresh)
               await target.store.save()
               pendingLogs.push({ type: "reminded", key: fresh.key, tool: fresh.tool, session, project: directory, via })
               pendingLogs.push({
@@ -425,13 +433,7 @@ export const Dejavu: Plugin = async ({ directory, client }) => {
               fresh.remindedCount >= ANTI_NAG_REMINDERS &&
               fresh.recurredAfterReminder >= ANTI_NAG_REOFFENSE
             ) {
-              const nagReminded = fresh.remindedCount
-              const nagReoffended = fresh.recurredAfterReminder
-              fresh.status = "watching"
-              fresh.feedbackDemoted = true
-              fresh.feedbackBaseline = { recurred: fresh.recurredAfterGate, overrides: fresh.overrideCount }
-              fresh.remindedCount = 0
-              fresh.recurredAfterReminder = 0
+              const { reminded, reoffended } = retireAntiNag(fresh)
               await target.store.save()
               pendingLogs.push({
                 type: "demoted",
@@ -439,7 +441,7 @@ export const Dejavu: Plugin = async ({ directory, client }) => {
                 tool: fresh.tool,
                 session,
                 project: directory,
-                snippet: `anti-nag retirement (reminded ${nagReminded}x, reoffended ${nagReoffended}x) — reminders ignored, stopped enforcing`,
+                snippet: `anti-nag retirement (reminded ${reminded}x, reoffended ${reoffended}x) — reminders ignored, stopped enforcing`,
               })
               return
             }
@@ -590,7 +592,7 @@ export const Dejavu: Plugin = async ({ directory, client }) => {
         // reminding notes are appended to the failing output after the lock, once per session
         let annotation: string | null = null
         await ownerStore.runLocked(async () => {
-          const fresh = (await ownerStore.load(true)).find((g) => g.key === result.gate.key)
+          const fresh = (await ownerStore.loadForMutation()).find((g) => g.key === result.gate.key)
           if (fresh === undefined) return
           let changed = false
           // Metric: failure of an already-enforced pattern (the event that
@@ -652,8 +654,7 @@ export const Dejavu: Plugin = async ({ directory, client }) => {
               // pattern proves itself one more time. Re-promotion on new
               // failures stays possible (no feedbackDemoted; baseline captured).
               if (fresh.remindedCount > TAUGHT_REMINDERS && fresh.recurredAfterReminder === 0) {
-                fresh.status = "watching"
-                fresh.retireBaseline = { count: fresh.count }
+                retireTaught(fresh)
                 escalationLogs.push({
                   type: "retired-taught",
                   key: fresh.key,
@@ -667,20 +668,14 @@ export const Dejavu: Plugin = async ({ directory, client }) => {
               fresh.recurredAfterReminder += 1
               changed = true
               if (fresh.remindedCount >= ANTI_NAG_REMINDERS && fresh.recurredAfterReminder >= ANTI_NAG_REOFFENSE) {
-                const nagReminded = fresh.remindedCount
-                const nagReoffended = fresh.recurredAfterReminder
-                fresh.status = "watching"
-                fresh.feedbackDemoted = true
-                fresh.feedbackBaseline = { recurred: fresh.recurredAfterGate, overrides: fresh.overrideCount }
-                fresh.remindedCount = 0
-                fresh.recurredAfterReminder = 0
+                const { reminded, reoffended } = retireAntiNag(fresh)
                 escalationLogs.push({
                   type: "demoted",
                   key: fresh.key,
                   tool: input.tool,
                   session,
                   project: directory,
-                  snippet: `anti-nag retirement (reminded ${nagReminded}x, reoffended ${nagReoffended}x) — reminders ignored, stopped enforcing`,
+                  snippet: `anti-nag retirement (reminded ${reminded}x, reoffended ${reoffended}x) — reminders ignored, stopped enforcing`,
                 })
               }
             }

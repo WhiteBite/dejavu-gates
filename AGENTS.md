@@ -53,7 +53,7 @@ Line numbers intentionally omitted — they rot every round; locate by symbol na
 | `isIntendedNonzero` | fn | src/patterns.ts | exit-1 immunity for diagnostic chains (all segments diagnostic; paren groups flattened first) |
 | `canBlock` / `canRemind` | fn | src/patterns.ts | blocking tier / remind-only tier (diagnostics + iteration verbs) |
 | `isRepoLocal` | fn | src/patterns.ts | repo-local verbs that never escalate globally |
-| `splitChain` / `bashSegmentSignatures` | fn | src/patterns.ts | quote/paren-aware chain split; per-segment signatures (chain-bypass protection) |
+| `splitChain` / `bashSegmentSignatures` | fn | src/patterns.ts | quote/paren-aware chain split; per-segment signatures, unfolds `cmd /c` + `$(...)` + backticks (chain-bypass protection) |
 | `callSignature` | fn | src/patterns.ts | stable call identity per tool (bash/read/edit/write/glob/grep) |
 | `patternKey` | fn | src/patterns.ts | sha1 prefix-12 of signature — the gate key |
 | `fuzzySimilar` | fn | src/patterns.ts | near-duplicate merge; length-band pre-filter + `FUZZY_MAX_LEN` cap |
@@ -64,9 +64,11 @@ Line numbers intentionally omitted — they rot every round; locate by symbol na
 | `nonTransparentProducers` | fn | src/patterns.ts | counts chain segments that can be the failing producer — single-producer rule for chain attribution |
 | `hasResidualIdentity` | fn | src/patterns.ts | over-generic shape guard — gates every enforcement tier (flag-only wrapper shapes have no identity) |
 | `GLOBAL_PROJECTS` | const | src/store.ts | cross-project escalation threshold |
-| `GateStore` | class | src/store.ts | one scope: gates.json + index.json + log.jsonl, TTL caches, key index |
+| `GateStore` | class | src/store.ts | one scope: gates.json + index.json + log.jsonl, TTL caches, key index; `load()` read-only vs `loadForMutation()` (write-capable, under lock) |
 | `mergeGate` | fn | src/store.ts | evidence merge for dedupe/escalation (rank-preserving, preserves session state + feedback marks) |
-| `checkFeedbackDemotion` | fn | src/store.ts | negative feedback: recurrences/overrides → watching + `feedbackDemoted` |
+| `checkFeedbackDemotion` | fn | src/store.ts | negative feedback: recurrences (2+ reoffense sessions) / overrides (2+ bypassing sessions) → watching + `feedbackDemoted` |
+| `retireTaught` / `retireAntiNag` | fn | src/store.ts | shared retirement mutations (taught = soft, anti-nag = feedbackDemoted + counter reset); conditions stay tier-explicit at the hook call sites |
+| `levenshteinCapped` | fn | src/patterns.ts | early-exit edit distance for the fuzzy flood path (same verdicts as full Levenshtein) |
 | `Stores` | class | src/store.ts | two-scope manager: findGate/recordFailure/recordSuccess/migrate/expireAll/reconcileAll/forgetSession |
 | `recordSuccess` | method | src/store.ts | heal streak + session-chain clearing (exact matches only) |
 | `coerceGateShape` | fn | src/validate.ts | strict parse of a persisted gate record (hopeless → null) |
@@ -99,7 +101,7 @@ Line numbers intentionally omitted — they rot every round; locate by symbol na
 - Do NOT let file-probe or diagnostic tools reach `blocking` status — `canBlock()` is the single source of truth; `migrate()` auto-demotes violations (diagnostics land in `reminding`, never `blocking`)
 - Do NOT create gates manually — promotion is mechanical (3 failures × 2 sessions)
 - Do NOT delete quarantine files (`gates.json.corrupt-*`, `log.jsonl.corrupt`) without inspection — they are the preserved forensic bytes of corrupted data
-- Do NOT bypass the validation boundary — gates enter memory through `coerceGateShape`/`repairGate` (in `load()`) and structural healing through `reconcile()`; never hand-roll raw JSON reads/writes of store files
+- Do NOT bypass the validation boundary — gates enter memory through `coerceGateShape`/`repairGate` (in `load()`/`loadForMutation()`) and structural healing through `reconcile()`; never hand-roll raw JSON reads/writes of store files. Use `loadForMutation()` (not a `load(true)` flag) inside locks — the write capability is in the name (`no-load-force-flag` ast-grep gate)
 
 ## UNIQUE STYLES
 
@@ -109,14 +111,14 @@ Line numbers intentionally omitted — they rot every round; locate by symbol na
 - Multi-window safe: the remind→block chain is persisted on the gate, not in process memory — several OpenCode windows (each its own process on the shared store) and process restarts all see the same escalation; hot-path reads use a 1s TTL cache + O(1) key index
 - `dejavu:proceed` escape hatch: trailing marker comment, matched with word boundaries, stripped before normalization so bypassed failures land on the original pattern
 - `recurredAfterGate` is THE health metric — gates that fire without killing the error get `review: true`; its mirror `succeededAfterGate` heals gates — 3 consecutive successes on an enforced gate retire it to `watching`, so a fixed command stops reminding
-- Enforcement has negative feedback: 3+ post-gate recurrences or 5+ explicit overrides demote a gate to `watching` + `feedbackDemoted` (never re-promotes mechanically; `feedbackBaseline` gives a human re-enforcement a fresh grace window) — a gate the agent keeps fighting is friction, not teaching; overrides are counted on the gate (`overrideCount`, blocking gates only), demotions log `demoted`
+- Enforcement has negative feedback: 3+ post-gate recurrences (across 2+ reoffense sessions) or 3+ explicit overrides (across 2+ distinct bypassing sessions) demote a gate to `watching` + `feedbackDemoted` (never re-promotes mechanically; `feedbackBaseline` gives a human re-enforcement a fresh grace window) — a gate the agent keeps fighting is friction, not teaching; BOTH votes need distinct sessions so one stubborn/injected session can't disarm a gate; overrides are counted on the gate (`overrideCount`/`overrideSessions`, blocking gates only), demotions log `demoted`
 - The loop closes on success: a SUCCESS on an enforced gate clears that session from the remind→block chain (override + prove-the-fix leaves the session clean) and grows the heal streak — enforcement listens to behavior in both directions; iteration runners (`dart run`, `go run|build|test|vet`, `cargo run|build|test|clippy`) annotate the failing output but never interrupt or block
 - Taught retirement: a gate reminded 5+ times with zero reoffense has taught its lesson (no success can ever heal it — the agent changed behavior) and retires to watching (`retired-taught`); re-promotion on new failures stays possible. Blocking fires it in the before-hook (`recurredAfterGate === 0`); reminding fires it in the after-hook at one reminder higher (`recurredAfterGate` grows structurally there, so only `recurredAfterReminder === 0` is the teachability signal) — the extra round keeps it from preempting anti-nag evidence
 - Retirement damping: a healed/taught-retired gate keeps its lifetime `count`/`sessions`, which alone would clear the promotion bar and re-promote it on the very next single failure (a promote→heal→promote loop). Retirement captures `retireBaseline.count`; re-promotion needs a full fresh bar of failures since retirement (`count − retireBaseline.count ≥ threshold`). Doctor's FLAPPY report watches for the oscillation
 - `promotionCount` is the lifetime promotion counter (never reset, merge-summed) — the rot-proof FLAPPY signal; doctor escalates it at `>= 3`. `lastInitVersion` is stamped by `save()` with the writer's own version — the durable version-drift signal (log init events rotate away)
 - Cross-channel dedup: one tool call must never be counted twice — the after-hook (exit/text) and the event stream (error parts) are disjoint by construction, but a runtime guard keyed on (key, session) + channel-mismatch window counts a double-firing call once (doctor's CROSS-CHANNEL DOUBLE-COUNT is the observable tripwire). The dedup key is the WHOLE-CALL signature, not the segment-attributed key — the event channel signs the entire call, so a chained command must dedup on one shared identity or it slips through on mismatched keys
 - Global forensics for deferred events: deferred events bypass `logAll`'s routing, so the project store mirrors its salient deferred events (`demoted`/`retired-healed`) into the global log via `routeSalientTo` — direct events are not mirrored there (logAll already routes them)
-- Windows-first fs: `\\?\` long-path prefix, tmp+rename with EPERM/EACCES/EBUSY backoff, lockfile with stale-steal and 3s degrade-to-unlocked (never hang the tool pipeline)
+- Windows-first fs: `\\?\` long-path prefix, tmp+rename with EPERM/EACCES/EBUSY backoff, lockfile with stale-steal and 3s degrade-to-unlocked (never hang the tool pipeline). Same-process callers (parallel tool calls in one window) serialize on an in-process queue BEFORE the file lock and never degrade — the 3s degrade is cross-process only. A transiently-unreadable store (EISDIR/EPERM/AV lock, not ENOENT) THROWS instead of parsing as empty, so a failed read can never let the next save clobber real gates
 
 ## GIT HOOKS
 
@@ -129,6 +131,9 @@ Line numbers intentionally omitted — they rot every round; locate by symbol na
 bun install
 bun run typecheck            # tsc --noEmit — covers index.ts, src/**, scripts/**, test/**
 bun test/smoke.ts            # full behavioral test; exit 1 on any failure
+bun test/property.ts         # seeded-generator invariants (normalization, capped-fuzzy equivalence, substitutions)
+bun test/fuzz.ts             # mutation fuzz: no crash, no invariant break
+bun run lint:ast             # ast-grep structural gates (.ast-grep/rules/); needs ast-grep on PATH
 bun scripts/doctor.ts [projectDirs...]
 bun scripts/analyze.ts [projectDirs...]
 bun scripts/migrate.ts <projectDirs...>
@@ -137,7 +142,8 @@ bun scripts/migrate.ts <projectDirs...>
 ## NOTES
 
 - `tsconfig.json` covers `index.ts`, `src/**`, `scripts/**`, `test/**` — everything typechecks
-- CI: GitHub Actions (`bun install --frozen-lockfile` + typecheck + smoke) on every push/PR
+- CI: GitHub Actions (`bun install --frozen-lockfile` + typecheck + smoke + property + fuzz + `ast-grep scan`) on every push/PR
+- Structural gates live in `.ast-grep/rules/` + `sgconfig.yml`: `no-load-force-flag` forbids `load(true)`/`loadIndex(true)` (use the named `loadForMutation()`/`loadIndexForMutation()`). Add a gate here when a bug class is structurally repeatable; sabotage-test it (introduce the bug shape → gate must fire)
 - Install = npm (`{ "plugin": ["opencode-dejavu"] }`) or clone + re-export from `~/.config/opencode/plugins/dejavu.ts` (see README)
 - `DEJAVU_HOME` env var overrides the global store dir — smoke test and scripts rely on it
 - Bump `PLUGIN_VERSION` (src/store.ts) on behavior changes — doctor detects version drift via `init` log events — AND keep `package.json` `version` in sync (npm publish uses the package version)

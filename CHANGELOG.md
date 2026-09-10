@@ -1,5 +1,22 @@
 # Changelog
 
+## 2.28.0 — 2026-09-10
+
+### Fixed (concurrency + persistence safety)
+- **Same-process critical sections serialize on an in-process queue before the file lock.** Parallel tool calls in ONE window used to poll the file lock for 3s and then degrade to unlocked — losing updates exactly when two sections raced (e.g. a 3s+ section under a flood). The degrade path is now cross-process only.
+- **A transiently-unreadable store no longer reads as empty.** `load()`/`loadIndex()` distinguish ENOENT (legitimately absent) from other read errors (EISDIR/EPERM/AV lock → throw, fail-open at the hook level), so a failed read can never let the next `save()` clobber real gates.
+- **Override demotion needs two distinct sessions.** One stubborn or prompt-injected session can no longer disarm a blocking gate for everyone: overrides now track `overrideSessions` and `DEMOTE_OVERRIDES` (3) must span `DEMOTE_OVERRIDE_SESSIONS` (2) distinct sessions — mirroring the reoffense-session rule.
+- **Every failure indexes cross-project evidence.** The old churn gate skipped first-time (`count < 2`) failures, so a pattern failing once per project across N projects — the canonical agent habit — could never reach the global store.
+- **Slow recurrences can promote again.** The 7-day noise TTL now applies only to never-recurred one-offs (watching, count ≤ 1); a twice-seen pattern gets the full 60-day TTL even below the promotion bar.
+- **The before-hook signature fallback covers ungated calls.** `pendingCalls` is recorded before the gate lookup, so an after-hook arriving without args records NEW patterns too, not just gated ones.
+- **Chain-bypass protection covers command substitutions.** `bashSegmentSignatures` unfolds `$(...)` and backtick payloads (both shells expand them, including inside double quotes), so a gate fires when the gated command hides in a substitution.
+- **Fuzzy flood path is capped.** `levenshteinCapped` early-exits a DP row whose minimum provably exceeds the ratio bar — verdicts identical to full Levenshtein (property-tested against the reference), without the per-gate cost cliff under the lock.
+- **Log-lock degradations are logged** (`degraded` event on `log.lock`), like gates/index locks already were.
+
+### Changed (internal API)
+- `load(true)`/`loadIndex(true)` are gone: the write-capable read is named `loadForMutation()`/`loadIndexForMutation()` (the capability is in the name, not a boolean flag). Enforced by the new `no-load-force-flag` ast-grep gate in CI (`bun run lint:ast`).
+- Taught/anti-nag retirement mutations are shared (`retireTaught`/`retireAntiNag`); the tier-specific conditions stay at the hook call sites.
+
 ## 2.27.0 — 2026-09-08
 
 ### Changed (friction + signal-to-noise)
