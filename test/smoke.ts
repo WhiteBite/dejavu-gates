@@ -2118,6 +2118,33 @@ check("spawnwarn: stderr-only redirect is not interrupted", (await ssAttempt(`${
 check("spawnwarn: dejavu:proceed bypasses the guard", (await ssAttempt(`${SPAWN} start | Out-Null # dejavu:proceed`)) === null)
 check("spawnwarn: bypass logs a warning", ssLogs.some((m) => m.includes("suppressed-spawn guard bypassed")))
 
+// --- 98. timeout-kill correction: a bash call killed at its timeout must teach
+// the call SHAPE (orphaned stdio holder / long run), not a family guess like
+// "a test is failing" — the timeout evidence outranks the command family. ---
+check(
+  "timeoutkill: suggestCorrection outranks the test-family guess",
+  suggestCorrection("bash:npx vitest run", "shell tool terminated command after exceeding timeout 120000 ms").includes("stdio"),
+)
+const tkDir = join(tmp, "timeoutkill-project")
+const TK_CMD = "npx vitest run --reporter=verbose"
+const tkKey = patternKey(callSignature("bash", { command: TK_CMD }) ?? "")
+const hooksTK = await Dejavu({ directory: tkDir, client: { app: { log: async () => ({}) } } } as unknown as Ctx)
+const tkError = "shell tool terminated command after exceeding timeout 600000 ms"
+const emitTK = async (partId: string, session: string): Promise<void> => {
+  await (hooksTK.event as EventHook)({
+    event: {
+      type: "message.part.updated",
+      properties: { part: { id: partId, type: "tool", tool: "bash", sessionID: session, state: { status: "error", error: tkError, input: { command: TK_CMD } } } },
+    },
+  } as unknown as EventInput)
+}
+await emitTK("tk-e1", "tk1")
+await emitTK("tk-e2", "tk1")
+await emitTK("tk-e3", "tk2")
+const tkGate = (await readJson(join(tkDir, ".opencode", "dejavu", "gates.json"))).find((g) => g.key === tkKey)
+check("timeoutkill: 3 timeout kills in 2 sessions promote a (reminding) gate", tkGate !== undefined && tkGate.status === "reminding")
+check("timeoutkill: the gate teaches the spawn/redirect + timeout correction", (tkGate?.correction ?? "").includes("stdio") && (tkGate?.correction ?? "").includes("timeout"))
+
 // --- 87. self-maintenance additions (2.25.0). Run before 86: 87b uses its own
 // DEJAVU_HOME, but the rest touch the shared global store that 86 corrupts. ---
 

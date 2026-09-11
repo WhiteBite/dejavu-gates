@@ -1,5 +1,10 @@
 # Changelog
 
+## 2.29.0 — 2026-09-12
+
+### Fixed (correction quality)
+- **Timeout kills teach the right lesson.** A bash call killed at its timeout (`shell tool terminated command after exceeding timeout …`) now outranks command-family guesses in `suggestCorrection`: the correction says the call SHAPE is the problem — spawn/pipe/redirect shapes must run bare and poll status separately (an orphaned descendant holds stdio; the call ends only on stdio EOF), and genuinely long runs need an explicit per-call timeout near the expected wall time. Companion to the 2.28.0 SUPPRESSED-SPAWN guard: the hang family now teaches from its own recurrence evidence too. Verified live on opencode 1.18.30: the shape hangs past shell exit, the default 120s timeout kills the tree, and `OPENCODE_EXPERIMENTAL_BASH_DEFAULT_TIMEOUT_MS` caps calls without an explicit timeout. Real fix pending upstream: anomalyco/opencode#42756.
+
 ## 2.28.0 — 2026-09-10
 
 ### Added (proactive guards)

@@ -1301,6 +1301,12 @@ export function shouldWarnSuppressedSpawn(command: string): boolean {
  * stays mechanical; a human/agent may refine the text later.
  */
 export function suggestCorrection(signature: string, snippet: string): string {
+  // A timeout kill is evidence about the CALL SHAPE (orphaned stdio holder or
+  // a genuinely long run) — it must outrank every command-family guess: a
+  // vitest suite killed at the timeout is not "a failing test".
+  if (/terminated command after exceeding timeout/i.test(snippet)) {
+    return "Killed at the bash timeout: spawn/pipe/redirect shapes must run bare + poll separately (an orphaned child holds stdio — the call ends only on stdio EOF); long runs need an explicit timeout near the wall time."
+  }
   if (/(^|\s)(--check|--dry-run|verify|check)\b/i.test(signature) && /dart run|generate|sync/i.test(signature)) {
     return "Generated artifacts are stale — run the same script WITHOUT the check flag to regenerate, then commit the result."
   }
