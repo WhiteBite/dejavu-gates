@@ -5,7 +5,7 @@ import { canBlock, canRemind, fuzzySimilar, FUZZY_MAX_LEN, hasResidualIdentity, 
 import { coerceGateShape, repairGate } from "./validate"
 
 /** Bumped on behavior changes; stamped into init log events so stale sessions are visible. */
-export const PLUGIN_VERSION = "2.29.0"
+export const PLUGIN_VERSION = "2.32.0"
 
 export interface Gate {
   /** sha1 signature prefix — the pattern identity */
@@ -968,7 +968,13 @@ export function checkFeedbackDemotion(gate: Gate): boolean {
   const baseOverrides = gate.feedbackBaseline?.overrides ?? 0
   const recurredEnough = gate.recurredAfterGate - baseRecurred >= DEMOTE_RECURRENCES
   const reoffenseVotes = gate.reoffenseSessions?.length ?? 0
-  const overrideVotes = gate.overrideSessions?.length ?? 0
+  // Legacy fallback: the override hook ALWAYS records overrideSessions alongside
+  // the count, so a missing array means the overrides predate session tracking —
+  // their distinct-session vote can never reach the bar, and the raw count is
+  // the best available evidence. (reoffenseSessions legitimately stays absent
+  // on current data — first-encounter failures never vote — so recurrence keeps
+  // the strict session requirement.)
+  const overrideVotes = gate.overrideSessions === undefined ? DEMOTE_OVERRIDE_SESSIONS : gate.overrideSessions.length
   const overridesEnough = gate.overrideCount - baseOverrides >= DEMOTE_OVERRIDES && overrideVotes >= DEMOTE_OVERRIDE_SESSIONS
   if ((recurredEnough && reoffenseVotes >= DEMOTE_REOFFENSE_SESSIONS) || overridesEnough) {
     gate.status = "watching"

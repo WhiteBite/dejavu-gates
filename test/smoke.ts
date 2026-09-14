@@ -25,6 +25,8 @@ import {
   nonTransparentProducers,
   shouldWarnLongRunning,
   shouldWarnSuppressedSpawn,
+  shouldWarnInheritedSpawn,
+  shouldWarnOrphanJob,
   shouldWarnWaitLoop,
   normalizeCommand,
   parameterizeError,
@@ -900,7 +902,7 @@ check("legacy cmd <path> <str> shape never enforces", !canBlock("bash", "bash:cm
 check("wrapper verb with all-parameterized args cannot block", !canBlock("bash", "bash:node <str> <n> >& <n>"))
 check("chain with unknown head keeps the identity of later segments", canRemind("bash", "bash:<str> ; mypy stitch_backend <n> >& <n>"))
 check("plumbing-only segment carries no identity", !hasResidualIdentity("bash:select-object -last <n>"))
-check("concrete commands keep their teeth", canBlock("bash", "bash:wc -l <str>") && canBlock("bash", "bash:node scripts/run.mjs <n> >& <n>"))
+check("concrete commands keep their teeth", canBlock("bash", "bash:deploy-tool --prod <n>") && canBlock("bash", "bash:node scripts/run.mjs <n> >& <n>"))
 check(
   "guard generalizes the legacy bare-one-liner rule",
   !hasResidualIdentity("bash:& <str> -c @ <str> @") && hasResidualIdentity("bash:python -c <code:14021754>"),
@@ -2359,6 +2361,81 @@ check(
   "pendingCalls fallback records a new pattern when the after-hook lacks args",
   (await readGates()).some((g) => g.signature === "bash:brand-new-failing-tool --x"),
 )
+
+// --- 97. enforcement policy round-10: PowerShell probes, Unix viewers, family shapes ---
+// PowerShell read-only probes are diagnostics: never block, remind at most.
+check("get-process cannot block", !canBlock("bash", "bash:get-process -name <str> -erroraction silentlycontinue | select-object id, processname"))
+check("get-process can remind", canRemind("bash", "bash:get-process -name <str>"))
+check("get-item/get-childitem cannot block", !canBlock("bash", "bash:get-item <str> -erroraction silentlycontinue") && !canBlock("bash", "bash:get-childitem -path <str> -directory"))
+check("get-content/test-path/resolve-path cannot block", !canBlock("bash", "bash:get-content <str>") && !canBlock("bash", "bash:test-path <str>") && !canBlock("bash", "bash:resolve-path <str>"))
+check("probe exit 1 is intended (empty result set)", isIntendedNonzero("get-process -name dart -erroraction silentlycontinue", 1))
+// Unix viewers: never block, always remindable — but their exit 1 stays RECORDABLE
+// (a missing file / not-recognized is teachable, unlike a diagnostic's empty result).
+check("cat|head cannot block but can remind", !canBlock("bash", "bash:cat <str> | head - <n>") && canRemind("bash", "bash:cat <str> | head - <n>"))
+check("wc/head/tail cannot block", !canBlock("bash", "bash:wc -l <str> <str>") && !canBlock("bash", "bash:head - <n> <str>") && !canBlock("bash", "bash:tail - <n> <str>"))
+check("viewer exit 1 still counts (teachable, not intended)", !isIntendedNonzero("cat missing.txt", 1) && !isIntendedNonzero("npm test && tail -5 missing.log", 1))
+check("head:refs refspec is not a viewer (git push stays blockable)", canBlock("bash", "bash:git push origin head:refs/heads/feat/x <n> >& <n>"))
+// Family shapes: verb phrase + fully parameterized args = watching only.
+check("npx tsx <str> is a family (no identity)", !hasResidualIdentity("bash:npx tsx <str>") && !canBlock("bash", "bash:npx tsx <str>"))
+check("npx tsx with a literal script keeps identity", hasResidualIdentity("bash:npx tsx scripts/x.ts"))
+check("git commit -m <str> is a family (every commit)", !hasResidualIdentity("bash:git commit -m <str>") && !hasResidualIdentity("bash:cd <path> && git commit -m <str> -m <str> -m <str>"))
+check("git commit with a pathspec keeps identity", hasResidualIdentity("bash:git commit src/foo.ts -m <str>"))
+check("bun run <str> is a family, bun run script is not", !hasResidualIdentity("bash:bun run <str>") && hasResidualIdentity("bash:bun run scripts/build.ts") && hasResidualIdentity("bash:bun test/smoke.ts"))
+check("npx tsc keeps identity (package name is the call)", hasResidualIdentity("bash:npx tsc --noemit <n> >& <n>"))
+check("git push/status keep identity", hasResidualIdentity("bash:git push origin master") && hasResidualIdentity("bash:git status --short"))
+// PowerShell table rows are success-shaped probe data, never failure evidence.
+check("process table row is success-shaped", looksLikeSuccess("78692 dart        02.09.2026 1:10:14"))
+check("file table row is success-shaped", looksLikeSuccess("D:\\Sources\\x\\7_Profile.png  04.09.2026 18:36:50"))
+check("dir-listing mode row is success-shaped", looksLikeSuccess("-a----        04.09.2026     18:36           1234 f.ts"))
+check("real error line is not success-shaped", !looksLikeSuccess("Error: cannot find module foo"))
+if (process.platform === "win32") {
+  check("bare exit code on a unix-only tool teaches the PowerShell form", suggestCorrection("bash:git status --short | head - <n>", "exit code 1").includes("Select-Object"))
+  check("bare exit code on cat|head teaches the PowerShell form", suggestCorrection("bash:cat <str> | head - <n>", "exit code 1").includes("Unix tool"))
+}
+// 97b. legacy override fallback: overrideCount past the bar with NO session
+// tracking (predates overrideSessions) demotes on the migrate feedback catch-up.
+const legOvDir = join(tmp, "legacy-override-project")
+const LEG_OV_CMD = "legacy deploy --force-prod"
+const legOvKey = patternKey(callSignature("bash", { command: LEG_OV_CMD }) ?? "")
+await seedGates(legOvDir, [seedGate({ key: legOvKey, signature: `bash:${LEG_OV_CMD}`, status: "blocking", overrideCount: DEMOTE_OVERRIDES })])
+await Dejavu({ directory: legOvDir, client: { app: { log: async () => ({}) } } } as unknown as Ctx)
+const legOvGate = (await readJson(join(legOvDir, ".opencode", "dejavu", "gates.json"))).find((g) => g.key === legOvKey)
+check("legacy overrides without session tracking still demote", legOvGate?.status === "watching" && legOvGate?.feedbackDemoted === true)
+// 97c. diagnostic recurrence exemption: a reminding diagnostic gate failing again
+// is the iteration itself — recurredAfterGate must not grow (the 38-reminder case).
+const diagDir = join(tmp, "diag-recurrence-project")
+const DIAG_CMD = "npx vitest run tests/app.test.ts 2>&1"
+const diagSig = callSignature("bash", { command: DIAG_CMD }) ?? ""
+const diagKey = patternKey(diagSig)
+await seedGates(diagDir, [seedGate({ key: diagKey, signature: diagSig, status: "reminding" })])
+const hooksDiag = await Dejavu({ directory: diagDir, client: { app: { log: async () => ({}) } } } as unknown as Ctx)
+await failOn(hooksDiag)(DIAG_CMD, "dr-a", "dr-a1")
+await failOn(hooksDiag)(DIAG_CMD, "dr-a", "dr-a2")
+const diagGate = (await readJson(join(diagDir, ".opencode", "dejavu", "gates.json"))).find((g) => g.key === diagKey)
+check("diagnostic recurrence does not grow recurredAfterGate", (diagGate?.recurredAfterGate ?? 0) === 0)
+check("diagnostic reminder still counts (remindedCount grows)", (diagGate?.remindedCount ?? 0) === 1)
+
+// --- 98. inherited-spawn guard: Start-Process -RedirectStandard* leaks THIS
+// call's stdio pipes to the spawned process (handle inheritance); a daemon that
+// outlives the call hangs it forever (opencode ends calls on stdio EOF). ---
+const SPAWN_1 = '$d = "C:\\t"; $p = Start-Process dart -ArgumentList "x" -WorkingDirectory $d -WindowStyle Hidden -PassThru -RedirectStandardOutput "$d\\out.log"; "PID=$($p.Id)"'
+const SPAWN_2 = '$p = Start-Process dart -ArgumentList "y" -WindowStyle Hidden -PassThru -RedirectStandardOutput "o.log" -RedirectStandardError "e.log"; "PID=$($p.Id)"; $p.Id | Out-File "p.pid"'
+check("inherited-spawn: hidden + stdout redirect flags", shouldWarnInheritedSpawn(SPAWN_1))
+check("inherited-spawn: hidden + full out/err redirect flags", shouldWarnInheritedSpawn(SPAWN_2))
+check("inherited-spawn: hidden + -Wait flags", shouldWarnInheritedSpawn("Start-Process dart x -WindowStyle Hidden -Wait"))
+check("inherited-spawn: hidden spawn piped flags", shouldWarnInheritedSpawn("Start-Process dart x -WindowStyle Hidden | Out-Null"))
+check("inherited-spawn: bare hidden spawn does NOT flag (no leak)", !shouldWarnInheritedSpawn('Start-Process pwsh -ArgumentList "-c","x" -WindowStyle Hidden -PassThru'))
+check("inherited-spawn: redirect without hidden does NOT flag (v1 conservative)", !shouldWarnInheritedSpawn("Start-Process dart x -RedirectStandardOutput o.log"))
+check("inherited-spawn: minimized window + redirect flags", shouldWarnInheritedSpawn("Start-Process dart x -WindowStyle Minimized -RedirectStandardOutput o.log"))
+check("inherited-spawn: server starter + redirect flags", shouldWarnInheritedSpawn("Start-Process npm run dev -RedirectStandardOutput dev.log"))
+check("inherited-spawn: bare server starter does NOT flag", !shouldWarnInheritedSpawn("Start-Process npm run dev"))
+check("orphan-job: Start-Job without an in-call wait flags", shouldWarnOrphanJob("Start-Job { deploy-tool --bg }"))
+check("orphan-job: Start-Job + Wait-Job does NOT flag", !shouldWarnOrphanJob("Start-Job { x } | Wait-Job | Receive-Job"))
+check("orphan-job: Receive-Job -Wait does NOT flag", !shouldWarnOrphanJob("$j = Start-Job { x }; Receive-Job -Job $j -Wait"))
+// --- 98b. wait-loop: -Milliseconds/-Seconds spellings were invisible to the guard ---
+check("wait-loop: unbounded while + Test-Path + -Milliseconds flags", shouldWarnWaitLoop('while (-not (Test-Path "$d\\done.flag")) { Start-Sleep -Milliseconds 500 }'))
+check("wait-loop: multi-line while + Test-Path flags", shouldWarnWaitLoop('while (-not (Test-Path $f)) {\n  Start-Sleep -Milliseconds 500\n}'))
+check("wait-loop: bounded for + -Milliseconds stays unflagged", !shouldWarnWaitLoop("for ($i=0; $i -lt 40; $i++) { Start-Sleep -Milliseconds 500; if (Test-Path f) { break } }"))
 
 // --- 86. round-8 invariant: a corrupt GLOBAL gates.json is quarantined under the
 // gates lock by reconcile(); the unlocked routing peeks in reconcileAll (escalation

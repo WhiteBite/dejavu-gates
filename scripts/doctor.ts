@@ -10,11 +10,27 @@ import { readFile, readdir, stat } from "node:fs/promises"
 import { homedir } from "node:os"
 import { join } from "node:path"
 import { canBlock, canRemind, isRepoLocal, sanitizeForStore } from "../src/patterns"
-import { DEMOTE_RECURRENCES, GateStore, GLOBAL_PROJECTS, MAX_GATES, NOISE_TTL_DAYS, Stores, PLUGIN_VERSION, PROMOTE_SESSIONS, TTL_DAYS, type Gate } from "../src/store"
+import { DEMOTE_RECURRENCES, GateStore, GLOBAL_PROJECTS, MAX_GATES, NOISE_TTL_DAYS, retireTaught, Stores, PLUGIN_VERSION, PROMOTE_SESSIONS, TTL_DAYS, type Gate } from "../src/store"
 import { coerceGateShape, hasNestedTokens } from "../src/validate"
 
 const repair = process.argv.includes("--repair")
 const globalDir = process.env.DEJAVU_HOME ?? join(homedir(), ".config", "opencode", "dejavu")
+
+const FILE_NOT_FOUND_CORRECTION = /can't open file|cannot find path|no such file|cannot find the (?:file|path)|ENOENT/i
+
+/** Enforced gate whose correction teaches a file-not-found error while the
+ * quoted path EXISTS again — the taught error cannot recur; the correction is
+ * stale (file moved back/renamed) and the gate keeps nagging about a dead error. */
+function staleCorrectionPath(gate: Gate): string | null {
+  const correction = gate.correction
+  if (correction === undefined || !FILE_NOT_FOUND_CORRECTION.test(correction)) return null
+  const quoted = /'([^']+)'/.exec(correction)?.[1]
+  if (quoted === undefined) return null
+  // Snippets persist JSON-escaped: Windows paths arrive with doubled backslashes.
+  const candidate = quoted.replace(/\\\\/g, "\\")
+  if (!/^(?:[A-Za-z]:[\\/]|\/)/.test(candidate)) return null
+  return existsSync(candidate) ? candidate : null
+}
 
 // Cross-store invariants need every scope visible. Without explicit args,
 // discover project dirs from the global index — it is the only registry of
@@ -46,6 +62,24 @@ if (repair) {
     // Sweep expired gates too, otherwise the report shows gates that should
     // already be gone (reconcile+migrate alone don't expire).
     await stores.expireAll(TTL_DAYS, NOISE_TTL_DAYS)
+    // Stale file-not-found corrections: the quoted path EXISTS again — the
+    // taught error cannot recur; retire the gate softly (damped re-promotion
+    // stays possible if the pattern earns a fresh bar).
+    for (const store of project ? [project, global] : [global]) {
+      await store.runLocked(async () => {
+        const scopeGates = await store.loadForMutation()
+        let staleFixed = false
+        for (const gate of scopeGates) {
+          if (gate.status === "watching") continue
+          const stalePath = staleCorrectionPath(gate)
+          if (stalePath === null) continue
+          retireTaught(gate)
+          staleFixed = true
+          store.deferEvent({ type: "repaired", key: gate.key, tool: gate.tool, snippet: `stale correction retired (quoted missing-file error; ${stalePath} exists now)` })
+        }
+        if (staleFixed) await store.save()
+      })
+    }
     // The script exits after this — flush deferred repair/quarantine/demotion
     // events now, or they are silently lost ("every repair is logged" invariant).
     await global.flushDeferred()
@@ -373,6 +407,13 @@ for (const scope of scopes) {
     for (const g of annoying.slice(0, 10)) console.log(`     - reminded ${g.remindedCount} | ${g.signature}`)
   }
 
+  const staleCorrections = gates.filter((g) => g.status !== "watching" && staleCorrectionPath(g) !== null)
+  if (staleCorrections.length > 0) {
+    issues += staleCorrections.length
+    console.log(`   STALE-CORRECTION (${staleCorrections.length}) — correction teaches a file-not-found error but the quoted path EXISTS now; doctor --repair retires:`)
+    for (const g of staleCorrections.slice(0, 10)) console.log(`     - reminded ${g.remindedCount} | ${g.signature}`)
+  }
+
   // review:true is set mechanically (blocked >= REVIEW_FIRES) but consumed
   // nowhere else — surface it, otherwise the flag is dead weight. Enforced
   // gates only: on healed/demoted gates the flag is history, not a defect
@@ -492,6 +533,8 @@ if (missing.length > 0) {
 // are repo quirks and must stay project-scoped, so they are not "missed".
 // Ghost dirs (renamed/moved repos) don't count toward the threshold.
 const missed = indexEntries.filter(([key, entry]) => {
+  // Orphan keys (no gate in any scope) are reported above — nothing to escalate.
+  if (!allKeys.has(key)) return false
   if (entry.projects.filter((p) => existsSync(p)).length < GLOBAL_PROJECTS || globalKeys.has(key)) return false
   const signature = keySignature.get(key)
   return signature === undefined || !isRepoLocal(signature)

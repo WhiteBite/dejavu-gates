@@ -31,11 +31,11 @@ dejavu-opencode-plugin/
 | Gate enforcement (remind/block/override) | `index.ts` before/after hooks | blocking gates abort in the before-hook; reminding gates annotate the failing output in the after-hook; session state lives ON THE GATE, read fresh under the store lock |
 | Failure detection + recording | `index.ts` `tool.execute.after` + `event` | two channels: exit/text vs message stream; a cross-channel dedup guard counts one call once |
 | Signature/normalization | `src/patterns.ts` | `callSignature`, `normalizeCommand`, `parameterizeError` |
-| Enforcement policy | `src/patterns.ts:canBlock()`/`canRemind()` | three tiers — bash non-diagnostics block, diagnostics remind-only, everything else just watches |
+| Enforcement policy | `src/patterns.ts:canBlock()`/`canRemind()` | three tiers — bash non-diagnostics block, diagnostics + Unix viewers remind-only, everything else just watches |
 | Persistence, locks, promotion, global escalation | `src/store.ts` | `Stores.recordFailure()` is the core; cross-project evidence lives in global `index.json` |
 | Self-healing / reconcile | `src/store.ts` + `src/validate.ts` | `Stores.reconcileAll()` at every init; `doctor --repair` on demand |
 | Tunables | top of `index.ts` **and** `src/store.ts` | split: TTL/review caps in index, promote thresholds in store |
-| Pathology checks | `scripts/doctor.ts` | defect classes: unparseable/bad records, duplicate keys, temporal inversion, nested tokens, enforced-without-evidence, stale blocking/reminding, not-teaching, annoying, review-flagged, reminders-ignored, unsanitized, stale copies, corrupt logs, version drift, cross-store index checks; no-arg run discovers projects from the index |
+| Pathology checks | `scripts/doctor.ts` | defect classes: unparseable/bad records, duplicate keys, temporal inversion, nested tokens, enforced-without-evidence, stale blocking/reminding, not-teaching, annoying, stale-correction, review-flagged, reminders-ignored, unsanitized, stale copies, corrupt logs, version drift, cross-store index checks; no-arg run discovers projects from the index |
 
 ## CODE MAP
 
@@ -51,7 +51,7 @@ Line numbers intentionally omitted — they rot every round; locate by symbol na
 | `cmdWrapperPayload` / `unwrapCmdWrapper` | fn | src/patterns.ts | `cmd /c\|/k` payload extraction; unwrap normalizes the inner command |
 | `normalizeCommand` | fn | src/patterns.ts | bash → signature; strips control chars, unwraps `cmd /c`, fingerprints one-liner payloads |
 | `isIntendedNonzero` | fn | src/patterns.ts | exit-1 immunity for diagnostic chains (all segments diagnostic; paren groups flattened first) |
-| `canBlock` / `canRemind` | fn | src/patterns.ts | blocking tier / remind-only tier (diagnostics + iteration verbs) |
+| `canBlock` / `canRemind` | fn | src/patterns.ts | blocking tier / remind-only tier (diagnostics + iteration verbs + Unix viewers via `isUnixViewerSignature`) |
 | `isRepoLocal` | fn | src/patterns.ts | repo-local verbs that never escalate globally |
 | `splitChain` / `bashSegmentSignatures` | fn | src/patterns.ts | quote/paren-aware chain split; per-segment signatures, unfolds `cmd /c` + `$(...)` + backticks (chain-bypass protection) |
 | `callSignature` | fn | src/patterns.ts | stable call identity per tool (bash/read/edit/write/glob/grep) |
@@ -99,6 +99,7 @@ Line numbers intentionally omitted — they rot every round; locate by symbol na
 - Do NOT persist anything before `sanitizeForStore()` (control-char strip + secret scrub) — signatures, snippets, args, error text, logs; PowerShell VT colors in persisted text are a bug
 - Do NOT throw from hooks except `GateSignal` — plugin bugs must never break the tool pipeline
 - Do NOT let file-probe or diagnostic tools reach `blocking` status — `canBlock()` is the single source of truth; `migrate()` auto-demotes violations (diagnostics land in `reminding`, never `blocking`)
+- Do NOT add Unix viewers (cat/head/tail/wc/less/more) to `DIAGNOSTIC_VERBS` — their exit 1 must stay RECORDABLE (a missing file / not-recognized is a real teachable failure, and `tail` as a terminal producer still counts); their never-block policy lives in `isUnixViewerSignature`
 - Do NOT create gates manually — promotion is mechanical (3 failures × 2 sessions)
 - Do NOT delete quarantine files (`gates.json.corrupt-*`, `log.jsonl.corrupt`) without inspection — they are the preserved forensic bytes of corrupted data
 - Do NOT bypass the validation boundary — gates enter memory through `coerceGateShape`/`repairGate` (in `load()`/`loadForMutation()`) and structural healing through `reconcile()`; never hand-roll raw JSON reads/writes of store files. Use `loadForMutation()` (not a `load(true)` flag) inside locks — the write capability is in the name (`no-load-force-flag` ast-grep gate)
@@ -106,7 +107,7 @@ Line numbers intentionally omitted — they rot every round; locate by symbol na
 ## UNIQUE STYLES
 
 - Two-scope store: project gates in `<repo>/.opencode/dejavu/` (committable) escalate to global `~/.config/opencode/dejavu/` after appearing in 2+ project dirs (agent habits vs repo quirks) — except repo-local verbs (npm/git/gradle/docker/...), which are repo quirks by nature and stay project-scoped forever
-- Three enforcement tiers: `blocking` (remind-abort, then hard-block on same-session repeat), `reminding` (diagnostics — annotate the failing output, never interrupt), `watching` (evidence only); `fuzzySimilar` never merges disjoint flag sets but allows subset additions
+- Three enforcement tiers: `blocking` (remind-abort, then hard-block on same-session repeat), `reminding` (diagnostics + Unix viewers — annotate the failing output, never interrupt), `watching` (evidence only); `fuzzySimilar` never merges disjoint flag sets but allows subset additions
 - Self-healing stores: every init runs `reconcileAll()` — unparseable files are quarantined (bytes preserved in `*.corrupt-*`, never deleted), records are strictly parsed + mechanically repaired, index is reconciled, and every repair is logged (`repaired`/`quarantined` events); `doctor --repair` does the same on demand — one command replaces hand-debugging. The init-storm version-stamp skip is a STARTUP optimization only: `doctor --repair` and the migrate script call `migrate(force)` so an explicit repair always applies the full per-gate healing, even on a same-version re-run
 - Multi-window safe: the remind→block chain is persisted on the gate, not in process memory — several OpenCode windows (each its own process on the shared store) and process restarts all see the same escalation; hot-path reads use a 1s TTL cache + O(1) key index
 - `dejavu:proceed` escape hatch: trailing marker comment, matched with word boundaries, stripped before normalization so bypassed failures land on the original pattern

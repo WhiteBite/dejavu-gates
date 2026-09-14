@@ -259,6 +259,9 @@ const DIAGNOSTIC_VERBS: RegExp[] = [
   /\bmypy\b/i,
   /\bcurl\b/i,
   /\bls\b/i,
+  // Read-only PowerShell probes: non-zero exit is a probe result (no match, missing path), not a failed operation — the `ls` class.
+  /\bget-(?:process|item|childitem|content)\b/i,
+  /\b(?:test-path|resolve-path|measure-object)\b/i,
 ]
 
 export function isDiagnosticText(text: string): boolean {
@@ -516,11 +519,32 @@ const PLUMBING_HEADS = new Set([
  * an entire command family — enforcing it would punish unrelated calls. */
 const WRAPPER_BASENAMES = new Set(["cmd", "py", "node", "python", "python3", "bun", "deno", "perl", "ruby", "pwsh", "powershell"])
 
+/** npx-launched runners: the runner package is the verb, the SCRIPT argument is
+ * the call — `npx tsx <str>` matches every tsx invocation (a family). */
+const NPX_RUNNERS = new Set(["tsx", "ts-node", "esno", "vite-node"])
+
+/** Package-manager subcommands after a wrapper head (`bun run <str>`): the
+ * subcommand is structure, not identity — identity must come from the script. */
+const RUN_SUBCOMMANDS = new Set(["run", "test", "start", "dev"])
+
 function baseName(token: string): string {
   const bare = token.replace(/^["']+|["']+$/g, "")
   const parts = bare.split(/[\\/]/)
   const last = parts[parts.length - 1] ?? bare
   return last.toLowerCase().replace(/\.exe$/, "")
+}
+
+/** Identity scan over the arguments after a family/wrapper verb: a surviving
+ * literal (path/script) or a <code:...> fingerprint is identity; flags,
+ * placeholders and operators are structure. */
+function hasIdentityAfter(tokens: string[], from: number): boolean {
+  for (let i = from; i < tokens.length; i++) {
+    const token = tokens[i] ?? ""
+    if (token.startsWith("<code:")) return true
+    if (PLACEHOLDER_TOKEN.test(token) || CODE_PASSING_FLAGS.has(token) || OPERATOR_TOKENS.has(token) || FLAG_TOKEN.test(token)) continue
+    return true
+  }
+  return false
 }
 
 function segmentHasIdentity(segment: string): boolean {
@@ -538,17 +562,26 @@ function segmentHasIdentity(segment: string): boolean {
   if (head.startsWith("<code:")) return true
   if (PLUMBING_HEADS.has(head)) return false
   if (NO_IDENTITY_HEADS.has(head)) return false
-  if (!WRAPPER_BASENAMES.has(baseName(head))) return true
+  const headBase = baseName(head)
+  // `git commit`: the message is always parameterized and the staged content is
+  // invisible — the bare verb phrase matches EVERY commit (hook rejections are
+  // content-dependent), so identity must come from a concrete argument (pathspec).
+  if (headBase === "git" && (tokens[headIdx + 1] ?? "") === "commit") {
+    return hasIdentityAfter(tokens, headIdx + 2)
+  }
+  // `npx tsx <str>`: the runner package is part of the verb, the script is the call.
+  if (headBase === "npx" && NPX_RUNNERS.has(baseName(tokens[headIdx + 1] ?? ""))) {
+    return hasIdentityAfter(tokens, headIdx + 2)
+  }
+  if (!WRAPPER_BASENAMES.has(headBase)) return true
   // Wrapper/interpreter head: identity must come from a surviving argument
   // (a literal path/script, or a <code:...> fingerprint). Flags are switches,
   // not identity — a flag-only remainder is an over-generic command family.
-  for (let i = headIdx + 1; i < tokens.length; i++) {
-    const token = tokens[i] ?? ""
-    if (token.startsWith("<code:")) return true
-    if (PLACEHOLDER_TOKEN.test(token) || CODE_PASSING_FLAGS.has(token) || OPERATOR_TOKENS.has(token) || FLAG_TOKEN.test(token)) continue
-    return true
-  }
-  return false
+  // A package-manager subcommand right after the head (`bun run <str>`) is
+  // structure too — identity must come from the script it runs.
+  let argStart = headIdx + 1
+  if (RUN_SUBCOMMANDS.has((tokens[argStart] ?? "").toLowerCase())) argStart += 1
+  return hasIdentityAfter(tokens, argStart)
 }
 
 /**
@@ -565,28 +598,47 @@ export function hasResidualIdentity(signature: string): boolean {
   return body.split(/\s*(?:\|\||&&|[|;&])\s*|\n+/).some((segment) => segmentHasIdentity(segment))
 }
 
+/** Unix read-only viewers habitually typed into PowerShell: their failures stay
+ * RECORDED (a missing file / not-recognized is teachable), but they never BLOCK —
+ * a read-only habit punished with a hard stop and a generic correction produced
+ * pure friction (production data: `cat <str> | head - <n>` blocking). The `:` in
+ * the prefix class covers the `bash:` signature prefix; the lookahead keeps
+ * `git push origin head:refs/...` refspecs out. */
+const UNIX_VIEWER_VERBS: RegExp[] = [
+  /(^|[\s|;&(:])(?:cat|wc|less)\b/i,
+  /(^|[\s|;&(:])(?:head|tail|more)\b(?!:)/i,
+]
+
+export function isUnixViewerSignature(signature: string): boolean {
+  return UNIX_VIEWER_VERBS.some((rule) => rule.test(signature))
+}
+
 /**
  * Blocking policy: only bash commands that are NOT diagnostics may ever
  * become enforced gates. File probes and diagnostic queries are measured
  * (watching) but never interrupt the agent — the data showed blocking them
- * punishes normal work. Signatures without residual identity never enforce
- * at any tier — they are too broad to interrupt anything.
+ * punishes normal work. Unix read-only viewers never block either (teach the
+ * PowerShell-native form via reminder instead). Signatures without residual
+ * identity never enforce at any tier — they are too broad to interrupt anything.
  */
 export function canBlock(tool: string, signature: string): boolean {
   if (tool !== "bash") return false
   if (!hasResidualIdentity(signature)) return false
+  if (isUnixViewerSignature(signature)) return false
   return !isDiagnosticSignature(signature)
 }
 
 /**
  * Remind-only policy: diagnostic bash commands still surface a REMINDER when
  * they recur (the old behavior gave them zero signal), but they NEVER block —
- * blocking a test/lint the agent is iterating on punishes normal work.
+ * blocking a test/lint the agent is iterating on punishes normal work. Unix
+ * viewers join this tier: their exit-1 stays recordable (unlike diagnostics),
+ * and the reminder teaches the PowerShell-native equivalent.
  */
 export function canRemind(tool: string, signature: string): boolean {
   if (tool !== "bash") return false
   if (!hasResidualIdentity(signature)) return false
-  return isDiagnosticSignature(signature)
+  return isDiagnosticSignature(signature) || isUnixViewerSignature(signature)
 }
 
 /**
@@ -1044,6 +1096,12 @@ const SUCCESS_SHAPED: RegExp[] = [
   /\b\d+\s+actionable tasks?\b/i,
   /\bConfiguration cache entry\b/i,
   /^Node\.js v\d+\./i,
+  // PowerShell table rows (Get-Process / Get-Item / Get-ChildItem data): a probe
+  // RESULT line is never failure evidence, even when the exit code says otherwise
+  // (SilentlyContinue probes exit non-zero on empty result sets).
+  /^\s*\d+\s+\S+\s{2,}\d{1,2}[.\/-]\d{1,2}[.\/-]\d{2,4}\s+\d{1,2}:\d{2}:\d{2}\s*$/,
+  /^\s*[A-Za-z]:[\\/]\S+\s{2,}\d{1,2}[.\/-]\d{1,2}[.\/-]\d{2,4}[.,]?\s+\d{1,2}:\d{2}:\d{2}\s*$/,
+  /^\s*[d-][a-z-]{4,}\s+\d{1,2}[.\/-]\d{1,2}[.\/-]\d{2,4}/,
 ]
 
 export function looksLikeSuccess(line: string): boolean {
@@ -1241,10 +1299,12 @@ export function shouldWarnLongRunning(command: string): boolean {
  * endpoint) that may never arrive, until the bash timeout kills them.
  */
 const WAIT_LOOP: RegExp[] = [
-  /\b(?:while|until)\b[^\n]*\b(?:sleep|Start-Sleep)\s+\d/i,
-  // Multi-line loops: infinite condition ($true/true) or a network/health probe,
-  // with a sleep anywhere in the body (possibly on later lines).
-  /\b(?:while|until)\b[^\n]*(?:\$true|\btrue\b|\bTest-Connection\b|\bInvoke-WebRequest\b|\bInvoke-RestMethod\b|\bcurl\b|\bwget\b)[\s\S]{0,500}?\b(?:sleep|Start-Sleep)\b/i,
+  // `-Milliseconds 500` / `-Seconds 1` spellings: the unit parameter sits
+  // between the cmdlet and the number — a bare `\s+\d` missed the whole family.
+  /\b(?:while|until)\b[^\n]*\b(?:sleep|Start-Sleep)\s+(?:-[A-Za-z]+\s+)?\d/i,
+  // Multi-line loops: infinite condition ($true/true) or a network/health/file
+  // probe, with a sleep anywhere in the body (possibly on later lines).
+  /\b(?:while|until)\b[^\n]*(?:\$true|\btrue\b|\bTest-Connection\b|\bTest-Path\b|\bInvoke-WebRequest\b|\bInvoke-RestMethod\b|\bcurl\b|\bwget\b)[\s\S]{0,500}?\b(?:sleep|Start-Sleep)\b/i,
   /\bfor\s*\([^\n]*\)\s*\{[\s\S]{0,400}?\b(?:sleep|Start-Sleep)\s+\d/i,
 ]
 
@@ -1292,7 +1352,65 @@ export function shouldWarnSuppressedSpawn(command: string): boolean {
   return flagged()
 }
 
+// --- Inherited-spawn guard (Start-Process handle leak) ------------------------
+
+/**
+ * The second leak path of anomalyco/opencode#29831: `Start-Process` with
+ * `-RedirectStandard*` (or `-Wait`) turns ON handle inheritance — the spawned
+ * process receives THIS call's stdio pipes among the inheritable handles, and
+ * opencode ends a bash call only on stdio EOF, so a child that outlives the
+ * call holds the pipes open forever. Empirically verified on this machine:
+ * redirecting ALL THREE streams still hangs; a BARE `Start-Process` (no
+ * -Redirect*, no pipe/redirect on the spawn statement) leaks nothing and
+ * returns at once; with a short-lived child the call merely waits its
+ * lifetime. Daemon intent comes from `-WindowStyle Hidden|Minimized` or a known
+ * server starter as the spawned command (both production hangs carried the
+ * hidden window); a detached-but-bare spawn is safe and stays unflagged.
+ */
+const START_PROCESS_STMT = /Start-Process\b/i
+/** Daemon-intent markers: a hidden/minimized window or a known server starter
+ * as the spawned command — both outlive the call, which is what turns the
+ * handle leak into a forever hang. A redirected one-shot child merely delays
+ * the call by its lifetime, so redirect-only statements stay unflagged. */
+const OUTLIVES_CALL = /-WindowStyle\s+(?:Hidden|Minimized)/i
+// No leading \b on -Wait: a space-to-dash transition is not a word boundary; the trailing \b still rejects -Waiting-style tails.
+const SPAWN_LEAK = /-RedirectStandard\w+|-Wait\b/i
+
+export function shouldWarnInheritedSpawn(command: string): boolean {
+  let stmt = ""
+  let hasPipe = false
+  const flagged = (): boolean =>
+    START_PROCESS_STMT.test(stmt) &&
+    (SPAWN_LEAK.test(stmt) || hasPipe || STDOUT_REDIRECT.test(stripQuotedSpans(stmt))) &&
+    (OUTLIVES_CALL.test(stmt) || SERVER_STARTERS.some((rule) => rule.test(stmt)))
+  for (const segment of splitChainTagged(command)) {
+    if (segment.pipeTail && stmt !== "") {
+      stmt += " | " + segment.text
+      hasPipe = true
+      continue
+    }
+    if (flagged()) return true
+    stmt = segment.text
+    hasPipe = false
+  }
+  return flagged()
+}
+
+// --- Orphan-job guard (Start-Job dies with the call) ---------------------------
+
+/** Start-Job runs inside THIS call's PowerShell: the job is killed silently
+ * when the call ends, so "background" work never survives it — a correctness
+ * trap (lost work, no error), not a hang. An in-call wait makes it synchronous
+ * and safe. */
+export function shouldWarnOrphanJob(command: string): boolean {
+  // No leading \b before -Wait: a space-to-dash transition is not a word boundary.
+  return /\bStart-Job\b/i.test(command) && !/\bWait-Job\b|\bReceive-Job\b[^;|&\n]*-Wait\b/i.test(command)
+}
+
 // --- Default corrections ------------------------------------------------------
+
+const UNIX_TOOL_CORRECTION =
+  "Unix tool, not a PowerShell command — use the native equivalent: Select-Object -First/-Last for head/tail, Get-Content for cat, Select-String for grep, (Get-Content <file>).Count for wc -l."
 
 /**
  * Mechanical, overridable default correction chosen by command family, so a
@@ -1324,7 +1442,18 @@ export function suggestCorrection(signature: string, snippet: string): string {
   }
   // Unix tools absent from PowerShell: a missing-command failure on one is a platform habit, teach the native form.
   if (/\b(head|tail|cat|wc|grep|sed|awk|cut|sort|uniq|tr|xargs|less)\b/i.test(signature) && /not recognized|command not found|Check the spelling of the name/i.test(snippet)) {
-    return "Unix tool, not a PowerShell command — use the native equivalent: Select-Object -First/-Last for head/tail, Get-Content for cat, Select-String for grep, (Get-Content <file>).Count for wc -l."
+    return UNIX_TOOL_CORRECTION
+  }
+  // On Windows, head/tail/wc/... have no pwsh alias at all: a bare exit-code
+  // failure on one is command-not-found even when the snippet lost the cmdlet
+  // wording (OpenCode normalizes exits to 1). cat/grep/sort/tr are excluded —
+  // they have pwsh aliases or common installs, so their exit 1 may be real.
+  if (
+    process.platform === "win32" &&
+    /(^|[\s|;&(:])(?:head|tail|wc|sed|awk|cut|uniq|xargs|less)\b(?!:)/i.test(signature) &&
+    /^exit code \d+$/i.test(snippet.trim())
+  ) {
+    return UNIX_TOOL_CORRECTION
   }
   // File-tool probes: not-found means a wrong path guess — locate the file
   // instead of retrying guessed path variants.

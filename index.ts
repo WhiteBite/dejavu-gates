@@ -7,6 +7,7 @@ import {
   cmdWrapperPayload,
   detectFailure,
   failureSnippet,
+  isDiagnosticSignature,
   isIntendedNonzero,
   isNoiseError,
   nonTransparentProducers,
@@ -16,6 +17,8 @@ import {
   scrubSecrets,
   shouldWarnLongRunning,
   shouldWarnSuppressedSpawn,
+  shouldWarnInheritedSpawn,
+  shouldWarnOrphanJob,
   shouldWarnWaitLoop,
   stripQuotedSpans,
 } from "./src/patterns"
@@ -245,6 +248,26 @@ export const Dejavu: Plugin = async ({ directory, client }) => {
               `[dejavu] SUPPRESSED-SPAWN — this spawns a detached daemon while piping/redirecting stdout; opencode ends a bash call only on stdio EOF and the living daemon keeps the pipe open, so this call hangs forever (upstream anomalyco/opencode#29831). CORRECTION: run the spawn WITHOUT any pipe or stdout redirect (it prints only 1-3 lines) and poll its status in a SEPARATE call. If you truly need this shape, append the trailing comment "# dejavu:proceed".`,
             )
           }
+          // Proactive inherited-spawn guard (the second leak path of the same
+          // upstream EOF semantics): Start-Process with -RedirectStandard*/-Wait
+          // turns ON handle inheritance — the spawned process receives THIS
+          // call's stdio pipes and holds them until it exits, so a daemon
+          // (-WindowStyle Hidden) hangs the call forever. Redirecting all three
+          // streams does NOT help (verified empirically); a bare Start-Process
+          // leaks nothing.
+          if (!proceeded && shouldWarnInheritedSpawn(command)) {
+            throw new GateSignal(
+              `[dejavu] INHERITED-SPAWN — Start-Process with -RedirectStandard*/-Wait (or a pipe/redirect on the spawn statement) hands THIS call's stdio pipes to the spawned process via handle inheritance; opencode ends a bash call only on stdio EOF, so a child that outlives the call hangs it forever — redirecting all three streams does NOT help. CORRECTION: spawn BARE (no -RedirectStandard*, no -Wait, no pipe/redirect in the spawn statement) and let the daemon write its own logs from inside; or two-stage — an outer BARE Start-Process of a pwsh one-liner that does the redirecting INSIDE (the intermediary inherits nothing from this call). Poll readiness in a SEPARATE call. If you truly need this shape, append the trailing comment "# dejavu:proceed".`,
+            )
+          }
+          // Proactive orphan-job guard: Start-Job work lives inside THIS call's
+          // PowerShell and is killed silently when the call ends — "background"
+          // work that never survives, with no error anywhere.
+          if (!proceeded && shouldWarnOrphanJob(command)) {
+            throw new GateSignal(
+              `[dejavu] ORPHAN-JOB — Start-Job runs inside THIS bash call's PowerShell: the job is killed silently when the call ends, so work you expect to continue in the background never survives and nothing reports it. CORRECTION: for work that must outlive the call, spawn DETACHED — a BARE Start-Process (no -RedirectStandard*, no pipe) of a pwsh one-liner/script that does the work and writes its own logs, then poll in a SEPARATE call; if you only need the result here, run it synchronously or add Wait-Job / Receive-Job -Wait. If intentional, append the trailing comment "# dejavu:proceed".`,
+            )
+          }
           // Visibility: an agent that bypasses the long-running guard may hang;
           // log it so "why did my subagent hang" is answerable after the fact.
           if (proceeded && shouldWarnLongRunning(command)) {
@@ -252,6 +275,12 @@ export const Dejavu: Plugin = async ({ directory, client }) => {
           }
           if (proceeded && shouldWarnSuppressedSpawn(command)) {
             logClient("warn", `dejavu: suppressed-spawn guard bypassed via dejavu:proceed — command may hang: ${command.slice(0, 200)}`).catch(() => {})
+          }
+          if (proceeded && shouldWarnInheritedSpawn(command)) {
+            logClient("warn", `dejavu: inherited-spawn guard bypassed via dejavu:proceed — command may hang: ${command.slice(0, 200)}`).catch(() => {})
+          }
+          if (proceeded && shouldWarnOrphanJob(command)) {
+            logClient("warn", `dejavu: orphan-job guard bypassed via dejavu:proceed — job dies with the call: ${command.slice(0, 200)}`).catch(() => {})
           }
         }
 
@@ -612,7 +641,11 @@ export const Dejavu: Plugin = async ({ directory, client }) => {
           let changed = false
           // Metric: failure of an already-enforced pattern (the event that
           // promoted the gate does not count — the gate did not exist yet).
-          if (fresh.status !== "watching" && !result.promoted) {
+          // Diagnostic/iteration verbs are exempt: for a test runner or lint,
+          // failing again after the note is the iteration itself (fix → rerun →
+          // fail), not a failure to teach — counting it inflated recurredAfterGate
+          // into useless demotion/review pressure (38 reminders on one flutter gate).
+          if (fresh.status !== "watching" && !result.promoted && !isDiagnosticSignature(fresh.signature)) {
             fresh.recurredAfterGate += 1
             changed = true
             // Demotion votes count only failures the gate had a chance to

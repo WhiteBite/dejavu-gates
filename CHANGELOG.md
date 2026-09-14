@@ -1,5 +1,39 @@
 # Changelog
 
+## 2.32.0 — 2026-09-14
+
+### Changed (hang guards, audit round)
+- **INHERITED-SPAWN daemon-intent markers widened.** `-WindowStyle Minimized` joins `Hidden`, and a known server starter (`SERVER_STARTERS`: `npm run dev`, `vite`, `flask run`, …) as the spawned command counts as outliving the call too — a redirected dev-server spawn in a normal window hangs exactly like the hidden one. Redirected ONE-SHOT spawns stay unflagged (they merely delay the call by the child's lifetime).
+- **ORPHAN-JOB guard**: `Start-Job` without an in-call wait (`Wait-Job` / `Receive-Job -Wait`) is interrupted in the before-hook — the job runs inside THIS call's PowerShell and is killed silently when the call ends, so "background" work never survives and nothing reports it. The correction teaches the detached bare-Start-Process pattern (or synchronous wait). `# dejavu:proceed` bypasses (logged).
+
+### Verified (no code change)
+- **stdin inheritance is not an independent hang vector**: the probe runs showed ANY `-RedirectStandard*` turns on handle inheritance (all three streams redirected still hangs), while a bare `Start-Process` inherits nothing — the guard already keys on the redirect itself, not on which stream it is.
+
+## 2.31.0 — 2026-09-14
+
+### Added (hang guards)
+- **INHERITED-SPAWN guard** — the second leak path of anomalyco/opencode#29831, empirically verified on this machine (4 bounded probe runs): `Start-Process` with `-RedirectStandard*` or `-Wait` turns ON handle inheritance, so the spawned process receives THIS call's stdio pipes among the inheritable handles; opencode ends a bash call only on stdio EOF, so a child that outlives the call (`-WindowStyle Hidden` daemon) hangs the call forever. Redirecting ALL THREE streams does NOT help; a BARE `Start-Process` (no `-Redirect*`, no pipe/redirect on the spawn statement) leaks nothing and returns at once; with a short-lived child the call merely waits its lifetime. The before-hook interrupts `Start-Process … -WindowStyle Hidden` combined with `-RedirectStandard*`/`-Wait`/a pipe/redirect on the spawn statement and teaches the working patterns: spawn BARE and let the daemon write its own logs from inside, or two-stage — an outer bare `Start-Process` of a pwsh one-liner that does the redirecting INSIDE (the intermediary inherits nothing from this call). Both production hangs (`dart capture_server.dart` / `dart machine_driver.dart` with `-RedirectStandardOutput[+Error]`) match the flagged shape; bare hidden spawns and redirect-without-hidden stay unflagged (v1 conservative). `# dejavu:proceed` bypasses (logged).
+
+### Fixed
+- **WAIT_LOOP saw through `-Milliseconds`/`-Seconds` spellings.** `Start-Sleep -Milliseconds 500` slipped past the `\s+\d` tail of the while/for rules, so an unbounded `while (-not (Test-Path …)) { Start-Sleep -Milliseconds 500 }` poll hung to the bash timeout unflagged; `Test-Path` also joins the multi-line probe list (file-waiting is the most common polling condition). Bounded `for` loops stay unflagged.
+
+## 2.30.0 — 2026-09-13
+
+Fleet-wide store audit (7 projects, 1389 gates) surfaced systemic over-enforcement and dead-correction classes; every fix below is mechanical and propagates to existing gates via repair/migrate.
+
+### Changed (enforcement tiers)
+- **PowerShell read-only probes are diagnostics** (`Get-Process`/`Get-Item`/`Get-ChildItem`/`Get-Content`/`Test-Path`/`Resolve-Path`/`Measure-Object`): their non-zero exit is a probe result (no matching process, missing path), not a failed operation — the `ls` class. Never block, remind at most, exit 1 immune. Production data: a `Get-Process` gate stored the process-list OUTPUT ("78692 dart 02.09.2026 1:10:14") as its "error".
+- **Unix read-only viewers never block** (`cat`/`head`/`tail`/`wc`/`less`/`more`, `isUnixViewerSignature`): a read-only habit typed into PowerShell is teachable, not blockable — production data showed `cat <str> | head - <n>` BLOCKING with a generic correction. Unlike diagnostics their exit 1 stays RECORDABLE (a missing file / not-recognized is a real teachable mistake, and the terminal-producer rule for `head`/`tail` is preserved), but they join the remind tier and the correction teaches the PowerShell-native form.
+- **Family shapes lost their teeth** (`segmentHasIdentity`): `git commit -m <str>` (the message is always parameterized and staged content is invisible — the gate matched EVERY commit; a pre-commit hook failure banned all commits), `npx tsx|ts-node|esno <str>` (the runner package is the verb, the script is the call), and wrapper run-subcommands (`bun run <str>`) are verb-phrase families: watching only. Concrete arguments keep identity (`git commit src/foo.ts -m <str>`, `npx tsx scripts/x.ts`, `bun run scripts/build.ts`).
+- **Diagnostic recurrence exemption**: `recurredAfterGate` no longer grows for diagnostic/iteration signatures — for a test runner or lint, failing again after the note is the iteration itself (fix → rerun → fail), not a failure to teach. Production data: one flutter-test gate reminded 38×, a gradle-test gate recurred 7×, all counted as "not teaching" pressure. Reminders, anti-nag and taught retirement still use `recurredAfterReminder`/`remindedCount`, so nagging gates still retire.
+
+### Fixed
+- **Legacy override votes count again.** Gates whose `overrideCount` predates `overrideSessions` tracking (2.28.0) could never reach the distinct-session demotion bar — the array was permanently absent, so 3-5 agent overrides changed nothing. A missing array now falls back to count-only demotion (current hooks always record sessions alongside the count, so absence proves the data is historical). The recurrence vote keeps the strict session requirement — `reoffenseSessions` legitimately stays absent on current data (first-encounter failures never vote).
+- **Unix-tool advice without the cmdlet wording.** `suggestCorrection` needed "not recognized" in the snippet to teach the PowerShell-native form, but OpenCode normalizes exits to 1 and stderr often never reaches the output — most real gates sat on a bare `exit code 1` and got the generic text. On Windows, a bare-exit failure on a Unix-only tool (`head`/`tail`/`wc`/`sed`/`awk`/`cut`/`uniq`/`xargs`/`less` — no pwsh alias exists) now gets the native-equivalent correction. `cat`/`grep`/`sort`/`tr` are excluded (pwsh aliases / common installs — their exit 1 may be real).
+- **PowerShell table rows are never failure evidence.** `looksLikeSuccess` recognizes process/file/dir-listing data rows (PID + name + locale date-time, `D:\path\file  dd.mm.yyyy HH:MM:SS`, `-a---- …` mode rows), so probe output can no longer be quoted as a gate's "Last error".
+- **Doctor MISSED ESCALATION no longer fires on orphans.** An index key with 2+ projects whose gate exists in NO scope is an INDEX ORPHAN (already reported, pruned by `--repair`) — reporting it as "not global" was a contradiction; there is nothing to escalate.
+- **Doctor STALE-CORRECTION pathology**: an enforced gate whose correction teaches a file-not-found error while the quoted path EXISTS again cannot recur — the gate nags about a dead error (production: `check_layers.py` reminded 28× quoting "can't open file"). Reported per scope; `--repair` retires such gates softly (`retireTaught` — damped re-promotion, a genuinely-returning pattern earns a fresh bar and a fresh correction).
+
 ## 2.29.0 — 2026-09-12
 
 ### Fixed (correction quality)
