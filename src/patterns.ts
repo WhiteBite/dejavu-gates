@@ -98,10 +98,12 @@ export function sanitizeForStore(text: string): string {
  * fingerprinting entirely. Flag alternatives run LONGEST FIRST: regex
  * alternatives are ordered, and `-c` matching inside `-command` swallowed
  * `ommand` into the payload — fragmenting keys across spellings of the same
- * call. `py` is the Windows Python launcher (`py -3 -c ...`).
+ * call. The flag section tolerates long flags and flag+value pairs
+ * (`-X utf8`, `node --import tsx`): a lookahead keeps it from swallowing the
+ * code flag itself. `py` is the Windows Python launcher (`py -3 -c ...`).
  */
 const INTERPRETER_ONELINER =
-  /(?:^|[|;&(\n]\s*)(?:\w+=\S+\s+)*(?:["']?\S*[\\/])?(python3?|py|node|bun|deno|perl|ruby|pwsh|powershell)(?:\.exe)?["']?(?:\s+-\w+)*\s+(-command|-encodedcommand|--eval|-c|-e)\s*/i
+  /(?:^|[|;&(\n]\s*)(?:\w+=\S+\s+)*(?:["']?\S*[\\/])?(python3?|py|node|bun|deno|perl|ruby|pwsh|powershell)(?:\.exe)?["']?(?:\s+(?!-(?:encodedcommand|command|c|e)\b|--eval\b)--?\w+(?:\s+\S+)?)*\s+(-command|-encodedcommand|--eval|-c|-e)\s*/i
 
 function hashInterpreterPayload(command: string): string {
   const match = INTERPRETER_ONELINER.exec(command)
@@ -940,8 +942,12 @@ export function levenshteinCapped(a: string, b: string, maxDist: number): number
   return prev[n] ?? 0
 }
 
-/** Code fingerprints are IDENTITY, not data — they must match exactly. */
-const CODE_FINGERPRINTS = /<code:[0-9a-f]+>/g
+/** Code fingerprints are IDENTITY, not data — they must match exactly. The
+ * residue shape of a failed fingerprint (`-c <str>`, `--eval <str>`) is
+ * identity-bearing too: a one-liner family must never fuzzy-match a plain
+ * argument (`<path>`) — production misfire: an unrelated `python -X utf8 -c`
+ * one-liner inherited a script-path gate's enforcement. */
+const CODE_FINGERPRINTS = /<code:[0-9a-f]+>|-(?:encodedcommand|command|c|e)\s+<str>|--eval\s+<str>/gi
 
 /** Flag tokens ("-x", "--foo") are the operation's switches. Two commands with
  * DISJOINT flag sets are different operations and must never fuzzy-merge

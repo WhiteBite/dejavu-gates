@@ -2556,6 +2556,21 @@ check(
   r99TransformReady && JSON.stringify(r99Msgs19[1]?.parts[0]?.state?.input) !== JSON.stringify(r99Msgs19[2]?.parts[0]?.state?.input),
 )
 
+// --- 100. interpreter one-liner fingerprint with valued/long flags + fuzzy payload-class guard ---
+const r100Sig1 = callSignature("bash", { command: 'python -X utf8 -c "print(1)"' }) ?? ""
+const r100Sig2 = callSignature("bash", { command: 'python -X utf8 -c "print(2)"' }) ?? ""
+const r100Sig3 = callSignature("bash", { command: 'python -X utf8 -c "print(1)"' }) ?? ""
+check("one-liner with a valued flag fingerprints (-X utf8)", /^bash:python -x utf8 -c <code:[0-9a-f]{8}>$/.test(r100Sig1))
+check("different one-liners with -X utf8 get different keys", r100Sig1 !== r100Sig2)
+check("same one-liner with -X utf8 is stable", r100Sig1 === r100Sig3)
+check("one-liner with a long valued flag fingerprints (node --import)", (callSignature("bash", { command: 'node --import tsx -e "console.log(1)"' }) ?? "").includes("<code:"))
+check("one-liner with -W flag fingerprints", (callSignature("bash", { command: 'python -W ignore -c "import sys"' }) ?? "").includes("<code:"))
+check("one-liner fingerprint stays idempotent after the flag fix", (callSignature("bash", { command: normalizeCommand('python -X utf8 -c "print(1)"') }) ?? "") === r100Sig1)
+check("fuzzy: residue -c <str> never matches <path> payload class", !fuzzySimilar("bash:python -x utf8 -c <str>", "bash:python -x utf8 <path>"))
+check("fuzzy: residue -e <str> never matches -e <path>", !fuzzySimilar("bash:node -e <str>", "bash:node -e <path>"))
+check("fuzzy: distinct code hashes still never merge", !fuzzySimilar("bash:python -x utf8 <code:aaaa1111>", "bash:python -x utf8 <code:bbbb2222>"))
+check("fuzzy: legit near-duplicates still merge", fuzzySimilar("bash:node scripts/check-i18n-parity.mjs <n> >& <n>", "bash:node scripts/check-i18n-parity.mjs --full <n> >& <n>"))
+
 // --- 86. round-8 invariant: a corrupt GLOBAL gates.json is quarantined under the
 // gates lock by reconcile(); the unlocked routing peeks in reconcileAll (escalation
 // filter + index rebuild) are non-force and never write. After init the store is

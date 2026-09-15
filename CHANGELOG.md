@@ -1,5 +1,11 @@
 # Changelog
 
+## 2.34.0 — 2026-09-15
+
+### Fixed (one-liner identity + fuzzy cross-class leak — production misfire)
+- **Interpreter flags with values no longer break one-liner fingerprinting.** `INTERPRETER_ONELINER` only tolerated bare flags between the interpreter and `-c` — so `python -X utf8 -c "…"` (or `node --import tsx -e "…"`) never fingerprinted, and every such one-liner collapsed into one family signature (`python -x utf8 -c <str>`) shared by unrelated scripts. The flag section now allows long flags and flag+value pairs, with a longest-first lookahead that never swallows the code flag itself.
+- **Fuzzy no longer crosses payload classes.** A failed-fingerprint residue shape (`-c <str>`, `-e <str>`, `--eval <str>`, `-command <str>`) is identity-bearing: it joins the `CODE_FINGERPRINTS` exact-match guard, so a one-liner family can never fuzzy-match a plain `<path>` argument or vice versa. Production case: an agent's i18n-verification one-liner got REMINDED by a gate learned from unrelated `python -X utf8 script.py` failures — and the one-liner's own failures were fuzzy-consolidated into that gate's evidence.
+
 ## 2.33.0 — 2026-09-14
 
 ### Added (repeat channel)
