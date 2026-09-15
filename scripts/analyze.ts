@@ -5,7 +5,7 @@
  * Usage: bun scripts/analyze.ts [projectDir ...]
  *   without arguments, project stores are discovered from the global index
  */
-import { existsSync } from "node:fs"
+import { existsSync, readFileSync } from "node:fs"
 import { homedir } from "node:os"
 import { join } from "node:path"
 import { GateStore } from "../src/store"
@@ -29,6 +29,30 @@ for (const dir of dirs) {
   const store = new GateStore(dir)
   const gates = await store.load()
   console.log(`\n== ${dir}`)
+  // --- repeat channel (log events) ---
+  try {
+    const logRaw = readFileSync(join(dir, "log.jsonl"), "utf8")
+    const counts: Record<string, number> = {}
+    for (const line of logRaw.split("\n")) {
+      if (line.trim() === "") continue
+      let evt: { type?: string; repeatCount?: unknown }
+      try { evt = JSON.parse(line) } catch { continue }
+      if (typeof evt.type !== "string") continue
+      if (evt.type.startsWith("repeat-")) {
+        const sub = evt.type.slice("repeat-".length)
+        counts[sub] = (counts[sub] ?? 0) + 1
+      } else if (evt.type === "override" && typeof evt.repeatCount !== "undefined") {
+        counts.override = (counts.override ?? 0) + 1
+      }
+    }
+    const keys = Object.keys(counts)
+    if (keys.length > 0) {
+      const parts = keys.map((k) => `${k} ${counts[k]}`)
+      console.log(`   repeat: ${parts.join(" | ")}`)
+    }
+  } catch {
+    // missing log.jsonl — skip silently
+  }
   if (gates.length === 0) {
     console.log("   (empty)")
     continue

@@ -51,3 +51,11 @@ Gates expire after 60 days without recurrence. Gates listen to behavior in both 
 
 - Never pipe/redirect the stdout of a spawn/start command (`… start | Out-Null`, `… start > $null`): the spawned process keeps the stdio handle open and the call only ends on stdio EOF — it hangs until its timeout. Run the spawn bare (it prints 1-3 lines) and poll status in a SEPARATE call.
 - Long suites: pass an explicit `timeout` close to the expected wall time, not a padded one. A call killed at its timeout is recorded as a failure and will gate itself — with a correction teaching exactly this.
+
+## When you get `[dejavu] REPETITION` (note) or `[dejavu] REPEAT BLOCKED`
+
+You issued the identical tool call (same tool, same arguments) in several consecutive rounds. DashScope/Qwen hard-rejects such histories (HTTP 400), and one rejection poisons the session permanently — dejavu mutates the outgoing payload to prevent that and now asks you to break the loop.
+
+1. Do NOT re-issue the identical call. Change the arguments (readers: `since_message_id` / `from_end` / `limit`) or take a different approach entirely.
+2. Never poll background tasks with identical calls — wait for the completion notification instead.
+3. `_dejavu_proceed: true` in the call args bypasses a REPEAT BLOCK (logged). Use it only when the user explicitly asked you to force the operation.

@@ -1472,3 +1472,125 @@ export function suggestCorrection(signature: string, snippet: string): string {
   }
   return "This exact call keeps failing — inspect the last output line and change approach before retrying."
 }
+
+// --- Repeat channel (outgoing-payload series detection) -------------------------
+
+/** Marker keys the repeat channel injects into outgoing payloads (sanitize) and
+ * accepts as a bypass (block tier) — stripped from identity so a model mimicking
+ * a seen marker cannot defeat detection. */
+export const REPEAT_MARKER = "_dejavu_repeat"
+export const REPEAT_PROCEED = "_dejavu_proceed"
+
+/** Stable identity for a call's args: sorted-keys JSON stringify with the
+ * repeat-channel marker keys removed. NOT the same as callSignature — no
+ * placeholder normalization (the provider checks byte-identity). Nested
+ * objects are NOT recursively sorted — args are flat for all realistic tools. */
+export function canonicalArgs(args: Record<string, unknown>): string {
+  const rebuilt: Record<string, unknown> = {}
+  for (const key of Object.keys(args)
+    .filter((k) => k !== REPEAT_MARKER && k !== REPEAT_PROCEED)
+    .sort()) {
+    rebuilt[key] = args[key]
+  }
+  return JSON.stringify(rebuilt)
+}
+
+/** Series key shared by detectRepeatSeries and the before-hook block — one
+ * formula in one place, or the two tiers silently disagree. */
+export function signRepeatedCall(tool: string, args: Record<string, unknown>): string {
+  return `${tool}:${canonicalArgs(args)}`
+}
+
+export interface RepeatOccurrence {
+  /** index into the messages array */
+  messageIndex: number
+  /** index into that message's parts array */
+  partIndex: number
+}
+
+export interface RepeatSeries {
+  /** `${tool}:${canonicalArgs}` */
+  key: string
+  tool: string
+  occurrences: RepeatOccurrence[]
+  /** true when the last occurrence sits in the LAST assistant message of the history */
+  reachesTail: boolean
+}
+
+export interface RepeatScan {
+  /** session of the history (first message's info.sessionID), null when absent */
+  sessionID: string | null
+  /** all series with 2+ consecutive rounds */
+  series: RepeatSeries[]
+}
+
+/** Detect series of byte-identical tool calls across consecutive assistant
+ * rounds (DashScope rejects those in an outgoing payload, so the transform hook
+ * sanitizes them). Parallel duplicates inside one message count as ONE round;
+ * a non-assistant message — or an assistant message missing the key — breaks
+ * the run. Pure: reads the payload shape, touches nothing else. */
+export function detectRepeatSeries(
+  messages: ReadonlyArray<{
+    info: { role: string; sessionID?: string }
+    parts: ReadonlyArray<{ type: string; tool?: string; state?: { input?: Record<string, unknown> } }>
+  }>,
+): RepeatScan {
+  let lastAssistant = -1
+  for (let i = messages.length - 1; i >= 0; i--) {
+    if (messages[i]?.info.role === "assistant") {
+      lastAssistant = i
+      break
+    }
+  }
+  interface Run {
+    tool: string
+    occurrences: RepeatOccurrence[]
+    lastMessageIndex: number
+  }
+  const open = new Map<string, Run>()
+  const series: RepeatSeries[] = []
+  const close = (key: string, run: Run): void => {
+    if (run.occurrences.length >= 2) {
+      series.push({
+        key,
+        tool: run.tool,
+        occurrences: run.occurrences,
+        reachesTail: run.lastMessageIndex === lastAssistant,
+      })
+    }
+  }
+  for (let i = 0; i < messages.length; i++) {
+    const msg = messages[i]
+    if (msg?.info.role !== "assistant") {
+      // a user message interrupts every open run
+      for (const [key, run] of open) close(key, run)
+      open.clear()
+      continue
+    }
+    // parallel duplicates inside one message are one round - first part wins
+    const round = new Map<string, { tool: string; partIndex: number }>()
+    for (let p = 0; p < msg.parts.length; p++) {
+      const part = msg.parts[p]
+      if (part?.type !== "tool" || typeof part.tool !== "string" || part.state?.input == null) continue
+      const key = signRepeatedCall(part.tool, part.state.input ?? {})
+      if (!round.has(key)) round.set(key, { tool: part.tool, partIndex: p })
+    }
+    for (const [key, run] of open) {
+      if (!round.has(key)) {
+        close(key, run)
+        open.delete(key)
+      }
+    }
+    for (const [key, found] of round) {
+      const run = open.get(key)
+      if (run) {
+        run.occurrences.push({ messageIndex: i, partIndex: found.partIndex })
+        run.lastMessageIndex = i
+      } else {
+        open.set(key, { tool: found.tool, occurrences: [{ messageIndex: i, partIndex: found.partIndex }], lastMessageIndex: i })
+      }
+    }
+  }
+  for (const [key, run] of open) close(key, run)
+  return { sessionID: messages[0]?.info.sessionID ?? null, series }
+}

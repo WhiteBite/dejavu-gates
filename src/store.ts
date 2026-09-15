@@ -5,7 +5,7 @@ import { canBlock, canRemind, fuzzySimilar, FUZZY_MAX_LEN, hasResidualIdentity, 
 import { coerceGateShape, repairGate } from "./validate"
 
 /** Bumped on behavior changes; stamped into init log events so stale sessions are visible. */
-export const PLUGIN_VERSION = "2.32.0"
+export const PLUGIN_VERSION = "2.33.0"
 
 export interface Gate {
   /** sha1 signature prefix — the pattern identity */
@@ -119,6 +119,10 @@ export type LogEventType =
   | "retired-healed"
   | "retired-taught"
   | "healed"
+  | "repeat-detected"
+  | "repeat-reminded"
+  | "repeat-blocked"
+  | "repeat-sanitized"
 
 /** Events that change what the machine remembers — the only ones worth the
  * global log lock (the most-contended lock, shared by every window of every
@@ -149,6 +153,8 @@ export interface LogEvent {
   via?: "exact" | "fuzzy" | "segment"
   /** plugin version (init events) */
   version?: string
+  /** length of the consecutive-identical-call series (repeat channel) */
+  repeatCount?: number
 }
 
 export const MAX_SESSIONS = 50

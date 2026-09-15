@@ -14,7 +14,9 @@ import {
   callSignature,
   canBlock,
   canRemind,
+  canonicalArgs,
   detectFailure,
+  detectRepeatSeries,
   failureSnippet,
   fuzzySimilar,
   hasResidualIdentity,
@@ -35,6 +37,8 @@ import {
   splitChain,
   stripControl,
   suggestCorrection,
+  REPEAT_MARKER,
+  REPEAT_PROCEED,
 } from "../src/patterns"
 import { DEMOTE_OVERRIDES, GLOBAL_PROJECTS, GateStore, MAX_SESSIONS, NOISE_TTL_DAYS, PLUGIN_VERSION, Stores, TTL_DAYS, mergeGate, type Gate } from "../src/store"
 import { repairGate } from "../src/validate"
@@ -44,6 +48,7 @@ type Hooks = Awaited<ReturnType<typeof Dejavu>>
 type BeforeHook = NonNullable<Hooks["tool.execute.before"]>
 type AfterHook = NonNullable<Hooks["tool.execute.after"]>
 type EventHook = NonNullable<Hooks["event"]>
+type TransformHook = NonNullable<Hooks["experimental.chat.messages.transform"]>
 type BeforeInput = Parameters<BeforeHook>[0]
 type BeforeOutput = Parameters<BeforeHook>[1]
 type AfterInput = Parameters<AfterHook>[0]
@@ -2436,6 +2441,120 @@ check("orphan-job: Receive-Job -Wait does NOT flag", !shouldWarnOrphanJob("$j = 
 check("wait-loop: unbounded while + Test-Path + -Milliseconds flags", shouldWarnWaitLoop('while (-not (Test-Path "$d\\done.flag")) { Start-Sleep -Milliseconds 500 }'))
 check("wait-loop: multi-line while + Test-Path flags", shouldWarnWaitLoop('while (-not (Test-Path $f)) {\n  Start-Sleep -Milliseconds 500\n}'))
 check("wait-loop: bounded for + -Milliseconds stays unflagged", !shouldWarnWaitLoop("for ($i=0; $i -lt 40; $i++) { Start-Sleep -Milliseconds 500; if (Test-Path f) { break } }"))
+
+// --- 99. repeat channel ---
+interface R99Part {
+  type: string
+  tool?: string
+  state?: { status?: string; input?: Record<string, unknown>; output?: string; error?: string }
+}
+interface R99Msg {
+  info: { role: string; sessionID?: string }
+  parts: R99Part[]
+}
+const r99Asst = (input: Record<string, unknown>, state: Record<string, unknown> = {}, sessionID = "r99s"): R99Msg => ({
+  info: { role: "assistant", sessionID },
+  parts: [{ type: "tool", tool: "background_output", state: { status: "completed", output: "ok", ...state, input } }],
+})
+const r99AsstErr = (input: Record<string, unknown>): R99Msg => r99Asst(input, { status: "error", output: undefined, error: "boom" })
+const r99User = (sessionID = "r99s"): R99Msg => ({ info: { role: "user", sessionID }, parts: [{ type: "text" }] })
+
+check("canonicalArgs is key-order independent", canonicalArgs({ b: 2, a: 1 }) === canonicalArgs({ a: 1, b: 2 }))
+check("canonicalArgs strips repeat markers", canonicalArgs({ task_id: "x", [REPEAT_MARKER]: 3, [REPEAT_PROCEED]: true }) === canonicalArgs({ task_id: "x" }))
+check("detectRepeatSeries: no series in empty/single history", detectRepeatSeries([]).series.length === 0 && detectRepeatSeries([r99Asst({ task_id: "t1" })]).series.length === 0)
+const r99ScanRun = detectRepeatSeries([r99Asst({ task_id: "t1" }), r99Asst({ task_id: "t1" }), r99Asst({ task_id: "t1" })])
+check("detectRepeatSeries: series of 3 consecutive rounds", r99ScanRun.series.length === 1 && r99ScanRun.series[0]?.occurrences.length === 3 && r99ScanRun.series[0]?.reachesTail === true)
+const r99DupRound: R99Msg = {
+  info: { role: "assistant", sessionID: "r99s" },
+  parts: [
+    { type: "tool", tool: "background_output", state: { input: { task_id: "t1" } } },
+    { type: "tool", tool: "background_output", state: { input: { task_id: "t1" } } },
+  ],
+}
+check("detectRepeatSeries: intra-round duplicates are one round", detectRepeatSeries([r99DupRound]).series.length === 0)
+const r99ScanBreak = detectRepeatSeries([r99Asst({ task_id: "t1" }), r99User(), r99Asst({ task_id: "t1" }), r99Asst({ task_id: "t1" })])
+check("detectRepeatSeries: user message breaks the run", r99ScanBreak.series.length === 1 && r99ScanBreak.series[0]?.occurrences.length === 2)
+const r99ScanMimic = detectRepeatSeries([r99Asst({ task_id: "t1" }), r99Asst({ task_id: "t1", [REPEAT_MARKER]: 1 }), r99Asst({ task_id: "t1", [REPEAT_MARKER]: 2 })])
+check("detectRepeatSeries: marker mimicry still detected", r99ScanMimic.series.length === 1 && r99ScanMimic.series[0]?.occurrences.length === 3)
+check("detectRepeatSeries: sessionID from first message", detectRepeatSeries([r99User("ses_x"), r99Asst({ task_id: "t1" })]).sessionID === "ses_x")
+
+const r99Dir = join(tmp, "r99-project")
+const r99Hooks = await Dejavu({ directory: r99Dir, client: { app: { log: async () => ({}) } } } as unknown as Ctx)
+const r99Transform: TransformHook | undefined = r99Hooks["experimental.chat.messages.transform"]
+const r99TransformReady = typeof r99Transform === "function"
+const r99Before = r99Hooks["tool.execute.before"] as BeforeHook
+check("transform hook is registered", r99TransformReady)
+
+const r99Msgs10: R99Msg[] = [r99User(), r99Asst({ task_id: "t1" }), r99Asst({ task_id: "t1" }), r99Asst({ task_id: "t1" })]
+await r99Transform?.({} as never, { messages: r99Msgs10 } as never)
+check(
+  "sanitize: series of 3 gets markers on occurrences 2+3 only",
+  r99TransformReady &&
+    r99Msgs10[1]?.parts[0]?.state?.input?.[REPEAT_MARKER] === undefined &&
+    r99Msgs10[2]?.parts[0]?.state?.input?.[REPEAT_MARKER] === 1 &&
+    r99Msgs10[3]?.parts[0]?.state?.input?.[REPEAT_MARKER] === 2,
+)
+const r99Msgs11: R99Msg[] = [r99User(), r99Asst({ task_id: "a" }), r99Asst({ task_id: "b" }), r99Asst({ task_id: "c" })]
+await r99Transform?.({} as never, { messages: r99Msgs11 } as never)
+check("sanitize: no series, no mutation", r99TransformReady && r99Msgs11.every((m) => m.parts.every((p) => p.state?.input?.[REPEAT_MARKER] === undefined)))
+const r99Msgs12: R99Msg[] = [r99User(), r99Asst({ task_id: "t1" }), r99Asst({ task_id: "t1" })]
+await r99Transform?.({} as never, { messages: r99Msgs12 } as never)
+const r99NoteOut = r99Msgs12[2]?.parts[0]?.state?.output ?? ""
+check("remind NOTE appended on tail series of length 2", r99TransformReady && r99NoteOut.includes("[dejavu] REPETITION") && r99NoteOut.includes("CORRECTION"))
+const r99Msgs13: R99Msg[] = [r99User(), r99AsstErr({ task_id: "t1" }), r99AsstErr({ task_id: "t1" })]
+await r99Transform?.({} as never, { messages: r99Msgs13 } as never)
+const r99NoteErr = r99Msgs13[2]?.parts[0]?.state?.error ?? ""
+check("remind NOTE goes to state.error for error parts", r99TransformReady && r99NoteErr.includes("[dejavu] REPETITION"))
+const r99Msgs14: R99Msg[] = [r99User(), r99Asst({ task_id: "t1" }), r99Asst({ task_id: "t1" }), r99User(), r99Asst({ task_id: "t2" })]
+await r99Transform?.({} as never, { messages: r99Msgs14 } as never)
+check(
+  "middle (non-tail) series is sanitized but NOT noted",
+  r99TransformReady &&
+    r99Msgs14[1]?.parts[0]?.state?.input?.[REPEAT_MARKER] === undefined &&
+    r99Msgs14[2]?.parts[0]?.state?.input?.[REPEAT_MARKER] === 1 &&
+    r99Msgs14.every((m) => m.parts.every((p) => !(p.state?.output ?? "").includes("REPETITION") && !(p.state?.error ?? "").includes("REPETITION"))),
+)
+
+const r99Msgs15: R99Msg[] = [r99User("r99a"), r99Asst({ task_id: "t1" }, {}, "r99a"), r99Asst({ task_id: "t1" }, {}, "r99a")]
+await r99Transform?.({} as never, { messages: r99Msgs15 } as never)
+const r99Out15 = { args: { task_id: "t1" } }
+let r99Blocked: Error | null = null
+try {
+  await r99Before({ tool: "background_output", sessionID: "r99a", callID: "r99c1" } as unknown as BeforeInput, r99Out15 as unknown as BeforeOutput)
+} catch (e) {
+  r99Blocked = e as Error
+}
+check("block: 3rd identical call is blocked after tail series recorded", r99TransformReady && r99Blocked !== null && r99Blocked.message.includes("REPEAT BLOCKED"))
+const r99Out16 = { args: { task_id: "t1", [REPEAT_PROCEED]: true, [REPEAT_MARKER]: 9 } }
+let r99Bypass: Error | null = null
+try {
+  await r99Before({ tool: "background_output", sessionID: "r99a", callID: "r99c2" } as unknown as BeforeInput, r99Out16 as unknown as BeforeOutput)
+} catch (e) {
+  r99Bypass = e as Error
+}
+check("block: _dejavu_proceed bypasses and strips markers", r99TransformReady && r99Bypass === null && !(REPEAT_PROCEED in r99Out16.args) && !(REPEAT_MARKER in r99Out16.args))
+const r99Out17 = { args: { task_id: "t2" } }
+let r99Changed: Error | null = null
+try {
+  await r99Before({ tool: "background_output", sessionID: "r99a", callID: "r99c3" } as unknown as BeforeInput, r99Out17 as unknown as BeforeOutput)
+} catch (e) {
+  r99Changed = e as Error
+}
+check("block: changed args pass", r99TransformReady && r99Changed === null)
+const r99Out18 = { args: { task_id: "t1" } }
+let r99Other: Error | null = null
+try {
+  await r99Before({ tool: "background_output", sessionID: "r99b", callID: "r99c4" } as unknown as BeforeInput, r99Out18 as unknown as BeforeOutput)
+} catch (e) {
+  r99Other = e as Error
+}
+check("block: different session does not block", r99TransformReady && r99Other === null)
+const r99Msgs19: R99Msg[] = [r99User(), r99Asst({ task_id: "t1", [REPEAT_MARKER]: 1 }), r99Asst({ task_id: "t1", [REPEAT_MARKER]: 1 })]
+await r99Transform?.({} as never, { messages: r99Msgs19 } as never)
+check(
+  "sanitize: mimicked markers are overwritten to keep occurrences byte-distinct",
+  r99TransformReady && JSON.stringify(r99Msgs19[1]?.parts[0]?.state?.input) !== JSON.stringify(r99Msgs19[2]?.parts[0]?.state?.input),
+)
 
 // --- 86. round-8 invariant: a corrupt GLOBAL gates.json is quarantined under the
 // gates lock by reconcile(); the unlocked routing peeks in reconcileAll (escalation

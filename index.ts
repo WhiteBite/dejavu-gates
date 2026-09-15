@@ -6,6 +6,7 @@ import {
   callSignature,
   cmdWrapperPayload,
   detectFailure,
+  detectRepeatSeries,
   failureSnippet,
   isDiagnosticSignature,
   isIntendedNonzero,
@@ -13,6 +14,8 @@ import {
   nonTransparentProducers,
   parameterizeError,
   patternKey,
+  REPEAT_MARKER,
+  REPEAT_PROCEED,
   sanitizeForStore,
   scrubSecrets,
   shouldWarnLongRunning,
@@ -20,6 +23,7 @@ import {
   shouldWarnInheritedSpawn,
   shouldWarnOrphanJob,
   shouldWarnWaitLoop,
+  signRepeatedCall,
   stripQuotedSpans,
 } from "./src/patterns"
 import { checkFeedbackDemotion, GateStore, GLOBAL_PROJECTS, MAX_SESSIONS, NOISE_TTL_DAYS, retireAntiNag, retireTaught, Stores, TTL_DAYS, type Gate, type LogEvent, PLUGIN_VERSION } from "./src/store"
@@ -56,6 +60,15 @@ const CROSS_CHANNEL_WINDOW_MS = 2000
 /** recentRecords is bounded FIFO-style like handledParts */
 const RECENT_RECORDS_CAP = 1000
 const RECENT_RECORDS_KEEP = 500
+/** repeat channel: a series of this many consecutive identical (tool, args) rounds
+ * reaching the tail of history gets a NOTE appended to the last tool result */
+const REPEAT_REMIND_AT = 2
+/** repeat channel: an incoming call that would extend a recorded series to this
+ * length is hard-blocked in the before-hook (provider 400 prevention is payload-side) */
+const REPEAT_BLOCK_AT = 3
+/** repeat channel: per-session tail-series map cap (lives in-process; a stuck
+ * loop must not grow it unboundedly) */
+const REPEAT_SESSIONS_CAP = 1000
 
 /** Sentinel: intentional gate/reminder throws (rethrown); our own bugs are swallowed. */
 class GateSignal extends Error {}
@@ -114,6 +127,9 @@ export const Dejavu: Plugin = async ({ directory, client }) => {
 
   /** callID -> signature fallback when the after-hook does not receive args */
   const pendingCalls = new Map<string, string>()
+  /** repeat channel: sessionID → live tail series ({key,length}) + log watermark;
+   *  written by the messages-transform hook, read by the before-hook block */
+  const repeatSeries = new Map<string, { key: string; length: number; logged: number }>()
   /** message part IDs already counted as tool-level errors */
   let handledParts = new Set<string>()
   /** (key|session) -> last recording channel/time, for the cross-channel dedup */
@@ -211,6 +227,26 @@ export const Dejavu: Plugin = async ({ directory, client }) => {
     "tool.execute.before": async (input, output) => {
       try {
         const rawArgs = (output?.args ?? {}) as Record<string, unknown>
+        const session = typeof input.sessionID === "string" ? input.sessionID : "unknown"
+        // Repeat channel: internal markers never reach the tool; a call matching
+        // a live tail series at the block threshold is hard-stopped — one more
+        // identical repeat and the provider kills the session with a 400.
+        const repeatBypass =
+          rawArgs[REPEAT_PROCEED] === true ||
+          (typeof rawArgs.command === "string" && /#[ \t]*dejavu:proceed\b/.test(stripQuotedSpans(rawArgs.command)))
+        delete rawArgs[REPEAT_MARKER]
+        delete rawArgs[REPEAT_PROCEED]
+        const repeatEntry = repeatSeries.get(session)
+        if (repeatEntry !== undefined && repeatEntry.length >= REPEAT_BLOCK_AT - 1 && signRepeatedCall(input.tool, rawArgs) === repeatEntry.key) {
+          if (repeatBypass) {
+            await stores.logAll({ type: "override", key: repeatEntry.key.slice(0, 80), tool: input.tool, session, project: directory, repeatCount: repeatEntry.length })
+          } else {
+            await stores.logAll({ type: "repeat-blocked", key: repeatEntry.key.slice(0, 80), tool: input.tool, session, project: directory, repeatCount: repeatEntry.length })
+            throw new GateSignal(
+              `[dejavu] REPEAT BLOCKED — this would be identical call #${repeatEntry.length + 1} in a row; DashScope hard-rejects consecutive identical tool calls (HTTP 400) and the session is one repeat away from dying.\nCORRECTION: change the args (readers: since_message_id / from_end / limit) or take a different approach entirely; do not re-issue this call unchanged.\nEVIDENCE: ${repeatEntry.length} consecutive identical calls already in this session's history.\nBypass (logged): _dejavu_proceed: true in the call args (or the trailing "# dejavu:proceed" comment for bash).`,
+            )
+          }
+        }
         const args = scrubbedArgs(rawArgs)
         const signature = callSignature(input.tool, args)
         if (!signature) return
@@ -317,7 +353,6 @@ export const Dejavu: Plugin = async ({ directory, client }) => {
 
         const gate = found.gate
         const via = found.via
-        const session = typeof input.sessionID === "string" ? input.sessionID : "unknown"
 
         // Explicit escape hatch — checked only in the actionable text field,
         // with word boundaries, so unrelated args cannot bypass gates. Quoted
@@ -756,6 +791,7 @@ export const Dejavu: Plugin = async ({ directory, client }) => {
           const props = (event as { properties?: unknown }).properties as { sessionID?: unknown } | undefined
           if (typeof props?.sessionID === "string") {
             stores.forgetSession(props.sessionID).catch(() => {})
+            repeatSeries.delete(props.sessionID)
           }
           return
         }
@@ -835,6 +871,89 @@ export const Dejavu: Plugin = async ({ directory, client }) => {
       } catch (error) {
         // the event stream must never be broken by us — but stay visible
         logHookError("event", error)
+      }
+    },
+
+    "experimental.chat.messages.transform": async (_input, output) => {
+      try {
+        const scan = detectRepeatSeries(output.messages)
+        // Sanitize (payload only, never persisted — verified upstream): every
+        // occurrence past the first of a series gets a marker, so the provider
+        // never sees byte-identical consecutive calls. A marker the model
+        // mimicked onto an earlier occurrence can collide post-mutation — bump
+        // the counter until the two byte-differ.
+        let mutated = 0
+        for (const s of scan.series) {
+          for (let i = 1; i < s.occurrences.length; i++) {
+            const occ = s.occurrences[i]
+            const prev = s.occurrences[i - 1]
+            if (occ === undefined || prev === undefined) continue
+            const part = output.messages[occ.messageIndex]?.parts[occ.partIndex]
+            const prevPart = output.messages[prev.messageIndex]?.parts[prev.partIndex]
+            if (part === undefined || part.type !== "tool" || part.state?.input == null) continue
+            let k = i
+            part.state.input[REPEAT_MARKER] = k
+            while (prevPart !== undefined && prevPart.type === "tool" && prevPart.state?.input != null && JSON.stringify(prevPart.state.input) === JSON.stringify(part.state.input)) {
+              k += 1
+              part.state.input[REPEAT_MARKER] = k
+            }
+            mutated += 1
+          }
+        }
+        // Remind: a tail series (the model just repeated) gets a NOTE on the
+        // last tool result — payload-only, the run is never interrupted.
+        let noted = 0
+        for (const s of scan.series) {
+          if (!s.reachesTail || s.occurrences.length < REPEAT_REMIND_AT) continue
+          const lastOcc = s.occurrences[s.occurrences.length - 1]
+          if (lastOcc === undefined) continue
+          const part = output.messages[lastOcc.messageIndex]?.parts[lastOcc.partIndex]
+          if (part === undefined || part.type !== "tool" || part.state == null) continue
+          const note = `\n\n[dejavu] REPETITION — this exact call has now repeated ${s.occurrences.length} rounds in a row.\nCORRECTION: change the call's args — for background_output/session_read use since_message_id / from_end / limit instead of re-polling with identical params; do not poll background tasks — wait for the completion notification. One more identical repeat and this session dies at the provider (repetitive-call 400).`
+          if (part.state.status === "error" && typeof part.state.error === "string") {
+            part.state.error += note
+            noted += 1
+          } else if ("output" in part.state && typeof part.state.output === "string") {
+            part.state.output += note
+            noted += 1
+          }
+        }
+        // Feed the before-hook's block tier + damped observability. Only live
+        // tail series may block; an ended loop clears its entry so stale
+        // evidence never keeps blocking.
+        const sessionID = scan.sessionID
+        if (sessionID !== null && (scan.series.length > 0 || repeatSeries.has(sessionID))) {
+          let maxLen = 0
+          let maxKey = ""
+          let tailKey: string | null = null
+          let tailLen = 0
+          for (const s of scan.series) {
+            if (s.occurrences.length > maxLen) {
+              maxLen = s.occurrences.length
+              maxKey = s.key
+            }
+            if (s.reachesTail && s.occurrences.length > tailLen) {
+              tailLen = s.occurrences.length
+              tailKey = s.key
+            }
+          }
+          const watermark = repeatSeries.get(sessionID)?.logged ?? 0
+          if (maxLen > watermark && (mutated > 0 || noted > 0)) {
+            const logKey = (tailKey ?? maxKey).slice(0, 80)
+            if (mutated > 0) await stores.logAll({ type: "repeat-sanitized", key: logKey, session: sessionID, project: directory, repeatCount: maxLen })
+            if (noted > 0) await stores.logAll({ type: "repeat-reminded", key: logKey, session: sessionID, project: directory, repeatCount: maxLen })
+            if (tailLen > 0) await stores.logAll({ type: "repeat-detected", key: logKey, session: sessionID, project: directory, repeatCount: tailLen })
+          }
+          repeatSeries.set(sessionID, { key: tailKey ?? "", length: tailLen, logged: Math.max(watermark, maxLen) })
+          while (repeatSeries.size > REPEAT_SESSIONS_CAP) {
+            const oldest = repeatSeries.keys().next()
+            if (oldest.done) break
+            repeatSeries.delete(oldest.value)
+          }
+        }
+      } catch (error) {
+        // the transform must never break the prompt pipeline — but stay visible
+        logHookError("transform", error)
       }
     },
 

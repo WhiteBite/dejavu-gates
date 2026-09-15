@@ -1,5 +1,10 @@
 # Changelog
 
+## 2.33.0 — 2026-09-14
+
+### Added (repeat channel)
+- **DashScope repetitive-call 400 is now structurally impossible.** The provider hard-rejects a payload whose history carries the same tool call (name + args byte-identical) in consecutive assistant rounds, and one rejection poisons the session permanently (the same history ships with every retry; compaction preserves the tail verbatim). The new `experimental.chat.messages.transform` hook scans every outgoing payload statelessly: every occurrence past the first of an identical-consecutive series gets a `_dejavu_repeat` marker (with a uniqueness bump, so a model mimicking markers onto earlier occurrences still yields byte-distinct args) — request-scoped, never persisted; already-poisoned sessions are CURED on the next request (the only cure, since stored history is never rewritten). A series reaching the tail of history gets a `[dejavu] REPETITION` note on its last tool result (the model just looped); a third identical call is hard-blocked in the before-hook (`REPEAT BLOCKED`) with a change-your-args correction. Bypass: `_dejavu_proceed: true` in args (or the bash `# dejavu:proceed` comment), logged as `override`. Detection is pure (`detectRepeatSeries` in patterns.ts): consecutive assistant rounds, parallel duplicates inside one round count once, user messages and missing-key rounds break the run. Events `repeat-detected`/`-sanitized`/`-reminded`/`-blocked` land in the project log, damped to fire only on series growth; analyze.ts summarizes them. No gates, no persistence, no promotion.
+
 ## 2.32.0 — 2026-09-14
 
 ### Changed (hang guards, audit round)
