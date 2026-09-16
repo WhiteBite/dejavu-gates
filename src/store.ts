@@ -1,11 +1,11 @@
 import { existsSync } from "node:fs"
 import { appendFile, mkdir, readFile, rename, stat, unlink, writeFile } from "node:fs/promises"
 import { dirname, join } from "node:path"
-import { canBlock, canRemind, fuzzySimilar, FUZZY_MAX_LEN, hasResidualIdentity, isNoiseError, isRepoLocal, looksLikeFailure, sanitizeForStore, scrubSecrets, suggestCorrection } from "./patterns"
-import { coerceGateShape, repairGate } from "./validate"
+import { canBlock, canRemind, fuzzySimilar, FUZZY_MAX_LEN, hasResidualIdentity, isNoiseError, isRepoLocal, looksLikeFailure, parameterizeError, sanitizeForStore, scrubSecrets, suggestCorrection } from "./patterns"
+import { coerceGateShape, failedAtMs, repairGate } from "./validate"
 
 /** Bumped on behavior changes; stamped into init log events so stale sessions are visible. */
-export const PLUGIN_VERSION = "2.34.0"
+export const PLUGIN_VERSION = "2.35.0"
 
 export interface Gate {
   /** sha1 signature prefix — the pattern identity */
@@ -56,18 +56,26 @@ export interface Gate {
   /** count at the moment the gate retired (healed or taught). `count`/`sessions`
    * are lifetime-cumulative, so without damping a retired gate re-promoted on the
    * VERY NEXT single failure (promote→heal→promote oscillation). Re-promotion now
-   * requires a full fresh bar: `count - retireBaseline.count >= threshold`. */
-  retireBaseline?: { count: number }
+   * requires a full fresh bar: `count - retireBaseline.count >= threshold`.
+   * movedOn rides along so since-retirement iteration evidence stays computable. */
+  retireBaseline?: { count: number; movedOn?: number }
   /** flagged for manual review when the gate fires often but errors stopped */
   review?: boolean
   /** sessions currently reminded about this gate: sessionID -> remind time (ms).
    * Persisted on the gate so the remind→block chain survives process restarts
    * and is visible to every window serving the session. */
   remindedSessions?: Record<string, number>
-  /** sessions that failed again after a reminder: sessionID -> fail time (ms).
-   * Their next attempt blocks. Expires like remindedSessions — a stale block
-   * with no live session is a leak, not enforcement. */
-  failedSessions?: Record<string, number>
+  /** sessions that failed again after a reminder: sessionID -> { t: fail time
+   * (ms, drives expiry), v: workspaceVersion at fail time } — an edit after the
+   * failed attempt turns the next attempt into a fresh try, not an ignored
+   * reminder. Legacy bare numbers (fail time only) never prove iteration. */
+  failedSessions?: Record<string, number | { t: number; v: number }>
+  /** workspace version at the last recorded failure (iteration evidence —
+   * process-local count of landed edit/write calls in the project) */
+  iteratedVersion?: number
+  /** lifetime failures that carried iteration evidence (moved workspace or a
+   * changed error form) — promotion requires stuck evidence, not just volume */
+  movedOn?: number
   /** distinct sessions that reoffended AFTER being reminded (capped). The
    * demotion vote counts only failures the gate had a chance to prevent —
    * first-encounter failures never saw a reminder and must not demote. */
@@ -899,6 +907,8 @@ export function mergeGate(target: Gate, source: Gate): void {
   if (source.promotionCount !== undefined) {
     target.promotionCount = (target.promotionCount ?? 0) + source.promotionCount
   }
+  if (source.movedOn !== undefined) target.movedOn = (target.movedOn ?? 0) + source.movedOn
+  if (source.iteratedVersion !== undefined) target.iteratedVersion = Math.max(target.iteratedVersion ?? 0, source.iteratedVersion)
   if (target.correction === undefined && source.correction !== undefined) target.correction = source.correction
   if (source.review === true) target.review = true
   // A demotion is earned behavior — merging must never launder it away.
@@ -918,7 +928,7 @@ export function mergeGate(target: Gate, source: Gate): void {
   // retired gates is rare (dedupe/escalation) and a wrong baseline would either
   // re-open the oscillation or lock the gate out of re-promotion.
   if (target.retireBaseline === undefined && source.retireBaseline !== undefined) {
-    target.retireBaseline = { count: source.retireBaseline.count }
+    target.retireBaseline = { count: source.retireBaseline.count, ...(source.retireBaseline.movedOn !== undefined ? { movedOn: source.retireBaseline.movedOn } : {}) }
   }
   // Session enforcement state must survive merges — dropping it silently
   // resets the remind→block chain on every escalation/dedupe.
@@ -933,9 +943,10 @@ export function mergeGate(target: Gate, source: Gate): void {
   if (source.failedSessions !== undefined) {
     if (target.failedSessions === undefined) target.failedSessions = {}
     for (const session of Object.keys(source.failedSessions)) {
-      const at = source.failedSessions[session] ?? 0
+      const entry = source.failedSessions[session]
+      if (entry === undefined) continue
       const existing = target.failedSessions[session]
-      if (existing === undefined || at > existing) target.failedSessions[session] = at
+      if (existing === undefined || failedAtMs(entry) > failedAtMs(existing)) target.failedSessions[session] = entry
     }
   }
   if (source.reoffenseSessions !== undefined) {
@@ -999,7 +1010,7 @@ export function checkFeedbackDemotion(gate: Gate): boolean {
  */
 export function retireTaught(gate: Gate): void {
   gate.status = "watching"
-  gate.retireBaseline = { count: gate.count }
+  gate.retireBaseline = { count: gate.count, ...(gate.movedOn !== undefined ? { movedOn: gate.movedOn } : {}) }
 }
 
 /**
@@ -1431,7 +1442,9 @@ export class Stores {
     projectDir: string
     snippet: string
     globalProjects: number
-  }): Promise<{ gate: Gate; store: GateStore; promoted: boolean; wentGlobal: boolean }> {
+    /** process-local workspace version (landed edit/write count) — iteration evidence */
+    workspaceVersion?: number
+  }): Promise<{ gate: Gate; store: GateStore; promoted: boolean; wentGlobal: boolean; iterated: boolean }> {
     const now = new Date().toISOString()
     // Route to the store that already knows this key (cheap unlocked peek).
     let store = this.projectStore ?? this.globalStore
@@ -1458,8 +1471,11 @@ export class Stores {
     // Phase 1 — this store's gates lock (short): find/create/mutate the gate,
     // promotion, save. Returns the mutated gate (or an ephemeral gate that is
     // never persisted when the flood guard leaves no eviction candidate).
-    const phase1 = await store.runLocked(async (): Promise<{ moved: Gate | null; ephemeral: Gate | null; promoted: boolean }> => {
+    const phase1 = await store.runLocked(async (): Promise<{ moved: Gate | null; ephemeral: Gate | null; promoted: boolean; iterated: boolean }> => {
       let promoted = false
+      let iterated = false
+      let evictedKey: string | null = null
+      let evictedTool = ""
       let ephemeral: Gate | null = null
       const gates = await store.loadForMutation()
       let gate = gates.find((g) => g.key === input.key)
@@ -1523,17 +1539,12 @@ export class Stores {
               recurredAfterGate: 0,
               overrideCount: 0,
             }
-            return { moved: null, ephemeral, promoted: false }
+            return { moved: null, ephemeral, promoted: false, iterated: false }
           }
           const evicted = gates[victimIdx]
-          gates.splice(victimIdx, 1)
           if (evicted !== undefined) {
-            store.deferEvent({
-              type: "expired",
-              key: evicted.key,
-              tool: evicted.tool,
-              snippet: `flood guard evicted this watching gate to stay at ${MAX_GATES}`,
-            })
+            evictedKey = evicted.key
+            evictedTool = evicted.tool
           }
         }
         gate = {
@@ -1554,6 +1565,21 @@ export class Stores {
           overrideCount: 0,
         }
         gates.push(gate)
+        // extract AFTER the push: extract() reassigns the store's live gate
+        // array — removing before the push would orphan this local array and
+        // lose the new gate. extract (not a bare splice) also drops the key
+        // index and the enforced cache — a bare splice left byKey() returning
+        // the removed gate, and the pattern's next failure re-landed on a
+        // detached duplicate (lost evidence).
+        if (evictedKey !== null) {
+          store.extract(new Set([evictedKey]))
+          store.deferEvent({
+            type: "expired",
+            key: evictedKey,
+            tool: evictedTool,
+            snippet: `flood guard evicted this watching gate to stay at ${MAX_GATES}`,
+          })
+        }
       }
 
       gate.count += 1
@@ -1564,14 +1590,29 @@ export class Stores {
         if (gate.projects.length > MAX_PROJECTS) gate.projects = gate.projects.slice(-MAX_PROJECTS)
       }
       gate.lastSeen = now
+      // Iteration detection: the workspace moved since the last recorded failure
+      // (a landed edit/write) or the error form changed — the call is being
+      // debugged, not blindly retried; iteration must not build stuck pressure.
+      // The version counter is process-local: after a restart the stored version
+      // exceeds the fresh one (reads as "no movement" once), then self-heals.
+      const newSnippet = sanitizeForStore(input.snippet)
+      const versionMoved = input.workspaceVersion !== undefined && gate.iteratedVersion !== undefined && input.workspaceVersion > gate.iteratedVersion
+      const errorMoved =
+        looksLikeFailure(newSnippet) &&
+        looksLikeFailure(gate.snippet) &&
+        !/^exit code \d+$/i.test(newSnippet) &&
+        !/^exit code \d+$/i.test(gate.snippet) &&
+        parameterizeError(newSnippet) !== parameterizeError(gate.snippet)
+      iterated = versionMoved || errorMoved
+      if (iterated) gate.movedOn = (gate.movedOn ?? 0) + 1
+      if (input.workspaceVersion !== undefined) gate.iteratedVersion = input.workspaceVersion
       // Only an exact-key failure updates the evidence: a crafted near-duplicate
       // must not overwrite a legitimate gate's snippet via fuzzy consolidation.
       // Evidence monotonicity: a failure-shaped snippet is never displaced by a
       // success-shaped one (a pass summary must not push out the real error);
       // between two failure-shaped snippets the latest wins (freshness).
       if (!fuzzyConsolidated) {
-        const snippet = sanitizeForStore(input.snippet)
-        if (looksLikeFailure(snippet) || !looksLikeFailure(gate.snippet)) gate.snippet = snippet
+        if (looksLikeFailure(newSnippet) || !looksLikeFailure(gate.snippet)) gate.snippet = newSnippet
       }
       // A failure breaks any heal streak — the command is still broken.
       gate.succeededAfterGate = 0
@@ -1582,11 +1623,15 @@ export class Stores {
       // re-promote on the VERY NEXT single failure (promote→heal→promote).
       // Require a full fresh bar of failures SINCE retirement instead.
       const effectiveCount = gate.retireBaseline !== undefined ? Math.max(0, gate.count - gate.retireBaseline.count) : gate.count
+      // Pure-iteration evidence never enforces: every failure moved (edits or a
+      // changing error form) — the call is being debugged, not blindly retried.
+      // One stuck failure keeps promotion alive.
+      const stuckEvidence = effectiveCount - ((gate.movedOn ?? 0) - (gate.retireBaseline?.movedOn ?? 0))
       // Policy: non-diagnostic bash may hard-block; diagnostics promote to
       // remind-only (they never block — see canRemind). Everything else stays
       // watching. feedbackDemoted gates never re-promote mechanically: the
       // agent's behavior already voted against enforcement once.
-      if (gate.status === "watching" && gate.feedbackDemoted !== true && effectiveCount >= threshold && gate.sessions.length >= PROMOTE_SESSIONS) {
+      if (gate.status === "watching" && gate.feedbackDemoted !== true && effectiveCount >= threshold && gate.sessions.length >= PROMOTE_SESSIONS && stuckEvidence > 1) {
         if (canBlock(gate.tool, gate.signature)) {
           gate.status = "blocking"
           promoted = true
@@ -1625,9 +1670,9 @@ export class Stores {
       }
 
       await store.save()
-      return { moved: gate ?? null, ephemeral, promoted }
+      return { moved: gate ?? null, ephemeral, promoted, iterated }
     })
-    if (phase1.ephemeral !== null) return { gate: phase1.ephemeral, store, promoted: false, wentGlobal: false }
+    if (phase1.ephemeral !== null) return { gate: phase1.ephemeral, store, promoted: false, wentGlobal: false, iterated: false }
     if (phase1.moved === null) {
       // Unreachable: Phase 1 always yields a gate unless the ephemeral
       // early-return fired. Degrade to an ephemeral record rather than throw.
@@ -1652,10 +1697,12 @@ export class Stores {
         store,
         promoted: false,
         wentGlobal: false,
+        iterated: false,
       }
     }
     const movedGate = phase1.moved
     const promoted = phase1.promoted
+    const iterated = phase1.iterated
 
     // Phase 2 — index lock (no gates lock held): cross-project evidence.
     // gate.projects only ever sees its own store's directory, so alone it can
@@ -1724,16 +1771,19 @@ export class Stores {
         })
         // 3c — project gates lock: remove the now-escalated local copy.
         await store.runLocked(async () => {
-          const gates = await store.loadForMutation()
-          const idx = gates.findIndex((g) => g.key === movedGate.key)
-          if (idx >= 0) gates.splice(idx, 1)
+          await store.loadForMutation()
+          // extract(), not a raw splice: it also drops the key index and the
+          // enforced cache — a bare splice left byKey() returning the removed
+          // gate, and the next failure re-landed on the project store as a
+          // fresh duplicate (evidence fragmented across the two copies).
+          store.extract(new Set([movedGate.key]))
           await store.save()
         })
         wentGlobal = true
       }
     }
 
-    return { gate: movedGate, store, promoted, wentGlobal }
+    return { gate: movedGate, store, promoted, wentGlobal, iterated }
   }
 
   /**
@@ -1788,7 +1838,7 @@ export class Stores {
         fresh.status = "watching"
         // Oscillation damping: capture the count at retirement so re-promotion
         // needs a full fresh bar of failures, not the very next single one.
-        fresh.retireBaseline = { count: fresh.count }
+        fresh.retireBaseline = { count: fresh.count, ...(fresh.movedOn !== undefined ? { movedOn: fresh.movedOn } : {}) }
       }
       await store.save()
       if (healed) {

@@ -1,5 +1,13 @@
 # Changelog
 
+## 2.35.0 — 2026-09-15
+
+### Added (iteration discriminator)
+- **Iteration vs stuck.** A failure carrying iteration evidence — a landed edit/write since the last failure (process-local workspace version) or a changed error form (parameterized snippets differ, both failure-shaped, neither a bare `exit code N`) — is debugging, not a blind retry. Iteration evidence: skips the recurrence metric (`recurredAfterGate` + reoffense votes), suppresses the reminding NOTE, arms the block chain with the version attached, and lets an edited retry past an armed block (bare retries still block). Pure-iteration evidence never promotes — at least one stuck failure must exist. New gate fields: `iteratedVersion` (workspace version at last failure), `movedOn` (lifetime iterated failures); `failedSessions` entries carry `{ t, v }` (legacy bare numbers coerce and never prove iteration); `retireBaseline` captures `movedOn`.
+
+### Fixed (pre-existing, surfaced by the new tests)
+- **Escalation fragmented evidence via a stale key index.** Phase 3c and the flood-guard eviction removed gates with a raw `splice`, leaving `keyIndex`/`enforcedCache` pointing at the removed gate: the pattern's next failure re-landed on the project store as a fresh duplicate, losing accumulated state. Both removals now go through `extract()`. New structural gate `no-raw-gates-splice` (ast-grep, sabotage-tested) forbids raw `splice` on gate arrays in store.ts; smoke pins `byKey()` not returning an extracted gate.
+
 ## 2.34.0 — 2026-09-15
 
 ### Fixed (one-liner identity + fuzzy cross-class leak — production misfire)

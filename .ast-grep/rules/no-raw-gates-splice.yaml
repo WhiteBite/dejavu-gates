@@ -1,0 +1,9 @@
+id: no-raw-gates-splice
+language: typescript
+severity: error
+files:
+  - src/store.ts
+message: "Removing a gate with a raw splice() leaves the key index and enforced cache stale (byKey keeps returning the removed gate; the next failure mutates a detached duplicate and the evidence is lost). Removal must go through store.extract(), which drops keyIndex/enforcedCache."
+note: "Root cause: phase-3c escalation spliced the project copy without invalidating keyIndex, so the next failure re-landed on the project store as a fresh duplicate (v2.35.0). Gate arrays: mutate via extract() only."
+rule:
+  pattern: $GATES.splice($$$ARGS)

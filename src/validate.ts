@@ -20,6 +20,12 @@ const SESSION_STATE_CAP = 50
  * is a human/agent edit and must never be re-derived. */
 const AUTO_TEMPLATE_CORRECTION = /^Last error: "(.*)" — address that specific error before retrying this exact call\.$/
 
+/** Fail time (ms) of a failedSessions entry regardless of shape — legacy bare
+ * number or the { t, v } form that carries the workspace version at fail time. */
+export function failedAtMs(entry: number | { t: number; v: number }): number {
+  return typeof entry === "number" ? entry : entry.t
+}
+
 /**
  * Structural parse of one persisted gate object. Returns a well-shaped Gate
  * or null when the record is hopeless (missing identity fields, unknown
@@ -67,6 +73,12 @@ export function coerceGateShape(raw: unknown): Gate | null {
   if (typeof r.promotionCount === "number" && Number.isFinite(r.promotionCount) && r.promotionCount > 0) {
     gate.promotionCount = Math.floor(r.promotionCount)
   }
+  if (typeof r.iteratedVersion === "number" && Number.isFinite(r.iteratedVersion) && r.iteratedVersion >= 0) {
+    gate.iteratedVersion = Math.floor(r.iteratedVersion)
+  }
+  if (typeof r.movedOn === "number" && Number.isFinite(r.movedOn) && r.movedOn > 0) {
+    gate.movedOn = Math.floor(r.movedOn)
+  }
   if (typeof r.correction === "string") gate.correction = r.correction
   if (r.review === true) gate.review = true
   if (r.feedbackDemoted === true) gate.feedbackDemoted = true
@@ -87,7 +99,8 @@ export function coerceGateShape(raw: unknown): Gate | null {
   if (r.retireBaseline !== null && typeof r.retireBaseline === "object" && !Array.isArray(r.retireBaseline)) {
     const b = r.retireBaseline as Record<string, unknown>
     const count = typeof b.count === "number" && Number.isFinite(b.count) && b.count >= 0 ? Math.floor(b.count) : 0
-    if (count > 0) gate.retireBaseline = { count }
+    const movedOn = typeof b.movedOn === "number" && Number.isFinite(b.movedOn) && b.movedOn >= 0 ? Math.floor(b.movedOn) : undefined
+    if (count > 0) gate.retireBaseline = movedOn === undefined ? { count } : { count, movedOn }
   }
   if (r.remindedSessions !== null && typeof r.remindedSessions === "object" && !Array.isArray(r.remindedSessions)) {
     const sessions: Record<string, number> = {}
@@ -98,16 +111,23 @@ export function coerceGateShape(raw: unknown): Gate | null {
   }
   if (Array.isArray(r.failedSessions)) {
     // Legacy shape (string[]) — convert with fresh timestamps
-    const sessions: Record<string, number> = {}
+    const sessions: Record<string, number | { t: number; v: number }> = {}
     const now = Date.now()
     for (const session of r.failedSessions) {
       if (typeof session === "string") sessions[session] = now
     }
     if (Object.keys(sessions).length > 0) gate.failedSessions = sessions
   } else if (r.failedSessions !== null && typeof r.failedSessions === "object") {
-    const sessions: Record<string, number> = {}
+    const sessions: Record<string, number | { t: number; v: number }> = {}
     for (const [session, at] of Object.entries(r.failedSessions as Record<string, unknown>)) {
-      if (typeof at === "number" && Number.isFinite(at)) sessions[session] = at
+      if (typeof at === "number" && Number.isFinite(at)) {
+        sessions[session] = at
+      } else if (at !== null && typeof at === "object" && !Array.isArray(at)) {
+        const e = at as Record<string, unknown>
+        if (typeof e.t === "number" && Number.isFinite(e.t) && typeof e.v === "number" && Number.isFinite(e.v)) {
+          sessions[session] = { t: Math.floor(e.t), v: Math.floor(e.v) }
+        }
+      }
     }
     if (Object.keys(sessions).length > 0) gate.failedSessions = sessions
   }
@@ -198,14 +218,14 @@ export function repairGate(gate: Gate): boolean {
     const now = Date.now()
     const failed = gate.failedSessions
     for (const session of Object.keys(failed)) {
-      if (now - (failed[session] ?? 0) > SESSION_STATE_TTL_MS) {
+      if (now - failedAtMs(failed[session] ?? 0) > SESSION_STATE_TTL_MS) {
         delete failed[session]
         changed = true
       }
     }
     const sessions = Object.keys(failed)
     if (sessions.length > SESSION_STATE_CAP) {
-      sessions.sort((a, b) => (failed[a] ?? 0) - (failed[b] ?? 0))
+      sessions.sort((a, b) => failedAtMs(failed[a] ?? 0) - failedAtMs(failed[b] ?? 0))
       for (const session of sessions.slice(0, sessions.length - SESSION_STATE_CAP)) {
         delete failed[session]
       }

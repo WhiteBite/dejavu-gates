@@ -67,12 +67,14 @@ interface GateRow {
   lastSeen: string
   correction?: string
   remindedSessions?: Record<string, number>
-  failedSessions?: Record<string, number>
+  failedSessions?: Record<string, number | { t: number; v: number }>
   overrideCount?: number
   overrideSessions?: string[]
   feedbackDemoted?: boolean
   succeededAfterGate?: number
   reoffenseSessions?: string[]
+  movedOn?: number
+  iteratedVersion?: number
   remindedCount?: number
   recurredAfterGate?: number
   recurredAfterReminder?: number
@@ -2570,6 +2572,139 @@ check("fuzzy: residue -c <str> never matches <path> payload class", !fuzzySimila
 check("fuzzy: residue -e <str> never matches -e <path>", !fuzzySimilar("bash:node -e <str>", "bash:node -e <path>"))
 check("fuzzy: distinct code hashes still never merge", !fuzzySimilar("bash:python -x utf8 <code:aaaa1111>", "bash:python -x utf8 <code:bbbb2222>"))
 check("fuzzy: legit near-duplicates still merge", fuzzySimilar("bash:node scripts/check-i18n-parity.mjs <n> >& <n>", "bash:node scripts/check-i18n-parity.mjs --full <n> >& <n>"))
+
+// --- 101. iteration discriminator: workspace movement or a changed error form
+// downgrades enforcement (stuck = same world; iteration = the world moved) ---
+const r101Edit = async (h: Hooks, session: string, callID: string): Promise<void> => {
+  await (h["tool.execute.after"] as AfterHook)(
+    { tool: "edit", sessionID: session, callID, args: { filePath: "x.ts" } } as unknown as AfterInput,
+    { title: "x.ts", output: "ok", metadata: {} } as unknown as AfterOutput,
+  )
+}
+const r101FailWith = async (h: Hooks, cmd: string, session: string, callID: string, out: string, exitCode = 1): Promise<string> => {
+  const payload = { title: cmd, output: out, metadata: { exit: exitCode } }
+  await (h["tool.execute.after"] as AfterHook)(
+    { tool: "bash", sessionID: session, callID, args: { command: cmd } } as unknown as AfterInput,
+    payload as unknown as AfterOutput,
+  )
+  return payload.output
+}
+// stuck baseline: identical world + identical error — recurrence grows
+const r101Dir1 = join(tmp, "r101-stuck-project")
+const R101_CMD1 = "deploy-tool --verify-alpha"
+const r101Key1 = patternKey(callSignature("bash", { command: R101_CMD1 }) ?? "")
+await seedGates(r101Dir1, [seedGate({ key: r101Key1, signature: `bash:${R101_CMD1}`, status: "blocking", snippet: "exit code 1" })])
+const r101Hooks1 = await Dejavu({ directory: r101Dir1, client: { app: { log: async () => ({}) } } } as unknown as Ctx)
+await r101FailWith(r101Hooks1, R101_CMD1, "r101a", "r101c1", "exit code 1")
+await r101FailWith(r101Hooks1, R101_CMD1, "r101a", "r101c2", "exit code 1")
+const r101Gate1 = (await readJson(join(r101Dir1, ".opencode", "dejavu", "gates.json"))).find((g) => g.key === r101Key1)
+check("stuck: identical world + identical error grows recurrence", r101Gate1?.recurredAfterGate === 2)
+// iteration via workspace movement
+const r101Dir2 = join(tmp, "r101-iter-project")
+const R101_CMD2 = "deploy-tool --verify-beta"
+const r101Key2 = patternKey(callSignature("bash", { command: R101_CMD2 }) ?? "")
+await seedGates(r101Dir2, [seedGate({ key: r101Key2, signature: `bash:${R101_CMD2}`, status: "blocking", snippet: "exit code 1" })])
+const r101Hooks2 = await Dejavu({ directory: r101Dir2, client: { app: { log: async () => ({}) } } } as unknown as Ctx)
+await r101FailWith(r101Hooks2, R101_CMD2, "r101b", "r101c3", "exit code 1")
+await r101Edit(r101Hooks2, "r101b", "r101c4")
+await r101FailWith(r101Hooks2, R101_CMD2, "r101b", "r101c5", "exit code 1")
+const r101Gate2 = (await readJson(join(r101Dir2, ".opencode", "dejavu", "gates.json"))).find((g) => g.key === r101Key2)
+check(
+  "iteration: edit between failures stops recurrence growth",
+  r101Gate2?.recurredAfterGate === 1 && r101Gate2?.movedOn === 1 && r101Gate2?.iteratedVersion === 1,
+)
+// iteration via changed error form (no edits)
+const r101Dir3 = join(tmp, "r101-errform-project")
+const R101_CMD3 = "deploy-tool --verify-gamma"
+const r101Key3 = patternKey(callSignature("bash", { command: R101_CMD3 }) ?? "")
+await seedGates(r101Dir3, [seedGate({ key: r101Key3, signature: `bash:${R101_CMD3}`, status: "blocking", snippet: "exit code 1" })])
+const r101Hooks3 = await Dejavu({ directory: r101Dir3, client: { app: { log: async () => ({}) } } } as unknown as Ctx)
+await r101FailWith(r101Hooks3, R101_CMD3, "r101c", "r101c6", "AssertionError: first layout")
+await r101FailWith(r101Hooks3, R101_CMD3, "r101c", "r101c7", "TypeError: second path")
+const r101Gate3a = (await readJson(join(r101Dir3, ".opencode", "dejavu", "gates.json"))).find((g) => g.key === r101Key3)
+check("iteration: changed error form without edits counts as movement", r101Gate3a?.recurredAfterGate === 1 && r101Gate3a?.movedOn === 1)
+await r101FailWith(r101Hooks3, R101_CMD3, "r101c", "r101c8", "TypeError: second path")
+const r101Gate3b = (await readJson(join(r101Dir3, ".opencode", "dejavu", "gates.json"))).find((g) => g.key === r101Key3)
+check("stuck: identical informative error grows recurrence", r101Gate3b?.recurredAfterGate === 2)
+// NOTE suppression on iteration (reminding gate)
+const r101Dir4 = join(tmp, "r101-note-project")
+const R101_CMD4 = "npx vitest run x.test.ts 2>&1"
+const r101Key4 = patternKey(callSignature("bash", { command: R101_CMD4 }) ?? "")
+await seedGates(r101Dir4, [seedGate({ key: r101Key4, signature: `bash:${R101_CMD4}`, status: "reminding", snippet: "exit code 1" })])
+const r101Hooks4 = await Dejavu({ directory: r101Dir4, client: { app: { log: async () => ({}) } } } as unknown as Ctx)
+const r101Out4a = await r101FailWith(r101Hooks4, R101_CMD4, "r101d1", "r101c9", "FAIL x.test.ts\nError: boom", 2)
+await r101Edit(r101Hooks4, "r101d2", "r101c10")
+const r101Out4b = await r101FailWith(r101Hooks4, R101_CMD4, "r101d2", "r101c11", "FAIL x.test.ts\nError: boom", 2)
+check("reminding: NOTE rides a fresh first-encounter failure", r101Out4a.includes("[dejavu] NOTE"))
+check("iteration: NOTE suppressed when the workspace moved", !r101Out4b.includes("[dejavu] NOTE"))
+// block chain yields to an edit, re-arms, and blocks a bare retry
+const r101Dir5 = join(tmp, "r101-chain-project")
+const R101_CMD5 = "deploy-tool --verify-delta"
+const r101Key5 = patternKey(callSignature("bash", { command: R101_CMD5 }) ?? "")
+await seedGates(r101Dir5, [seedGate({ key: r101Key5, signature: `bash:${R101_CMD5}`, status: "blocking", snippet: "exit code 1" })])
+const r101Hooks5 = await Dejavu({ directory: r101Dir5, client: { app: { log: async () => ({}) } } } as unknown as Ctx)
+const r101Att = attemptWith(r101Hooks5)
+await r101Att(R101_CMD5, "r101e", "r101d1")
+await r101FailWith(r101Hooks5, R101_CMD5, "r101e", "r101d2", "exit code 1")
+const r101Blocked1 = await r101Att(R101_CMD5, "r101e", "r101d3")
+await r101Edit(r101Hooks5, "r101e", "r101d4")
+const r101Allowed = await r101Att(R101_CMD5, "r101e", "r101d5")
+await r101FailWith(r101Hooks5, R101_CMD5, "r101e", "r101d6", "exit code 1")
+const r101Blocked2 = await r101Att(R101_CMD5, "r101e", "r101d7")
+check("iteration: edited retry passes an armed block", r101Blocked1 !== null && r101Blocked1.message.includes("BLOCKED") && r101Allowed === null)
+check("iteration: unedited retry after an iterated failure blocks again", r101Blocked2 !== null && r101Blocked2.message.includes("BLOCKED"))
+// promotion dampening: all-moved evidence never leaves watching
+const r101Dir6 = join(tmp, "r101-promote-project")
+const R101_CMD6 = "deploy-tool --deep-scan-zeta"
+const r101Hooks6 = await Dejavu({ directory: r101Dir6, client: { app: { log: async () => ({}) } } } as unknown as Ctx)
+await r101FailWith(r101Hooks6, R101_CMD6, "r101f1", "r101e1", "exit code 1")
+await r101Edit(r101Hooks6, "r101f1", "r101e2")
+await r101FailWith(r101Hooks6, R101_CMD6, "r101f2", "r101e3", "exit code 1")
+await r101Edit(r101Hooks6, "r101f2", "r101e4")
+await r101FailWith(r101Hooks6, R101_CMD6, "r101f1", "r101e5", "exit code 1")
+const r101Key6 = patternKey(callSignature("bash", { command: R101_CMD6 }) ?? "")
+const r101Gate6 = (await readJson(join(r101Dir6, ".opencode", "dejavu", "gates.json"))).find((g) => g.key === r101Key6)
+check("iteration: all-moved evidence does not promote", r101Gate6 !== undefined && r101Gate6.status === "watching")
+const r101Dir7 = join(tmp, "r101-promote-control")
+const R101_CMD7 = "deploy-tool --full-scan-eta"
+const r101Hooks7 = await Dejavu({ directory: r101Dir7, client: { app: { log: async () => ({}) } } } as unknown as Ctx)
+await r101FailWith(r101Hooks7, R101_CMD7, "r101g1", "r101f1", "exit code 1")
+await r101FailWith(r101Hooks7, R101_CMD7, "r101g2", "r101f2", "exit code 1")
+await r101FailWith(r101Hooks7, R101_CMD7, "r101g1", "r101f3", "exit code 1")
+const r101Key7 = patternKey(callSignature("bash", { command: R101_CMD7 }) ?? "")
+const r101Gate7 = (await readJson(join(r101Dir7, ".opencode", "dejavu", "gates.json"))).find((g) => g.key === r101Key7)
+check("stuck: unmoved evidence promotes normally", r101Gate7 !== undefined && r101Gate7.status === "blocking")
+// coerced {t,v} failedSession shape loads and blocks when nothing moved
+const r101Dir8 = join(tmp, "r101-coerce-project")
+const R101_CMD8 = "deploy-tool --verify-epsilon"
+const r101Key8 = patternKey(callSignature("bash", { command: R101_CMD8 }) ?? "")
+await seedGates(r101Dir8, [seedGate({ key: r101Key8, signature: `bash:${R101_CMD8}`, status: "blocking", snippet: "exit code 1", failedSessions: { r101h: { t: Date.now(), v: 0 } } })])
+const r101Hooks8 = await Dejavu({ directory: r101Dir8, client: { app: { log: async () => ({}) } } } as unknown as Ctx)
+const r101Blocked3 = await attemptWith(r101Hooks8)(R101_CMD8, "r101h", "r101g1")
+check("iteration: coerced {t,v} failedSession still blocks when nothing moved", r101Blocked3 !== null && r101Blocked3.message.includes("BLOCKED"))
+
+// 101c. regression: after escalation the project store's key index must not keep
+// serving the removed gate — a raw splice in phase 3c left byKey() returning the
+// extracted gate, so the next failure re-landed on the project store as a fresh
+// duplicate (evidence fragmented; iteratedVersion/movedOn lost mid-flight).
+const r101EscGlobal = join(tmp, "r101-esc-global")
+const r101EscA = join(tmp, "r101-esc-a")
+const r101EscB = join(tmp, "r101-esc-b")
+const R101_ESCSIG = callSignature("bash", { command: "deploy-tool --verify-escalation" }) ?? ""
+const r101EscKey = patternKey(R101_ESCSIG)
+const r101ProjStoreB = new GateStore(join(r101EscB, ".opencode", "dejavu"))
+const r101StoresA = new Stores(new GateStore(r101EscGlobal), new GateStore(join(r101EscA, ".opencode", "dejavu")))
+const r101StoresB = new Stores(new GateStore(r101EscGlobal), r101ProjStoreB)
+await r101StoresA.recordFailure({ key: r101EscKey, signature: R101_ESCSIG, tool: "bash", sessionID: "ra1", projectDir: r101EscA, snippet: "boom", globalProjects: GLOBAL_PROJECTS })
+await r101StoresB.recordFailure({ key: r101EscKey, signature: R101_ESCSIG, tool: "bash", sessionID: "rb1", projectDir: r101EscB, snippet: "boom", globalProjects: GLOBAL_PROJECTS })
+// escalated now (2 projects). The project store instance that served the
+// escalation must not keep serving the removed key from a stale key index.
+await r101ProjStoreB.load()
+check("byKey does not return an extracted gate (stale key index regression)", r101ProjStoreB.byKey(r101EscKey) === undefined)
+await r101StoresB.recordFailure({ key: r101EscKey, signature: R101_ESCSIG, tool: "bash", sessionID: "rb2", projectDir: r101EscB, snippet: "boom", globalProjects: GLOBAL_PROJECTS })
+const r101EscProjGates = await readJson(join(r101EscB, ".opencode", "dejavu", "gates.json")).catch(() => [] as GateRow[])
+const r101EscGlobGate = (await readJson(join(r101EscGlobal, "gates.json"))).find((g) => g.key === r101EscKey)
+check("post-escalation failure grows the global copy, no project duplicate", !r101EscProjGates.some((g) => g.key === r101EscKey) && r101EscGlobGate?.count === 2)
 
 // --- 86. round-8 invariant: a corrupt GLOBAL gates.json is quarantined under the
 // gates lock by reconcile(); the unlocked routing peeks in reconcileAll (escalation

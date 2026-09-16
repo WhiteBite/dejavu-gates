@@ -130,6 +130,9 @@ export const Dejavu: Plugin = async ({ directory, client }) => {
   /** repeat channel: sessionID → live tail series ({key,length}) + log watermark;
    *  written by the messages-transform hook, read by the before-hook block */
   const repeatSeries = new Map<string, { key: string; length: number; logged: number }>()
+  /** iteration discriminator: projectDir → count of landed edit/write calls;
+   *  a failure with a moved version is debugging, not a blind retry */
+  const workspaceVersions = new Map<string, number>()
   /** message part IDs already counted as tool-level errors */
   let handledParts = new Set<string>()
   /** (key|session) -> last recording channel/time, for the cross-channel dedup */
@@ -440,7 +443,21 @@ export const Dejavu: Plugin = async ({ directory, client }) => {
           // Repeat offense: reminded, retried, failed again -> hard block.
           // Remind-only gates (diagnostics) never reach this branch — they
           // never collect failedSessions (see the after-hook).
-          if (fresh.status === "blocking" && fresh.failedSessions !== undefined && fresh.failedSessions[session] !== undefined) {
+          const failedEntry = fresh.failedSessions?.[session]
+          if (fresh.status === "blocking" && failedEntry !== undefined) {
+            // iteration grace: an edit since the failed attempt makes this a
+            // fresh try on changed code, not an ignored reminder (legacy bare
+            // numbers carry no version and never unlock)
+            const failedAtVersion = typeof failedEntry === "object" ? failedEntry.v : undefined
+            if (failedAtVersion !== undefined && (workspaceVersions.get(typeof directory === "string" ? directory : "") ?? 0) > failedAtVersion) {
+              if (fresh.failedSessions !== undefined) {
+                delete fresh.failedSessions[session]
+                if (Object.keys(fresh.failedSessions).length === 0) delete fresh.failedSessions
+              }
+              await target.store.save()
+              pendingLogs.push({ type: "retry-allowed", key: fresh.key, tool: fresh.tool, session, project: directory, via })
+              return
+            }
             fresh.blockedCount += 1
             if (fresh.blockedCount >= REVIEW_FIRES) fresh.review = true
             await target.store.save()
@@ -560,6 +577,12 @@ export const Dejavu: Plugin = async ({ directory, client }) => {
         const metadata = (output?.metadata ?? {}) as { exit?: unknown }
         const exitCode = typeof metadata.exit === "number" ? metadata.exit : null
         const isBash = input.tool === "bash"
+        // Iteration evidence: file-tool failures never reach this hook (they
+        // surface via the event channel), so an edit/write arriving here landed.
+        if (input.tool === "edit" || input.tool === "write") {
+          const dir = typeof directory === "string" ? directory : ""
+          workspaceVersions.set(dir, (workspaceVersions.get(dir) ?? 0) + 1)
+        }
         // Text signatures apply to bash ONLY: for read/edit/write the output is
         // file CONTENT, and scanning it for "TypeError" created false gates.
         const text = typeof output?.output === "string" ? output.output : ""
@@ -640,6 +663,7 @@ export const Dejavu: Plugin = async ({ directory, client }) => {
           projectDir: typeof directory === "string" ? directory : "",
           snippet,
           globalProjects: GLOBAL_PROJECTS,
+          workspaceVersion: workspaceVersions.get(typeof directory === "string" ? directory : "") ?? 0,
         })
 
         await stores.logAll({
@@ -680,7 +704,7 @@ export const Dejavu: Plugin = async ({ directory, client }) => {
           // failing again after the note is the iteration itself (fix → rerun →
           // fail), not a failure to teach — counting it inflated recurredAfterGate
           // into useless demotion/review pressure (38 reminders on one flutter gate).
-          if (fresh.status !== "watching" && !result.promoted && !isDiagnosticSignature(fresh.signature)) {
+          if (fresh.status !== "watching" && !result.promoted && !isDiagnosticSignature(fresh.signature) && !result.iterated) {
             fresh.recurredAfterGate += 1
             changed = true
             // Demotion votes count only failures the gate had a chance to
@@ -713,12 +737,14 @@ export const Dejavu: Plugin = async ({ directory, client }) => {
           // they signal but must not punish iterating on tests/linters.
           if (fresh.status === "blocking" && fresh.remindedSessions?.[session] !== undefined) {
             if (fresh.failedSessions === undefined) fresh.failedSessions = {}
-            fresh.failedSessions[session] = Date.now()
-            fresh.recurredAfterReminder += 1
+            // the workspace version rides along: an edit after this failure
+            // re-opens the attempt (fresh try on changed code, not a reoffense)
+            fresh.failedSessions[session] = { t: Date.now(), v: workspaceVersions.get(typeof directory === "string" ? directory : "") ?? 0 }
+            if (!result.iterated) fresh.recurredAfterReminder += 1
             changed = true
           }
           // first failure this session annotates; same-session repeats accrue ignored-note anti-nag
-          if (fresh.status === "reminding") {
+          if (fresh.status === "reminding" && !result.iterated) {
             if (fresh.remindedSessions?.[session] === undefined) {
               if (fresh.remindedSessions === undefined) fresh.remindedSessions = {}
               fresh.remindedSessions[session] = Date.now()
@@ -854,6 +880,7 @@ export const Dejavu: Plugin = async ({ directory, client }) => {
           projectDir: typeof directory === "string" ? directory : "",
           snippet: errorText.slice(0, 200),
           globalProjects: GLOBAL_PROJECTS,
+          workspaceVersion: workspaceVersions.get(typeof directory === "string" ? directory : "") ?? 0,
         })
         await stores.logAll({
           type: "detected",
