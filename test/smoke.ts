@@ -2706,6 +2706,69 @@ const r101EscProjGates = await readJson(join(r101EscB, ".opencode", "dejavu", "g
 const r101EscGlobGate = (await readJson(join(r101EscGlobal, "gates.json"))).find((g) => g.key === r101EscKey)
 check("post-escalation failure grows the global copy, no project duplicate", !r101EscProjGates.some((g) => g.key === r101EscKey) && r101EscGlobGate?.count === 2)
 
+// --- 102. repeat stop: N consecutive blocks of the same series switch the
+// message to a hard stop (the 303-blocks-in-one-session case) ---
+const r102Dir = join(tmp, "r102-stop-project")
+const r102Hooks = await Dejavu({ directory: r102Dir, client: { app: { log: async () => ({}) } } } as unknown as Ctx)
+const r102Transform = r102Hooks["experimental.chat.messages.transform"]
+const r102Before = r102Hooks["tool.execute.before"] as BeforeHook
+const r102Populate = async (session: string, taskId: string): Promise<void> => {
+  const r102Msgs: R99Msg[] = [r99User(session), r99Asst({ task_id: taskId }, {}, session), r99Asst({ task_id: taskId }, {}, session)]
+  await r102Transform?.({} as never, { messages: r102Msgs } as never)
+}
+const r102Block = async (session: string, taskId: string, callID: string): Promise<Error | null> => {
+  try {
+    await r102Before({ tool: "background_output", sessionID: session, callID } as unknown as BeforeInput, { args: { task_id: taskId } } as unknown as BeforeOutput)
+    return null
+  } catch (e) {
+    return e as Error
+  }
+}
+await r102Populate("r102a", "t1")
+const r102B1 = await r102Block("r102a", "t1", "r102c1")
+const r102B2 = await r102Block("r102a", "t1", "r102c2")
+const r102B3 = await r102Block("r102a", "t1", "r102c3")
+check("repeat stop: first blocks use the regular wording", r102B1 !== null && r102B1.message.includes("REPEAT BLOCKED") && !r102B1.message.includes("REPEAT STOP") && r102B2 !== null && !r102B2.message.includes("REPEAT STOP"))
+check("repeat stop: Nth consecutive block switches to hard stop", r102B3 !== null && r102B3.message.includes("REPEAT STOP") && r102B3.message.includes("STOP this line of work"))
+// bypasses must not grow the stop counter
+const r102Dir2 = join(tmp, "r102-stop-bypass-project")
+const r102Hooks2 = await Dejavu({ directory: r102Dir2, client: { app: { log: async () => ({}) } } } as unknown as Ctx)
+const r102Transform2 = r102Hooks2["experimental.chat.messages.transform"]
+const r102Before2 = r102Hooks2["tool.execute.before"] as BeforeHook
+const r102MsgsB: R99Msg[] = [r99User("r102b"), r99Asst({ task_id: "t1" }, {}, "r102b"), r99Asst({ task_id: "t1" }, {}, "r102b")]
+await r102Transform2?.({} as never, { messages: r102MsgsB } as never)
+const r102Bypass = async (callID: string): Promise<Error | null> => {
+  try {
+    await r102Before2({ tool: "background_output", sessionID: "r102b", callID } as unknown as BeforeInput, { args: { task_id: "t1", _dejavu_proceed: true } } as unknown as BeforeOutput)
+    return null
+  } catch (e) {
+    return e as Error
+  }
+}
+await r102Bypass("r102d1")
+await r102Bypass("r102d2")
+const r102RealB1 = await (async (): Promise<Error | null> => {
+  try {
+    await r102Before2({ tool: "background_output", sessionID: "r102b", callID: "r102d3" } as unknown as BeforeInput, { args: { task_id: "t1" } } as unknown as BeforeOutput)
+    return null
+  } catch (e) {
+    return e as Error
+  }
+})()
+const r102RealB2 = await (async (): Promise<Error | null> => {
+  try {
+    await r102Before2({ tool: "background_output", sessionID: "r102b", callID: "r102d4" } as unknown as BeforeInput, { args: { task_id: "t1" } } as unknown as BeforeOutput)
+    return null
+  } catch (e) {
+    return e as Error
+  }
+})()
+check("repeat stop: bypassed calls do not grow the stop counter", r102RealB1 !== null && r102RealB1.message.includes("REPEAT BLOCKED") && r102RealB2 !== null && r102RealB2.message.includes("REPEAT BLOCKED") && !r102RealB2.message.includes("REPEAT STOP"))
+// a different tail series resets the counter
+await r102Populate("r102a", "t2")
+const r102B4 = await r102Block("r102a", "t2", "r102c4")
+check("repeat stop: a different tail series resets the counter", r102B4 !== null && r102B4.message.includes("REPEAT BLOCKED") && !r102B4.message.includes("REPEAT STOP"))
+
 // --- 86. round-8 invariant: a corrupt GLOBAL gates.json is quarantined under the
 // gates lock by reconcile(); the unlocked routing peeks in reconcileAll (escalation
 // filter + index rebuild) are non-force and never write. After init the store is

@@ -57,5 +57,12 @@ Gates expire after 60 days without recurrence. Gates listen to behavior in both 
 You issued the identical tool call (same tool, same arguments) in several consecutive rounds. DashScope/Qwen hard-rejects such histories (HTTP 400), and one rejection poisons the session permanently — dejavu mutates the outgoing payload to prevent that and now asks you to break the loop.
 
 1. Do NOT re-issue the identical call. Change the arguments (readers: `since_message_id` / `from_end` / `limit`) or take a different approach entirely.
-2. Never poll background tasks with identical calls — wait for the completion notification instead.
+2. Never poll background tasks with identical calls - wait for the completion notification instead.
 3. `_dejavu_proceed: true` in the call args bypasses a REPEAT BLOCK (logged). Use it only when the user explicitly asked you to force the operation.
+
+## When you get `[dejavu] REPEAT STOP`
+
+The same call was already blocked several times in a row. The plugin is telling you the session-level truth: retrying cannot succeed.
+
+1. STOP this line of work entirely. Do not re-issue the call, do not rename it, do not work around it.
+2. Finish with what you already have and report partial results to whoever launched you (orchestrator/user).

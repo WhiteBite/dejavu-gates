@@ -69,6 +69,10 @@ const REPEAT_BLOCK_AT = 3
 /** repeat channel: per-session tail-series map cap (lives in-process; a stuck
  * loop must not grow it unboundedly) */
 const REPEAT_SESSIONS_CAP = 1000
+/** repeat channel: after this many consecutive blocks of the same series the
+ * message switches to a hard stop — weak models keep retrying past a plain
+ * correction (303 blocked retries in one production session) */
+const REPEAT_STOP_AFTER = 3
 
 /** Sentinel: intentional gate/reminder throws (rethrown); our own bugs are swallowed. */
 class GateSignal extends Error {}
@@ -127,9 +131,10 @@ export const Dejavu: Plugin = async ({ directory, client }) => {
 
   /** callID -> signature fallback when the after-hook does not receive args */
   const pendingCalls = new Map<string, string>()
-  /** repeat channel: sessionID → live tail series ({key,length}) + log watermark;
-   *  written by the messages-transform hook, read by the before-hook block */
-  const repeatSeries = new Map<string, { key: string; length: number; logged: number }>()
+  /** repeat channel: sessionID → live tail series ({key,length}) + log watermark
+   *  + consecutive block count (drives the hard-stop escalation); written by the
+   *  messages-transform hook, read by the before-hook block */
+  const repeatSeries = new Map<string, { key: string; length: number; logged: number; blocked: number }>()
   /** iteration discriminator: projectDir → count of landed edit/write calls;
    *  a failure with a moved version is debugging, not a blind retry */
   const workspaceVersions = new Map<string, number>()
@@ -244,7 +249,13 @@ export const Dejavu: Plugin = async ({ directory, client }) => {
           if (repeatBypass) {
             await stores.logAll({ type: "override", key: repeatEntry.key.slice(0, 80), tool: input.tool, session, project: directory, repeatCount: repeatEntry.length })
           } else {
+            repeatEntry.blocked += 1
             await stores.logAll({ type: "repeat-blocked", key: repeatEntry.key.slice(0, 80), tool: input.tool, session, project: directory, repeatCount: repeatEntry.length })
+            if (repeatEntry.blocked >= REPEAT_STOP_AFTER) {
+              throw new GateSignal(
+                `[dejavu] REPEAT STOP — this exact call has been blocked ${repeatEntry.blocked} times in a row; it will not succeed in this session no matter how many times you retry.\nSTOP this line of work entirely: do not re-issue the call, do not rename it, do not work around it. Finish with what you already have and report partial results to whoever launched you.`,
+              )
+            }
             throw new GateSignal(
               `[dejavu] REPEAT BLOCKED — this would be identical call #${repeatEntry.length + 1} in a row; DashScope hard-rejects consecutive identical tool calls (HTTP 400) and the session is one repeat away from dying.\nCORRECTION: change the args (readers: since_message_id / from_end / limit) or take a different approach entirely; do not re-issue this call unchanged.\nEVIDENCE: ${repeatEntry.length} consecutive identical calls already in this session's history.\nBypass (logged): _dejavu_proceed: true in the call args (or the trailing "# dejavu:proceed" comment for bash).`,
             )
@@ -964,14 +975,18 @@ export const Dejavu: Plugin = async ({ directory, client }) => {
               tailKey = s.key
             }
           }
-          const watermark = repeatSeries.get(sessionID)?.logged ?? 0
+          const prevEntry = repeatSeries.get(sessionID)
+          const watermark = prevEntry?.logged ?? 0
           if (maxLen > watermark && (mutated > 0 || noted > 0)) {
             const logKey = (tailKey ?? maxKey).slice(0, 80)
             if (mutated > 0) await stores.logAll({ type: "repeat-sanitized", key: logKey, session: sessionID, project: directory, repeatCount: maxLen })
             if (noted > 0) await stores.logAll({ type: "repeat-reminded", key: logKey, session: sessionID, project: directory, repeatCount: maxLen })
             if (tailLen > 0) await stores.logAll({ type: "repeat-detected", key: logKey, session: sessionID, project: directory, repeatCount: tailLen })
           }
-          repeatSeries.set(sessionID, { key: tailKey ?? "", length: tailLen, logged: Math.max(watermark, maxLen) })
+          // the block counter survives a transform rewrite only while the same
+          // series owns the tail — a new series means a new loop, fresh count
+          const newTailKey = tailKey ?? ""
+          repeatSeries.set(sessionID, { key: newTailKey, length: tailLen, logged: Math.max(watermark, maxLen), blocked: prevEntry?.key === newTailKey ? (prevEntry?.blocked ?? 0) : 0 })
           while (repeatSeries.size > REPEAT_SESSIONS_CAP) {
             const oldest = repeatSeries.keys().next()
             if (oldest.done) break

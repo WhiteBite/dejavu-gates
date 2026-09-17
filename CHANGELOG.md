@@ -1,5 +1,10 @@
 # Changelog
 
+## 2.36.0 — 2026-09-16
+
+### Changed (repeat channel)
+- **REPEAT STOP: the Nth consecutive block switches to a hard stop.** Production data: one looping subagent took 303 consecutive REPEAT BLOCKs across 4.7 hours without ever stopping — a plain "change the args" correction does not reach weak models. After `REPEAT_STOP_AFTER` (3) consecutive blocks of the same tail series in one session, the message switches to an imperative stop: do not re-issue, do not rename, do not work around — finish with what you have and report partial results to whoever launched you. The counter lives on the in-process series entry, survives transform rewrites while the same series owns the tail, and resets when a different series takes over. Bypassed (`_dejavu_proceed`) calls never grow it.
+
 ## 2.35.0 — 2026-09-15
 
 ### Added (iteration discriminator)
