@@ -1,5 +1,10 @@
 # Changelog
 
+## 2.37.0 — 2026-09-18
+
+### Added (repeat channel)
+- **Windowed repeat detection.** The consecutive-series detector (v2.33.0) mirrors the provider's 400 semantics — but an interleaved loop (analysis/read rounds between retries) never forms a consecutive series while still burning rounds on the identical call (production case: a full 102s test suite re-run for hours against one flaky timeout test). New `detectRepeatWindows` counts a key's occurrences across the last 12 assistant rounds regardless of adjacency; at 3+ with the last one at the tail, the failing output gets a NOTE. NOTE-only by design — never blocks (interleaved rounds are provider-safe), never fires on successful repeats, and stays silent when the failure form is moving (that is debugging, not a stuck loop). Test-suite runs get targeted teaching: the failing file is extracted from the output and the note says to re-run ONLY that file instead of the whole suite. Consecutive tail series never double-annotate (the series path owns them). Events: `repeat-windowed` (damped per session, logged on count growth).
+
 ## 2.36.0 — 2026-09-16
 
 ### Changed (repeat channel)

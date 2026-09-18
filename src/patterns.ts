@@ -1530,6 +1530,77 @@ export interface RepeatScan {
   series: RepeatSeries[]
 }
 
+export interface RepeatWindow {
+  key: string
+  tool: string
+  count: number
+  /** last occurrence (for NOTE attachment) */
+  lastOccurrence: RepeatOccurrence
+  /** previous occurrence (for failure-form comparison), null when count is 1 */
+  prevOccurrence: RepeatOccurrence | null
+}
+
+export interface RepeatWindowScan {
+  sessionID: string | null
+  windows: RepeatWindow[]
+}
+
+/** Windowed repeats: the same call ≥ min times across the last `window`
+ * assistant rounds, regardless of adjacency — interleaved loops (analysis
+ * rounds between retries) never form a consecutive series but burn rounds just
+ * the same. Tail-anchored: the last occurrence must sit in the last assistant
+ * round (the model just did it again). Detection only — the caller decides
+ * what failure-form stability means. */
+export function detectRepeatWindows(
+  messages: ReadonlyArray<{
+    info: { role: string; sessionID?: string }
+    parts: ReadonlyArray<{ type: string; tool?: string; state?: { input?: Record<string, unknown> } }>
+  }>,
+  opts?: { window?: number; min?: number },
+): RepeatWindowScan {
+  const window = opts?.window ?? 12
+  const min = opts?.min ?? 3
+  let lastAssistant = -1
+  for (let i = messages.length - 1; i >= 0; i--) {
+    if (messages[i]?.info.role === "assistant") {
+      lastAssistant = i
+      break
+    }
+  }
+  if (lastAssistant < 0) return { sessionID: messages[0]?.info.sessionID ?? null, windows: [] }
+  const counts = new Map<string, { tool: string; occurrences: RepeatOccurrence[] }>()
+  let roundsSeen = 0
+  for (let i = lastAssistant; i >= 0; i--) {
+    const msg = messages[i]
+    if (msg === undefined) continue
+    if (msg.info.role !== "assistant") continue
+    roundsSeen += 1
+    if (roundsSeen > window) break
+    // parallel duplicates inside one message are one round — first part wins
+    const roundKeys = new Map<string, { tool: string; partIndex: number }>()
+    for (let p = 0; p < msg.parts.length; p++) {
+      const part = msg.parts[p]
+      if (part?.type !== "tool" || typeof part.tool !== "string" || part.state?.input == null) continue
+      const key = signRepeatedCall(part.tool, part.state.input)
+      if (!roundKeys.has(key)) roundKeys.set(key, { tool: part.tool, partIndex: p })
+    }
+    for (const [key, found] of roundKeys) {
+      const entry = counts.get(key) ?? { tool: found.tool, occurrences: [] }
+      entry.occurrences.push({ messageIndex: i, partIndex: found.partIndex })
+      counts.set(key, entry)
+    }
+  }
+  const windows: RepeatWindow[] = []
+  for (const [key, entry] of counts) {
+    if (entry.occurrences.length < min) continue
+    entry.occurrences.sort((a, b) => a.messageIndex - b.messageIndex || a.partIndex - b.partIndex)
+    const lastOcc = entry.occurrences[entry.occurrences.length - 1]
+    if (lastOcc === undefined || lastOcc.messageIndex !== lastAssistant) continue
+    windows.push({ key, tool: entry.tool, count: entry.occurrences.length, lastOccurrence: lastOcc, prevOccurrence: entry.occurrences[entry.occurrences.length - 2] ?? null })
+  }
+  return { sessionID: messages[0]?.info.sessionID ?? null, windows }
+}
+
 /** Detect series of byte-identical tool calls across consecutive assistant
  * rounds (DashScope rejects those in an outgoing payload, so the transform hook
  * sanitizes them). Parallel duplicates inside one message count as ONE round;
@@ -1540,8 +1611,7 @@ export function detectRepeatSeries(
     info: { role: string; sessionID?: string }
     parts: ReadonlyArray<{ type: string; tool?: string; state?: { input?: Record<string, unknown> } }>
   }>,
-): RepeatScan {
-  let lastAssistant = -1
+): RepeatScan {  let lastAssistant = -1
   for (let i = messages.length - 1; i >= 0; i--) {
     if (messages[i]?.info.role === "assistant") {
       lastAssistant = i

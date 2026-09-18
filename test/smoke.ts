@@ -17,6 +17,7 @@ import {
   canonicalArgs,
   detectFailure,
   detectRepeatSeries,
+  detectRepeatWindows,
   failureSnippet,
   fuzzySimilar,
   hasResidualIdentity,
@@ -2768,6 +2769,71 @@ check("repeat stop: bypassed calls do not grow the stop counter", r102RealB1 !==
 await r102Populate("r102a", "t2")
 const r102B4 = await r102Block("r102a", "t2", "r102c4")
 check("repeat stop: a different tail series resets the counter", r102B4 !== null && r102B4.message.includes("REPEAT BLOCKED") && !r102B4.message.includes("REPEAT STOP"))
+
+// --- 103. windowed repeats: same call N times in the last M rounds (interleaved
+// loops never form a consecutive series but burn rounds just the same) ---
+const r103Asst = (tool: string, input: Record<string, unknown>, state: Record<string, unknown> = {}, sessionID = "r103s"): R99Msg => ({
+  info: { role: "assistant", sessionID },
+  parts: [{ type: "tool", tool, state: { status: "completed", output: "ok", ...state, input } }],
+})
+const r103Bash = (command: string, output: string, sessionID = "r103s"): R99Msg => r103Asst("bash", { command }, { output }, sessionID)
+// unit-level contract of detectRepeatWindows
+const r103W1 = detectRepeatWindows([
+  r103Bash("npx vitest run 2>&1 | Select-Object -Last 30", "FAIL x\nError: boom"),
+  r103Asst("read", { filePath: "a.ts" }),
+  r103Bash("npx vitest run 2>&1 | Select-Object -Last 30", "FAIL x\nError: boom"),
+  r103Asst("read", { filePath: "b.ts" }),
+  r103Bash("npx vitest run 2>&1 | Select-Object -Last 30", "FAIL x\nError: boom"),
+])
+check("windowed: 3 interleaved repeats in the last rounds are detected", r103W1.windows.length === 1 && r103W1.windows[0]?.count === 3)
+check("windowed: below the floor stays silent", detectRepeatWindows([r103Bash("x", "e"), r103Bash("x", "e")]).windows.length === 0)
+check(
+  "windowed: not tail-anchored = no window",
+  detectRepeatWindows([r103Bash("x", "e"), r103Bash("x", "e"), r103Bash("x", "e"), r103Asst("read", { filePath: "z.ts" })]).windows.length === 0,
+)
+// hook-level: NOTE on interleaved stuck repeats
+const r103Dir = join(tmp, "r103-window-project")
+const r103Hooks = await Dejavu({ directory: r103Dir, client: { app: { log: async () => ({}) } } } as unknown as Ctx)
+const r103Transform = r103Hooks["experimental.chat.messages.transform"]
+const r103Suite = "npx vitest run 2>&1 | Select-Object -Last 30"
+const r103FailOut = "FAIL  src/tests/owner-self-exit.test.ts > owner exits\nError: Owner did not self-exit within 15s\n Test Files  1 failed | 305 passed (306)"
+const r103MsgsA: R99Msg[] = [
+  r103Bash(r103Suite, r103FailOut),
+  r103Asst("read", { filePath: "a.ts" }),
+  r103Bash(r103Suite, r103FailOut),
+  r103Asst("read", { filePath: "b.ts" }),
+  r103Bash(r103Suite, r103FailOut),
+]
+await r103Transform?.({} as never, { messages: r103MsgsA } as never)
+const r103NoteA = r103MsgsA[4]?.parts[0]?.state?.output ?? ""
+check(
+  "windowed: interleaved stuck repeats get a NOTE on the last result",
+  r103NoteA.includes("[dejavu] REPETITION") && r103NoteA.includes("in the last"),
+)
+check("windowed: test-suite NOTE names the failing file", r103NoteA.includes("re-run ONLY the failing file") && r103NoteA.includes("src/tests/owner-self-exit.test.ts"))
+// iteration guard: same call but the failure form moves -> no note
+const r103MsgsB: R99Msg[] = [
+  r103Bash(r103Suite, "FAIL  a.test.ts\nError: first"),
+  r103Asst("read", { filePath: "a.ts" }),
+  r103Bash(r103Suite, "FAIL  a.test.ts\nError: first"),
+  r103Asst("read", { filePath: "b.ts" }),
+  r103Bash(r103Suite, "FAIL  b.test.ts\nError: second"),
+]
+await r103Transform?.({} as never, { messages: r103MsgsB } as never)
+check("windowed: a moving failure form is iteration, no NOTE", !(r103MsgsB[4]?.parts[0]?.state?.output ?? "").includes("in the last"))
+// successful repeats never note (interleaved so the consecutive series never forms)
+const r103MsgsC: R99Msg[] = [r103Bash("git status --short", "ok"), r103Asst("read", { filePath: "a.ts" }), r103Bash("git status --short", "ok"), r103Asst("read", { filePath: "b.ts" }), r103Bash("git status --short", "ok")]
+await r103Transform?.({} as never, { messages: r103MsgsC } as never)
+check("windowed: successful repeats never note", !(r103MsgsC[3]?.parts[0]?.state?.output ?? "").includes("REPETITION"))
+// windowed repeats never arm the block map
+const r103Before = r103Hooks["tool.execute.before"] as BeforeHook
+let r103BlockErr: Error | null = null
+try {
+  await r103Before({ tool: "bash", sessionID: "r103s", callID: "r103x1" } as unknown as BeforeInput, { args: { command: r103Suite } } as unknown as BeforeOutput)
+} catch (e) {
+  r103BlockErr = e as Error
+}
+check("windowed: interleaved repeats never block", r103BlockErr === null)
 
 // --- 86. round-8 invariant: a corrupt GLOBAL gates.json is quarantined under the
 // gates lock by reconcile(); the unlocked routing peeks in reconcileAll (escalation

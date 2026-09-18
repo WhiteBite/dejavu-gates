@@ -5,7 +5,7 @@ import { canBlock, canRemind, fuzzySimilar, FUZZY_MAX_LEN, hasResidualIdentity, 
 import { coerceGateShape, failedAtMs, repairGate } from "./validate"
 
 /** Bumped on behavior changes; stamped into init log events so stale sessions are visible. */
-export const PLUGIN_VERSION = "2.36.0"
+export const PLUGIN_VERSION = "2.37.0"
 
 export interface Gate {
   /** sha1 signature prefix — the pattern identity */
@@ -131,6 +131,7 @@ export type LogEventType =
   | "repeat-reminded"
   | "repeat-blocked"
   | "repeat-sanitized"
+  | "repeat-windowed"
 
 /** Events that change what the machine remembers — the only ones worth the
  * global log lock (the most-contended lock, shared by every window of every

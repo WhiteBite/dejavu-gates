@@ -7,10 +7,12 @@ import {
   cmdWrapperPayload,
   detectFailure,
   detectRepeatSeries,
+  detectRepeatWindows,
   failureSnippet,
   isDiagnosticSignature,
   isIntendedNonzero,
   isNoiseError,
+  looksLikeFailure,
   nonTransparentProducers,
   parameterizeError,
   patternKey,
@@ -73,6 +75,11 @@ const REPEAT_SESSIONS_CAP = 1000
  * message switches to a hard stop — weak models keep retrying past a plain
  * correction (303 blocked retries in one production session) */
 const REPEAT_STOP_AFTER = 3
+/** repeat channel: a key occurring this many times within the last
+ * REPEAT_WINDOW_ROUNDS assistant rounds (any adjacency) earns a NOTE —
+ * interleaved loops never form a consecutive series but burn rounds anyway */
+const REPEAT_WINDOW_MIN = 3
+const REPEAT_WINDOW_ROUNDS = 12
 
 /** Sentinel: intentional gate/reminder throws (rethrown); our own bugs are swallowed. */
 class GateSignal extends Error {}
@@ -138,6 +145,8 @@ export const Dejavu: Plugin = async ({ directory, client }) => {
   /** iteration discriminator: projectDir → count of landed edit/write calls;
    *  a failure with a moved version is debugging, not a blind retry */
   const workspaceVersions = new Map<string, number>()
+  /** repeat channel: per-session watermark for windowed-repeat NOTE logging */
+  const repeatWindowLogged = new Map<string, number>()
   /** message part IDs already counted as tool-level errors */
   let handledParts = new Set<string>()
   /** (key|session) -> last recording channel/time, for the cross-channel dedup */
@@ -829,6 +838,7 @@ export const Dejavu: Plugin = async ({ directory, client }) => {
           if (typeof props?.sessionID === "string") {
             stores.forgetSession(props.sessionID).catch(() => {})
             repeatSeries.delete(props.sessionID)
+            repeatWindowLogged.delete(props.sessionID)
           }
           return
         }
@@ -955,6 +965,47 @@ export const Dejavu: Plugin = async ({ directory, client }) => {
             part.state.output += note
             noted += 1
           }
+        }
+        // Windowed repeats: the same call ≥REPEAT_WINDOW_MIN times across the
+        // last REPEAT_WINDOW_ROUNDS assistant rounds, any adjacency — an
+        // interleaved loop (analysis rounds between retries) never forms a
+        // consecutive series but burns rounds anyway. NOTE only, never block:
+        // interleaved rounds are provider-safe. A moving failure form means
+        // debugging, not a stuck loop — no note.
+        let windowedNoted = 0
+        let windowedMax = 0
+        const tailKeys = new Set(scan.series.filter((s) => s.reachesTail).map((s) => s.key))
+        for (const w of detectRepeatWindows(output.messages, { window: REPEAT_WINDOW_ROUNDS, min: REPEAT_WINDOW_MIN }).windows) {
+          if (tailKeys.has(w.key)) continue // the consecutive path already annotated it
+          const lastPart = output.messages[w.lastOccurrence.messageIndex]?.parts[w.lastOccurrence.partIndex]
+          if (lastPart === undefined || lastPart.type !== "tool" || lastPart.state == null) continue
+          const lastText = "output" in lastPart.state && typeof lastPart.state.output === "string" ? lastPart.state.output : lastPart.state.status === "error" && typeof lastPart.state.error === "string" ? lastPart.state.error : ""
+          if (!looksLikeFailure(lastText)) continue
+          const prevPart = w.prevOccurrence === null ? undefined : output.messages[w.prevOccurrence.messageIndex]?.parts[w.prevOccurrence.partIndex]
+          const prevText = prevPart?.type === "tool" && prevPart.state != null ? ("output" in prevPart.state && typeof prevPart.state.output === "string" ? prevPart.state.output : prevPart.state.status === "error" && typeof prevPart.state.error === "string" ? prevPart.state.error : "") : ""
+          if (prevText !== "" && looksLikeFailure(prevText) && parameterizeError(prevText) !== parameterizeError(lastText)) continue
+          const failingFile =
+            /FAIL(?:ED)?\s+(\S+\.(?:test|spec)\.[tj]sx?)/.exec(lastText)?.[1] ?? /FAILED\s+(\S+?\.py)/.exec(lastText)?.[1] ?? null
+          const advice =
+            failingFile !== null
+              ? `re-run ONLY the failing file instead of the whole suite: ${failingFile}`
+              : "change the args or take a different approach entirely"
+          const note = `\n\n[dejavu] REPETITION — this exact call ran ${w.count} times in the last ${REPEAT_WINDOW_ROUNDS} rounds.\nCORRECTION: ${advice}; if you are waiting on a background task, wait for its completion notification instead of re-polling.`
+          if ("output" in lastPart.state && typeof lastPart.state.output === "string") {
+            lastPart.state.output += note
+            windowedNoted += 1
+          } else if (lastPart.state.status === "error" && typeof lastPart.state.error === "string") {
+            lastPart.state.error += note
+            windowedNoted += 1
+          }
+          if (w.count > windowedMax) windowedMax = w.count
+        }
+        // windowed NOTE events get their own per-session watermark — the loop
+        // may outlive any single tail series
+        const windowSession = scan.sessionID
+        if (windowedNoted > 0 && windowSession !== null && windowedMax > (repeatWindowLogged.get(windowSession) ?? 0)) {
+          repeatWindowLogged.set(windowSession, windowedMax)
+          await stores.logAll({ type: "repeat-windowed", key: "windowed", session: windowSession, project: directory, repeatCount: windowedMax })
         }
         // Feed the before-hook's block tier + damped observability. Only live
         // tail series may block; an ended loop clears its entry so stale
