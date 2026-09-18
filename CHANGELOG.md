@@ -1,5 +1,10 @@
 # Changelog
 
+## 2.38.0 — 2026-09-18
+
+### Fixed (correction quality)
+- **Timeout-kill corrections now separate the two leak shapes.** A call killed at the timeout hangs because SOMETHING held the stdio pipe (the call ends only on EOF, upstream anomalyco/opencode#29831). The old text assumed a spawn/pipe/redirect call-shape problem. But a normal command (a test suite, a build) whose own completion summary is in the output means the command FINISHED and the leak is a child it spawned that never exited (worker pool, dev server, watch mode — frequently in the code under test). The correction now tells the agent to read the killed run's output and self-classify: completion marker present → fix the child's shutdown, retrying hangs again; no marker → long run, bare + poll separately + explicit timeout near the wall time. (A plugin cannot cancel a running call — the EOF semantics are upstream; the teaching is the reachable surface.)
+
 ## 2.37.0 — 2026-09-18
 
 ### Added (repeat channel)

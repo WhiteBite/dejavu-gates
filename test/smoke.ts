@@ -2835,6 +2835,12 @@ try {
 }
 check("windowed: interleaved repeats never block", r103BlockErr === null)
 
+// --- 104. timeout-kill correction names both leak shapes ---
+const r104Corr = suggestCorrection("bash:npx vitest run <n> >& <n>", "shell tool terminated command after exceeding timeout 300000ms")
+check("timeout correction explains the EOF semantics", r104Corr.includes("EOF"))
+check("timeout correction covers the finished-but-leaked-child case", r104Corr.includes("worker pool") || r104Corr.includes("spawned"))
+check("timeout correction still covers the long-run case", r104Corr.includes("wall time") || r104Corr.includes("explicit timeout"))
+
 // --- 86. round-8 invariant: a corrupt GLOBAL gates.json is quarantined under the
 // gates lock by reconcile(); the unlocked routing peeks in reconcileAll (escalation
 // filter + index rebuild) are non-force and never write. After init the store is

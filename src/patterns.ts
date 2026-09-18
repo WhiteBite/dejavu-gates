@@ -1429,7 +1429,7 @@ export function suggestCorrection(signature: string, snippet: string): string {
   // a genuinely long run) — it must outrank every command-family guess: a
   // vitest suite killed at the timeout is not "a failing test".
   if (/terminated command after exceeding timeout/i.test(snippet)) {
-    return "Killed at the bash timeout: spawn/pipe/redirect shapes must run bare + poll separately (an orphaned child holds stdio — the call ends only on stdio EOF); long runs need an explicit timeout near the wall time."
+    return "Killed at the bash timeout — the call ends only on stdio EOF, so SOMETHING held the pipe open. Read the killed run's output: if the command's own completion marker is there (test summary / BUILD SUCCESSFUL / final report), the command FINISHED and the leak is a child it spawned that never exited (worker pool, dev server, watch mode — often in the code under test, not the call shape) — fix that child's shutdown; retrying the same call will hang again. If there is no completion marker, the run itself was long: spawn/pipe/redirect shapes run bare + poll separately, and set an explicit timeout near the expected wall time."
   }
   if (/(^|\s)(--check|--dry-run|verify|check)\b/i.test(signature) && /dart run|generate|sync/i.test(signature)) {
     return "Generated artifacts are stale — run the same script WITHOUT the check flag to regenerate, then commit the result."
