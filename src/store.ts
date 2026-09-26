@@ -1,11 +1,23 @@
 import { existsSync } from "node:fs"
 import { appendFile, mkdir, readFile, rename, stat, unlink, writeFile } from "node:fs/promises"
+import { homedir } from "node:os"
 import { dirname, join } from "node:path"
 import { canBlock, canRemind, fuzzySimilar, FUZZY_MAX_LEN, hasResidualIdentity, isNoiseError, isRepoLocal, looksLikeFailure, parameterizeError, sanitizeForStore, scrubSecrets, suggestCorrection } from "./patterns"
 import { coerceGateShape, failedAtMs, repairGate } from "./validate"
 
 /** Bumped on behavior changes; stamped into init log events so stale sessions are visible. */
 export const PLUGIN_VERSION = "2.39.0"
+
+/** Global store root — DEJAVU_HOME overrides it (testing, custom setups). */
+export function resolveGlobalDir(): string {
+  return process.env.DEJAVU_HOME ?? join(homedir(), ".config", "opencode", "dejavu")
+}
+
+/** Shared two-scope construction ("" = global only); the init sequence (reconcile/migrate/expire) stays at each call site. */
+export function createStores(projectDir: string): Stores {
+  const projectStore = projectDir !== "" ? new GateStore(join(projectDir, ".opencode", "dejavu")) : null
+  return new Stores(new GateStore(resolveGlobalDir()), projectStore)
+}
 
 export interface Gate {
   /** sha1 signature prefix — the pattern identity */

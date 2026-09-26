@@ -7,14 +7,13 @@
  */
 import { existsSync } from "node:fs"
 import { readFile, readdir, stat } from "node:fs/promises"
-import { homedir } from "node:os"
 import { join } from "node:path"
 import { canBlock, canRemind, isRepoLocal, sanitizeForStore } from "../src/patterns"
-import { DEMOTE_RECURRENCES, GateStore, GLOBAL_PROJECTS, MAX_GATES, NOISE_TTL_DAYS, retireTaught, Stores, PLUGIN_VERSION, PROMOTE_SESSIONS, TTL_DAYS, type Gate } from "../src/store"
+import { createStores, DEMOTE_RECURRENCES, GateStore, GLOBAL_PROJECTS, MAX_GATES, NOISE_TTL_DAYS, resolveGlobalDir, retireTaught, PLUGIN_VERSION, PROMOTE_SESSIONS, TTL_DAYS, type Gate } from "../src/store"
 import { coerceGateShape, hasNestedTokens } from "../src/validate"
 
 const repair = process.argv.includes("--repair")
-const globalDir = process.env.DEJAVU_HOME ?? join(homedir(), ".config", "opencode", "dejavu")
+const globalDir = resolveGlobalDir()
 
 const FILE_NOT_FOUND_CORRECTION = /can't open file|cannot find path|no such file|cannot find the (?:file|path)|ENOENT/i
 
@@ -54,9 +53,7 @@ if (projectDirs.length === 0) {
 if (repair) {
   const targets = projectDirs.length > 0 ? projectDirs : [""]
   for (const dir of targets) {
-    const global = new GateStore(globalDir)
-    const project = dir === "" ? null : new GateStore(join(dir, ".opencode", "dejavu"))
-    const stores = new Stores(global, project)
+    const stores = createStores(dir)
     await stores.reconcileAll()
     await stores.migrate(true)
     // Sweep expired gates too, otherwise the report shows gates that should
@@ -65,7 +62,7 @@ if (repair) {
     // Stale file-not-found corrections: the quoted path EXISTS again — the
     // taught error cannot recur; retire the gate softly (damped re-promotion
     // stays possible if the pattern earns a fresh bar).
-    for (const store of project ? [project, global] : [global]) {
+    for (const store of stores.projectStore ? [stores.projectStore, stores.globalStore] : [stores.globalStore]) {
       await store.runLocked(async () => {
         const scopeGates = await store.loadForMutation()
         let staleFixed = false
@@ -82,8 +79,8 @@ if (repair) {
     }
     // The script exits after this — flush deferred repair/quarantine/demotion
     // events now, or they are silently lost ("every repair is logged" invariant).
-    await global.flushDeferred()
-    if (project) await project.flushDeferred()
+    await stores.globalStore.flushDeferred()
+    if (stores.projectStore) await stores.projectStore.flushDeferred()
     console.log(`repaired: ${dir === "" ? "(global only)" : dir}`)
   }
   // True-orphan pruning is safe HERE and only here: doctor sees EVERY

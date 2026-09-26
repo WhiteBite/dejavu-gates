@@ -12,28 +12,26 @@
  * Usage: bun scripts/migrate.ts <projectDir> [moreProjectDirs...]
  */
 import { readFile, writeFile } from "node:fs/promises"
-import { homedir } from "node:os"
 import { join } from "node:path"
 import { scrubSecrets } from "../src/patterns"
-import { GateStore, Stores } from "../src/store"
+import { createStores, resolveGlobalDir } from "../src/store"
 
-const globalStore = new GateStore(process.env.DEJAVU_HOME ?? join(homedir(), ".config", "opencode", "dejavu"))
+const globalDir = resolveGlobalDir()
 const projects = process.argv.slice(2)
 const targets = projects.length > 0 ? projects : [process.cwd()]
 
 for (const project of targets) {
-  const projectStore = new GateStore(join(project, ".opencode", "dejavu"))
-  const stores = new Stores(globalStore, projectStore)
+  const stores = createStores(project)
   await stores.migrate(true)
   // The script exits after this — flush deferred demotion events now, or they
   // are silently lost ("every repair is logged" invariant).
-  await globalStore.flushDeferred()
-  await projectStore.flushDeferred()
+  await stores.globalStore.flushDeferred()
+  if (stores.projectStore !== null) await stores.projectStore.flushDeferred()
   console.log(`migrated: ${project}`)
 }
 
 // Historical logs are scrubbed too — secrets must not linger on disk.
-const logDirs = [globalStore.dir, ...targets.map((t) => join(t, ".opencode", "dejavu"))]
+const logDirs = [globalDir, ...targets.map((t) => join(t, ".opencode", "dejavu"))]
 for (const dir of logDirs) {
   const logPath = join(dir, "log.jsonl")
   try {

@@ -1,5 +1,3 @@
-import { homedir } from "node:os"
-import { join } from "node:path"
 import type { Plugin } from "@opencode-ai/plugin"
 import { detectRepeatSeries, detectRepeatWindows, looksLikeFailure, parameterizeError, REPEAT_MARKER } from "./src/patterns"
 import {
@@ -10,7 +8,7 @@ import {
   recordEventFailure,
   type EnforceContext,
 } from "./src/enforce"
-import { GateStore, GLOBAL_PROJECTS, NOISE_TTL_DAYS, PLUGIN_VERSION, Stores, TTL_DAYS } from "./src/store"
+import { createStores, GLOBAL_PROJECTS, NOISE_TTL_DAYS, PLUGIN_VERSION, TTL_DAYS } from "./src/store"
 import type { NormalizedEvent } from "./src/types"
 
 // --- Tunables ---------------------------------------------------------------
@@ -29,15 +27,8 @@ const REPEAT_WINDOW_ROUNDS = 12
 class GateSignal extends Error {}
 
 export const Dejavu: Plugin = async ({ directory, client }) => {
-  // DEJAVU_HOME overrides the global store location (testing, custom setups).
-  const globalDir = process.env.DEJAVU_HOME ?? join(homedir(), ".config", "opencode", "dejavu")
-  const globalStore = new GateStore(globalDir)
-  const projectStore =
-    typeof directory === "string" && directory !== ""
-      ? new GateStore(join(directory, ".opencode", "dejavu"))
-      : null
-  const stores = new Stores(globalStore, projectStore)
   const projectDir = typeof directory === "string" ? directory : ""
+  const stores = createStores(projectDir)
   const cwd = typeof directory === "string" ? directory : null
 
   const logClient = async (level: "debug" | "info" | "warn" | "error", message: string): Promise<void> => {

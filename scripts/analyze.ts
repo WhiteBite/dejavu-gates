@@ -6,11 +6,10 @@
  *   without arguments, project stores are discovered from the global index
  */
 import { existsSync, readFileSync } from "node:fs"
-import { homedir } from "node:os"
 import { join } from "node:path"
-import { GateStore } from "../src/store"
+import { GateStore, resolveGlobalDir } from "../src/store"
 
-const globalDir = process.env.DEJAVU_HOME ?? join(homedir(), ".config", "opencode", "dejavu")
+const globalDir = resolveGlobalDir()
 let projectArgs = process.argv.slice(2)
 if (projectArgs.length === 0) {
   const discovered = new Set<string>()
