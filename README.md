@@ -1,3 +1,10 @@
+> [!IMPORTANT]
+> **`opencode-dejavu` has been RENAMED to `dejavu-gates` — you are on the new home.**
+> The old URL `github.com/WhiteBite/opencode-dejavu` redirects here permanently.
+> - **OpenCode config:** `{ "plugin": ["opencode-dejavu"] }` → `{ "plugin": ["dejavu-gates"] }`
+> - **git remote:** `git remote set-url origin https://github.com/WhiteBite/dejavu-gates.git`
+> - **npm:** the old package is deprecated and frozen at 2.27.0; all releases from 2.39.0 are `dejavu-gates`
+
 <p align="center">
   <img src="logo/icon.svg" width="96" height="96" alt="dejavu logo — a lowercase d with two amber echo strokes">
 </p>
@@ -12,8 +19,6 @@
 </p>
 
 Cross-session **memory prosthesis with teeth** for AI coding agents. Agents repeat the same mistakes because they forget between sessions — and markdown rules don't fix that. dejavu mechanically detects recurring tool-call failures (bash, read, edit, write, glob, grep) and promotes them into enforced gates: a reminder on the next attempt, a hard block on same-session repeat offense. One engine, many hosts: OpenCode (plugin), Claude Code, Codex CLI, Gemini CLI, Cursor, Copilot CLI, Crush (hook-handler CLI). TypeScript + Bun, ships as source, no build step.
-
-> Renamed from `opencode-dejavu` — the npm package `opencode-dejavu` is deprecated; switch your config to `dejavu-gates`.
 
 ## Supported harnesses
 
