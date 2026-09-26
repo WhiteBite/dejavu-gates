@@ -103,11 +103,13 @@ export function sanitizeForStore(text: string): string {
  * code flag itself. `py` is the Windows Python launcher (`py -3 -c ...`).
  */
 const INTERPRETER_ONELINER =
-  /(?:^|[|;&(\n]\s*)(?:\w+=\S+\s+)*(?:["']?\S*[\\/])?(python3?|py|node|bun|deno|perl|ruby|pwsh|powershell)(?:\.exe)?["']?(?:\s+(?!-(?:encodedcommand|command|c|e)\b|--eval\b)--?\w+(?:\s+\S+)?)*\s+(-command|-encodedcommand|--eval|-c|-e)\s*/i
+  /(?:^|[|;&(\n]\s*)(?:\w+=\S+\s+)*(?:["']?\S*[\\/])?(python3?|py|node|bun|deno|perl|ruby|pwsh|powershell|php|julia|lua|rscript)(?:\.exe)?["']?(?:\s+(?!-(?:encodedcommand|command|c|e)\b|--eval\b)--?\w+(?:\s+\S+)?)*\s+(-command|-encodedcommand|--eval|-c|-e|-r)\s*/i
 
 function hashInterpreterPayload(command: string): string {
   const match = INTERPRETER_ONELINER.exec(command)
   if (!match) return command
+  // `-r` passes code only for php — for node/ruby/perl it preloads a module (structure, never fingerprinted).
+  if ((match[2] ?? "").toLowerCase() === "-r" && (match[1] ?? "").toLowerCase() !== "php") return command
   // PowerShell here-string payloads (`@"..."@` / `@'...'@`) — the wrapper
   // markers are part of the payload and hash with it. Previously the `@`
   // markers survived normalization and the quoted body collapsed to <str>,
@@ -256,6 +258,11 @@ const DIAGNOSTIC_VERBS: RegExp[] = [
   /\bgo (run|build|test|vet)\b/i,
   /\bcargo (run|build|test|clippy)\b/i,
   /\bgradlew\b[^\n;|&]*(test|compilejava|compiletestjava)/i,
+  // mvn/dotnet builds are teachable producers — only their test/verify runs are diagnostics.
+  /\bmvn\s+(test|verify)\b/i,
+  /\bdotnet test\b/i,
+  /\b(phpunit|rspec|rubocop)\b/i,
+  /\bswift (build|test)\b/i,
   /\b(eslint|prettier --check)\b/i,
   /\btsc\b/i,
   /\bmypy\b/i,
@@ -486,7 +493,7 @@ const OPERATOR_TOKENS = new Set(["&", "@", ">", "<", ">&", ">>", "2>&1", "2>"])
 /** Tokens that pass code/module to an interpreter — structure, not identity.
  * `-m`/`--module` included: the NEXT token is the program, exactly like -c —
  * `python -m <str>` (quoted module) must not gain identity from the flag. */
-const CODE_PASSING_FLAGS = new Set(["-c", "-e", "--eval", "-command", "-encodedcommand", "-m", "--module"])
+const CODE_PASSING_FLAGS = new Set(["-c", "-e", "-r", "--eval", "-command", "-encodedcommand", "-m", "--module"])
 
 /** Bare flag tokens (`-x`, `--foo`) are switches, not call identity — after a
  * wrapper head, a flag-only remainder matches an entire command family
@@ -519,7 +526,7 @@ const PLUMBING_HEADS = new Set([
 /** Wrappers whose bare name is not a call identity: their ARGUMENTS are the
  * call. If the arguments were all parameterized away, the signature matches
  * an entire command family — enforcing it would punish unrelated calls. */
-const WRAPPER_BASENAMES = new Set(["cmd", "py", "node", "python", "python3", "bun", "deno", "perl", "ruby", "pwsh", "powershell"])
+const WRAPPER_BASENAMES = new Set(["cmd", "py", "node", "python", "python3", "bun", "deno", "perl", "ruby", "pwsh", "powershell", "php", "julia", "lua", "rscript"])
 
 /** npx-launched runners: the runner package is the verb, the SCRIPT argument is
  * the call — `npx tsx <str>` matches every tsx invocation (a family). */
@@ -1070,6 +1077,12 @@ const FAILURE_SIGNATURES: RegExp[] = [
   /\bBUILD\s+(?:FAILURE|FAILED)\b/i,
   /\bFAILURE\b/i,
   /\bTESTS?\s+FAILED\b/i,
+  // PHPUnit error-count summary + result banner (failure counts are covered by the generic rules above).
+  /\bthere (?:was|were) [1-9]\d* (?:failures?|errors?)\b/i,
+  /\b(?:FAILURES|ERRORS)!/,
+  // PHP fatals; PHP Warning stays out — a warning is not a failure.
+  /\bfatal error:/i,
+  /\bPHP (?:parse|fatal) error/i,
   // TAP ("node --test") failure marker.
   /^not ok\b/i,
   /thread '[^']*' panicked/,
@@ -1469,6 +1482,27 @@ export function suggestCorrection(signature: string, snippet: string): string {
   // Missing command on this machine — install it or pick an available tool.
   if (/^bash:/i.test(signature) && /command not found|not recognized/i.test(snippet)) {
     return "The command is not installed on this machine — install it first, or use an alternative tool that is already available."
+  }
+  if (/\bgo (?:test|build|vet|run)\b/i.test(signature)) {
+    return "Go build/test failure — read the first file:line diagnostic in the output, fix the code, and re-run the same command."
+  }
+  if (/\bcargo (?:build|test|clippy|run)\b/i.test(signature)) {
+    return "cargo/rustc failure — read the error[..] diagnostic with its file:line, fix the code, and re-run."
+  }
+  if (/\b(?:mvnw?|gradlew?)\b/i.test(signature)) {
+    return "Maven/Gradle build failed — read the first [ERROR] / FAILURE: line for the real cause (module, file:line), fix it, and re-run."
+  }
+  if (/\bdotnet (?:build|test|run)\b/i.test(signature)) {
+    return "dotnet build/test failure — read the first error CS/MSBUILD line (file(line,col)), fix it, and re-run."
+  }
+  if (/\brspec\b/i.test(signature)) {
+    return "An RSpec example is failing — read the failing example's file:line and the expectation diff, fix the code or the spec; do not re-run blindly."
+  }
+  if (/\b(?:phpunit|php)\b/i.test(signature)) {
+    return "PHPUnit/PHP failure — read the 'There was/were' summary or the Fatal error line, fix the code or the test, and re-run."
+  }
+  if (/\b(?:make|cmake)\b/i.test(signature)) {
+    return "make/cmake build failed — read the first Error line in the build log (the failing target), fix it, and re-run."
   }
   // A success-shaped snippet is never an error — quoting it ("Last error:
   // '17 passed'") teaches the agent to fix something that worked. Likewise a
