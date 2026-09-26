@@ -1,9 +1,9 @@
 > [!IMPORTANT]
-> **`opencode-dejavu` has been RENAMED to `dejavu-gates` — you are on the new home.**
-> The old URL `github.com/WhiteBite/opencode-dejavu` redirects here permanently.
+> **[`opencode-dejavu`](https://github.com/WhiteBite/opencode-dejavu) has been RENAMED to [`dejavu-gates`](https://github.com/WhiteBite/dejavu-gates) — you are on the new home.**
+> The old URL [github.com/WhiteBite/opencode-dejavu](https://github.com/WhiteBite/opencode-dejavu) redirects here permanently.
 > - **OpenCode config:** `{ "plugin": ["opencode-dejavu"] }` → `{ "plugin": ["dejavu-gates"] }`
 > - **git remote:** `git remote set-url origin https://github.com/WhiteBite/dejavu-gates.git`
-> - **npm:** the old package is deprecated and frozen at 2.27.0; all releases from 2.39.0 are `dejavu-gates`
+> - **npm:** the old package [`opencode-dejavu`](https://www.npmjs.com/package/opencode-dejavu) is deprecated and frozen at 2.27.0; all releases from 2.39.0 are [`dejavu-gates`](https://www.npmjs.com/package/dejavu-gates)
 
 <p align="center">
   <img src="logo/icon.svg" width="96" height="96" alt="dejavu logo — a lowercase d with two amber echo strokes">
