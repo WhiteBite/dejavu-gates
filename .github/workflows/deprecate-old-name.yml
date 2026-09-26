@@ -1,0 +1,16 @@
+name: deprecate-old-name
+
+on:
+  workflow_dispatch:
+
+jobs:
+  deprecate:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - run: |
+          echo "//registry.npmjs.org/:_authToken=$NODE_AUTH_TOKEN" > .npmrc
+          npm deprecate opencode-dejavu "renamed to dejavu-gates - update your opencode.json plugin entry to dejavu-gates"
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
