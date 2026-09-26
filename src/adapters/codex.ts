@@ -6,8 +6,8 @@
  * Outbound: allow → allowDecision(); deny → denyDecision(reason) (exit 2 + stderr);
  *   annotation → `{json: {hookSpecificOutput: {additionalContext: annotation}}, exitCode: 0, stderr: null}`.
  */
-import type { HarnessAdapter, HookPhase, NormalizedEvent, OutboundDecision, Verdict } from "../types"
-import { internalTool, internalArgs, str, rec, UNKNOWN_SESSION, allowDecision, denyDecision } from "./shared"
+import type { HarnessAdapter, HookPhase, NormalizedEvent } from "../types"
+import { internalTool, internalArgs, str, rec, UNKNOWN_SESSION, denyDecision, makeOutbound } from "./shared"
 
 /** Build a string output from a generic tool_response value. */
 function buildOutput(response: unknown): string | null {
@@ -27,6 +27,7 @@ function buildOutput(response: unknown): string | null {
 
 export const codexAdapter: HarnessAdapter = {
   name: "codex",
+  postChannel: true,
 
   mapInbound(phase: HookPhase, raw: unknown): NormalizedEvent | null {
     // session-event phase: no normalization needed
@@ -78,18 +79,12 @@ export const codexAdapter: HarnessAdapter = {
     }
   },
 
-  mapOutbound(phase: HookPhase, verdict: Verdict): OutboundDecision {
-    // post: the call already ran — annotation rides on it, a post is never a block
-    if (phase === "post") {
-      if (verdict.annotation === null) return allowDecision()
-      return {
-        json: { hookSpecificOutput: { additionalContext: verdict.annotation.slice(0, 10000) } },
-        exitCode: 0,
-        stderr: null,
-      }
-    }
-    // pre: deny blocks the call (exit 2 + stderr, verified Codex dialect), allow passes
-    if (verdict.action === "deny") return denyDecision(verdict.reason ?? "[dejavu] BLOCKED")
-    return allowDecision()
-  },
+  mapOutbound: makeOutbound({
+    deny: (reason) => denyDecision(reason),
+    annotate: (annotation) => ({
+      json: { hookSpecificOutput: { additionalContext: annotation.slice(0, 10000) } },
+      exitCode: 0,
+      stderr: null,
+    }),
+  }),
 }

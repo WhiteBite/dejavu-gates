@@ -4,7 +4,7 @@
  * Internal tool names are exactly what callSignature() understands — anything
  * unmapped passes through and yields a null signature (the engine then allows).
  */
-import type { HarnessName, OutboundDecision } from "../types"
+import type { HarnessName, HookPhase, OutboundDecision, Verdict } from "../types"
 
 /** per-harness tool-name aliases, keyed by the LOWERCASED harness tool name */
 const TOOL_ALIASES: Record<HarnessName, Record<string, string>> = {
@@ -85,4 +85,20 @@ export function allowDecision(): OutboundDecision {
  * to the model as the block reason (verified per harness in the contract docs). */
 export function denyDecision(reason: string): OutboundDecision {
   return { json: {}, exitCode: 2, stderr: reason }
+}
+
+/** Shared mapOutbound skeleton: post never blocks (annotation rides on allow),
+ * only pre denies. Adapters supply their dialect; the contract cannot be violated per-adapter. */
+export function makeOutbound(dialect: {
+  deny: (reason: string) => OutboundDecision
+  annotate: ((annotation: string) => OutboundDecision) | null
+}): (phase: HookPhase, verdict: Verdict) => OutboundDecision {
+  return (phase, verdict) => {
+    if (phase === "post") {
+      if (verdict.annotation !== null && dialect.annotate !== null) return dialect.annotate(verdict.annotation)
+      return allowDecision()
+    }
+    if (verdict.action === "deny") return dialect.deny(verdict.reason ?? "[dejavu] BLOCKED")
+    return allowDecision()
+  }
 }

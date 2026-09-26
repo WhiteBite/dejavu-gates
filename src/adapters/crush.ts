@@ -13,6 +13,7 @@ import { internalTool, internalArgs, str, rec, UNKNOWN_SESSION, allowDecision, d
 
 export const crushAdapter: HarnessAdapter = {
   name: "crush",
+  postChannel: false,
 
   mapInbound(phase: "pre" | "post" | "session-event", raw: unknown): NormalizedEvent | null {
     if (typeof raw !== "object" || raw === null) return null

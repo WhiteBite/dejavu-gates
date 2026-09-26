@@ -8,8 +8,8 @@
  *   postToolUse. Maps via internalTool + internalArgs, output from tool_output.
  * Unknown shape or session-event phase → null.
  */
-import type { HarnessAdapter, NormalizedEvent, Verdict, OutboundDecision } from "../types"
-import { internalTool, internalArgs, str, rec, num, UNKNOWN_SESSION, allowDecision, denyDecision } from "./shared"
+import type { HarnessAdapter, NormalizedEvent } from "../types"
+import { internalTool, internalArgs, str, rec, UNKNOWN_SESSION, makeOutbound } from "./shared"
 
 /** Extract text from a tool_output value (string | object | null). */
 function extractOutput(value: unknown): string | null {
@@ -29,6 +29,7 @@ function extractOutput(value: unknown): string | null {
 
 export const cursorAdapter: HarnessAdapter = {
   name: "cursor",
+  postChannel: true,
 
   mapInbound(phase: "pre" | "post" | "session-event", raw: unknown): NormalizedEvent | null {
     // Reject non-object payloads early — defensive, never throw
@@ -129,28 +130,20 @@ export const cursorAdapter: HarnessAdapter = {
     return null
   },
 
-  mapOutbound(phase: "pre" | "post" | "session-event", verdict: Verdict): OutboundDecision {
-    // post: the call already ran — annotation rides on it, a post is never a block
-    if (phase === "post") {
-      if (verdict.annotation === null) return allowDecision()
-      return {
-        json: { additional_context: verdict.annotation },
-        exitCode: 0,
-        stderr: null,
-      }
-    }
-    // pre: deny blocks via Cursor's native permission JSON (agent_message is model-visible)
-    if (verdict.action === "deny") {
-      return {
-        json: {
-          permission: "deny",
-          user_message: "[dejavu] repeated failing call blocked",
-          agent_message: verdict.reason ?? "[dejavu] BLOCKED",
-        },
-        exitCode: 0,
-        stderr: null,
-      }
-    }
-    return allowDecision()
-  },
+  mapOutbound: makeOutbound({
+    deny: (reason) => ({
+      json: {
+        permission: "deny",
+        user_message: "[dejavu] repeated failing call blocked",
+        agent_message: reason,
+      },
+      exitCode: 0,
+      stderr: null,
+    }),
+    annotate: (annotation) => ({
+      json: { additional_context: annotation },
+      exitCode: 0,
+      stderr: null,
+    }),
+  }),
 }

@@ -124,6 +124,8 @@ async function dispatch(
     }
     case "post": {
       const outcome = await enforceAfter(event, ctx)
+      // no post-hook channel (crush): detection above still taught the store, only the annotation is skipped
+      if (!adapter.postChannel) return allowDecision()
       const verdict: Verdict = { action: "allow", reason: null, annotation: outcome.annotation, degraded: false }
       return adapter.mapOutbound("post", verdict)
     }

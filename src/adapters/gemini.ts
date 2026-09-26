@@ -4,8 +4,8 @@
  * documented Gemini dialect (exit-2 + stderr for deny, JSON with
  * hookSpecificOutput for annotation).
  */
-import type { HarnessAdapter, NormalizedEvent, Verdict, OutboundDecision } from "../types"
-import { internalTool, internalArgs, str, rec, UNKNOWN_SESSION, allowDecision, denyDecision } from "./shared"
+import type { HarnessAdapter, NormalizedEvent } from "../types"
+import { internalTool, internalArgs, str, rec, UNKNOWN_SESSION, denyDecision, makeOutbound } from "./shared"
 
 /** Extract tool output text from a Gemini AfterTool response object. */
 function extractToolText(response: unknown): string | null {
@@ -29,6 +29,7 @@ function extractToolText(response: unknown): string | null {
 
 export const geminiAdapter: HarnessAdapter = {
   name: "gemini",
+  postChannel: true,
 
   mapInbound(phase: "pre" | "post" | "session-event", raw: unknown): NormalizedEvent | null {
     // Reject non-object payloads early — defensive, never throw
@@ -84,22 +85,16 @@ export const geminiAdapter: HarnessAdapter = {
     return null
   },
 
-  mapOutbound(phase: "pre" | "post" | "session-event", verdict: Verdict): OutboundDecision {
-    // post: the call already ran — annotation rides on it, a post is never a block
-    if (phase === "post") {
-      if (verdict.annotation === null) return allowDecision()
-      return {
-        json: {
-          hookSpecificOutput: {
-            additionalContext: verdict.annotation.slice(0, 10000),
-          },
+  mapOutbound: makeOutbound({
+    deny: (reason) => denyDecision(reason),
+    annotate: (annotation) => ({
+      json: {
+        hookSpecificOutput: {
+          additionalContext: annotation.slice(0, 10000),
         },
-        exitCode: 0,
-        stderr: null,
-      }
-    }
-    // pre: deny blocks the call (exit-2 + stderr dialect), allow passes it through
-    if (verdict.action === "deny") return denyDecision(verdict.reason ?? "[dejavu] BLOCKED")
-    return allowDecision()
-  },
+      },
+      exitCode: 0,
+      stderr: null,
+    }),
+  }),
 }

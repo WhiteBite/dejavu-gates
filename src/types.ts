@@ -72,6 +72,8 @@ export interface OutboundDecision {
 export interface HarnessAdapter {
   /** canonical name of this harness */
   readonly name: HarnessName
+  /** false when the harness has no post-hook channel (e.g. Crush) — annotations are structurally impossible; detection still runs so the shared store learns */
+  readonly postChannel: boolean
   /** normalize an inbound raw payload to the shared event shape
    * returns null when the payload is unrecognized (CLI no-ops) */
   mapInbound(phase: HookPhase, raw: unknown): NormalizedEvent | null

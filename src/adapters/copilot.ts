@@ -12,8 +12,8 @@
  * Both map via internalTool + internalArgs; sessionId from sessionId|session_id;
  * callId always null (Copilot exposes no per-call id); exitCode null, channel "text".
  */
-import type { HarnessAdapter, NormalizedEvent, Verdict, OutboundDecision } from "../types"
-import { internalTool, internalArgs, str, rec, UNKNOWN_SESSION, allowDecision, denyDecision } from "./shared"
+import type { HarnessAdapter, NormalizedEvent } from "../types"
+import { internalTool, internalArgs, str, rec, UNKNOWN_SESSION, makeOutbound } from "./shared"
 
 /** Parse toolArgs JSON string → object; returns {} on any parse failure. */
 function parseToolArgs(raw: unknown): Record<string, unknown> {
@@ -49,6 +49,7 @@ function extractOutput(value: unknown): string | null {
 
 export const copilotAdapter: HarnessAdapter = {
   name: "copilot",
+  postChannel: true,
 
   mapInbound(phase: "pre" | "post" | "session-event", raw: unknown): NormalizedEvent | null {
     // Reject non-object payloads early — defensive, never throw
@@ -171,24 +172,16 @@ export const copilotAdapter: HarnessAdapter = {
     return null
   },
 
-  mapOutbound(phase: "pre" | "post" | "session-event", verdict: Verdict): OutboundDecision {
-    // post: the call already ran — annotation rides on it, a post is never a block
-    if (phase === "post") {
-      if (verdict.annotation === null) return allowDecision()
-      return {
-        json: { additionalContext: verdict.annotation.slice(0, 10000) },
-        exitCode: 0,
-        stderr: null,
-      }
-    }
-    // pre: deny blocks via Copilot's native permissionDecision JSON
-    if (verdict.action === "deny") {
-      return {
-        json: { permissionDecision: "deny", permissionDecisionReason: verdict.reason ?? "[dejavu] BLOCKED" },
-        exitCode: 0,
-        stderr: null,
-      }
-    }
-    return allowDecision()
-  },
+  mapOutbound: makeOutbound({
+    deny: (reason) => ({
+      json: { permissionDecision: "deny", permissionDecisionReason: reason },
+      exitCode: 0,
+      stderr: null,
+    }),
+    annotate: (annotation) => ({
+      json: { additionalContext: annotation.slice(0, 10000) },
+      exitCode: 0,
+      stderr: null,
+    }),
+  }),
 }
