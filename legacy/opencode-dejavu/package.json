@@ -1,0 +1,20 @@
+{
+  "name": "opencode-dejavu",
+  "version": "2.28.0",
+  "description": "DEPRECATED stub - renamed to dejavu-gates; re-exports the new engine so existing plugin configs keep working.",
+  "type": "module",
+  "main": "index.ts",
+  "files": [
+    "index.ts",
+    "README.md"
+  ],
+  "dependencies": {
+    "dejavu-gates": "^2.39.1"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/WhiteBite/dejavu-gates.git"
+  },
+  "homepage": "https://github.com/WhiteBite/dejavu-gates",
+  "license": "MIT"
+}
