@@ -172,7 +172,16 @@ export const copilotAdapter: HarnessAdapter = {
   },
 
   mapOutbound(phase: "pre" | "post" | "session-event", verdict: Verdict): OutboundDecision {
-    // deny takes precedence over annotation
+    // post: the call already ran — annotation rides on it, a post is never a block
+    if (phase === "post") {
+      if (verdict.annotation === null) return allowDecision()
+      return {
+        json: { additionalContext: verdict.annotation.slice(0, 10000) },
+        exitCode: 0,
+        stderr: null,
+      }
+    }
+    // pre: deny blocks via Copilot's native permissionDecision JSON
     if (verdict.action === "deny") {
       return {
         json: { permissionDecision: "deny", permissionDecisionReason: verdict.reason ?? "" },
@@ -180,16 +189,6 @@ export const copilotAdapter: HarnessAdapter = {
         stderr: null,
       }
     }
-
-    // annotation path: only valid in post phase
-    if (phase === "post" && verdict.annotation !== null) {
-      return {
-        json: { additionalContext: verdict.annotation.slice(0, 10000) },
-        exitCode: 0,
-        stderr: null,
-      }
-    }
-
     return allowDecision()
   },
 }

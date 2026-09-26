@@ -79,20 +79,17 @@ export const codexAdapter: HarnessAdapter = {
   },
 
   mapOutbound(phase: HookPhase, verdict: Verdict): OutboundDecision {
-    if (verdict.action === "allow") return allowDecision()
-
-    // Deny wins over annotation — exit 2 + stderr (verified Codex block dialect)
-    if (phase === "pre") return denyDecision(verdict.reason ?? "[dejavu] BLOCKED")
-
-    // Post-hook: annotation rides on stdout with exit 0
-    if (verdict.annotation != null) {
+    // post: the call already ran — annotation rides on it, a post is never a block
+    if (phase === "post") {
+      if (verdict.annotation === null) return allowDecision()
       return {
-        json: { hookSpecificOutput: { additionalContext: verdict.annotation } },
+        json: { hookSpecificOutput: { additionalContext: verdict.annotation.slice(0, 10000) } },
         exitCode: 0,
         stderr: null,
       }
     }
-
-    return denyDecision(verdict.reason ?? "[dejavu] BLOCKED")
+    // pre: deny blocks the call (exit 2 + stderr, verified Codex dialect), allow passes
+    if (verdict.action === "deny") return denyDecision(verdict.reason ?? "[dejavu] BLOCKED")
+    return allowDecision()
   },
 }

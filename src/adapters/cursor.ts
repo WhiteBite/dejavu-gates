@@ -130,9 +130,16 @@ export const cursorAdapter: HarnessAdapter = {
   },
 
   mapOutbound(phase: "pre" | "post" | "session-event", verdict: Verdict): OutboundDecision {
-    if (verdict.action === "allow") return allowDecision()
-
-    // deny takes precedence over annotation; degraded ignored
+    // post: the call already ran — annotation rides on it, a post is never a block
+    if (phase === "post") {
+      if (verdict.annotation === null) return allowDecision()
+      return {
+        json: { additional_context: verdict.annotation },
+        exitCode: 0,
+        stderr: null,
+      }
+    }
+    // pre: deny blocks via Cursor's native permission JSON (agent_message is model-visible)
     if (verdict.action === "deny") {
       return {
         json: {
@@ -144,27 +151,6 @@ export const cursorAdapter: HarnessAdapter = {
         stderr: null,
       }
     }
-
-    // annotation path: only valid in post phase
-    if (phase === "post" && verdict.annotation !== null) {
-      return {
-        json: {
-          additional_context: verdict.annotation,
-        },
-        exitCode: 0,
-        stderr: null,
-      }
-    }
-
-    // Fallback deny when annotation absent or phase is pre
-    return {
-      json: {
-        permission: "deny",
-        user_message: "[dejavu] repeated failing call blocked",
-        agent_message: verdict.reason ?? "",
-      },
-      exitCode: 0,
-      stderr: null,
-    }
+    return allowDecision()
   },
 }

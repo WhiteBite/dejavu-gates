@@ -85,13 +85,9 @@ export const geminiAdapter: HarnessAdapter = {
   },
 
   mapOutbound(phase: "pre" | "post" | "session-event", verdict: Verdict): OutboundDecision {
-    if (verdict.action === "allow") return allowDecision()
-
-    // deny takes precedence over annotation; degraded ignored (Gemini is full-featured)
-    if (verdict.action === "deny") return denyDecision(verdict.reason ?? "")
-
-    // annotation path: only valid in post phase
-    if (phase === "post" && verdict.annotation !== null) {
+    // post: the call already ran — annotation rides on it, a post is never a block
+    if (phase === "post") {
+      if (verdict.annotation === null) return allowDecision()
       return {
         json: {
           hookSpecificOutput: {
@@ -102,8 +98,8 @@ export const geminiAdapter: HarnessAdapter = {
         stderr: null,
       }
     }
-
-    // Fallback deny when annotation is absent or phase is pre
-    return denyDecision(verdict.reason ?? "")
+    // pre: deny blocks the call (exit-2 + stderr dialect), allow passes it through
+    if (verdict.action === "deny") return denyDecision(verdict.reason ?? "")
+    return allowDecision()
   },
 }
