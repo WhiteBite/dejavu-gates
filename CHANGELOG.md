@@ -1,5 +1,14 @@
 # Changelog
 
+## 2.39.1 — 2026-09-26
+
+### Fixed
+- **`2>&1` no longer reads as backgrounding.** `isDetached`'s standalone-`&` check matched the `&` inside fd-duplication, so a FOREGROUND dev server with stderr merged (`npm run dev 2>&1`) silently evaded the long-running guard and hung the call until timeout. The preceding-character class now excludes `>`; real background forms (`cmd &`, `nohup … 2>&1 &`, `(cmd &)`) are unchanged. Found by the new guards characterization suite.
+- **Wait-loop bypasses are now logged.** `guardBypassWarnings` covered 4 of 5 guards — a `# dejavu:proceed` bypass of the wait-loop guard left no trace; it now logs like its siblings.
+
+### Changed (refactoring, behavior-identical)
+- `makeOutbound(dialect)` factory encodes the canonical adapter contract once (post never blocks, annotation first; pre denies) — the 2.39.0 pre-release annotation bug class is now structurally impossible; `postChannel` capability flag on `HarnessAdapter` (Crush = false). `createStores()`/`resolveGlobalDir()` dedupe the 5-site store bootstrap. New suites: `test/guards.ts`, `test/messages.ts` (both modules previously had zero direct coverage), `test/helpers.ts` makeChecker extraction — 11 suites, all in CI.
+
 ## 2.39.0 — 2026-09-26
 
 ### Added (cross-harness port — the plugin is now an engine + hosts)
