@@ -1,5 +1,25 @@
 # Changelog
 
+## 2.39.0 — 2026-09-26
+
+### Added (cross-harness port — the plugin is now an engine + hosts)
+- **Renamed to `dejavu-gates`** (repo `WhiteBite/dejavu-gates`, npm `dejavu-gates`; old `opencode-dejavu` deprecated with a pointer). dejavu is no longer OpenCode-only: the enforcement core was extracted from `index.ts` into harness-agnostic modules (`src/enforce.ts` + `context/before/after/event/guards/repeat/messages`) with the OpenCode plugin as one host among many. The OpenCode side is behavior-identical (extraction verified branch-by-branch; oracle-reviewed).
+- **CLI hook-handler** (`src/cli.ts`): `bun src/cli.ts <pre|post|session-event> --harness <name> [--store <dir>]` reads one hook-event JSON on stdin, runs the SAME engine, writes the harness's decision JSON on stdout. Exit 0 allow / 2 block (stderr = model-visible reason) / 1 usage. Fail-open by contract: malformed stdin, a broken store, or an internal dejavu bug prints `{}` and exits 0 — a gate plugin must never wedge the host's tool pipeline. stdout is pure JSON; diagnostics go to stderr (DEJAVU_DEBUG).
+- **Six harness adapters** (`src/adapters/`): Claude Code, Codex CLI, Gemini CLI, Cursor, Copilot CLI, Crush. Each maps the harness's native hook payload (field names, tool names, casings, dual payload families like Cursor's shell-events vs CC-compatible and Copilot's camelCase vs PascalCase) to the shared `NormalizedEvent`, and engine verdicts back to the harness's decision dialect (exit-2+stderr for claude/codex/gemini; native JSON deny for cursor/copilot/crush). Canonical outbound contract: **post never blocks** — the call already ran, so a reminding NOTE rides as `additionalContext`/`additional_context` (10k cap where documented); only pre denies.
+- **Unified store across harnesses**: every host reads/writes the same `<repo>/.opencode/dejavu/` + `~/.config/opencode/dejavu/` (DEJAVU_HOME overrides). Signatures are harness-neutral (tool names and arg fields normalized before `callSignature`), so a gate learned in Claude Code fires in OpenCode, Cursor, or anywhere else — and vice versa. Cross-process safety is the existing lock design; the remind→block chain lives on the gate, so short-lived CLI processes enforce identically to the long-lived plugin (documented ephemeral-state degradation: repeat-series/pending-calls/dedup-window weaken per-process, gate enforcement does not).
+- **`scripts/install-hooks.ts`** + `scripts/templates/*.json`: generates/merges the hook config per harness (`.claude/settings.json`, `.codex/hooks.json`, `.gemini/settings.json`, `.cursor/hooks.json`, `.github/hooks/dejavu.json`, `.crush/crush.json`), project or user scope, `--dry-run` preview. Idempotent (prior dejavu entries removed then re-added), preserves foreign hooks/fields, aborts on unparseable config, Windows-safe `bun "<abs path>"` invocation.
+- **Language coverage**: interpreter one-liner fingerprinting for `php -r`, `julia -e`, `lua -e`, `Rscript -e` (with a php-only `-r` guard — node/ruby/perl `-r` is a preload flag and must never fingerprint); `php/julia/lua/rscript` joined WRAPPER_BASENAMES (`php <path>` stays a watching-only family shape). PHPUnit/PHP failure shapes (`There was/were N failure(s)/error(s)`, `FAILURES!`/`ERRORS!`, `Fatal error:`, `PHP Parse/Fatal error`; `PHP Warning` deliberately NOT a failure). New suggestCorrection families: go, cargo, maven/gradle, dotnet, rspec, phpunit/php, make/cmake. New diagnostic verbs (exit-1 immunity + remind-only tier): `mvn test|verify`, `dotnet test`, `phpunit`, `rspec`, `rubocop`, `swift build|test` — producers stay recordable (`mvn compile`, `dotnet build`, bare `mvn` are NOT diagnostics).
+- **Test suites**: `test/enforce.ts` (engine characterization incl. the multi-process degradation contract), `test/adapters.ts` (mapping + deny dialects + the real CLI post-annotation contract), `test/cli.ts` (end-to-end: spawn the CLI, seed failures through it, assert promotion → block exit 2, reminding → additionalContext, per-harness deny dialects, fail-open), `test/language-gaps.ts`. CI + publish workflow run all of them.
+
+### Fixed
+- **Post-annotation was silently dropped by 4 of 6 adapters** (caught in review before release): an early `action === "allow"` return made the annotation branch unreachable for the CLI's post verdict (`{action:"allow", annotation}`), killing the reminding NOTE on external harnesses. All adapters now check the post annotation before allow/deny, uniformly.
+- Uniform deny-reason default (`[dejavu] BLOCKED`) across adapters — a null-reason deny no longer blocks with an empty message.
+
+### Scope (honest matrix)
+- Full: OpenCode (plugin, all channels), Claude Code, Gemini CLI, Cursor, Copilot CLI, Codex CLI (hooks fire for Bash only upstream), Crush (PreToolUse only upstream — degraded: pre-channel enforcement + the shared store; no post annotations).
+- Not possible: Zed, Aider (no hook API to intercept tool calls).
+- Deferred: Windsurf, Amp, Kiro (block-only or fire-and-forget surfaces; no context injection back to the model).
+
 ## 2.38.0 — 2026-09-18
 
 ### Fixed (correction quality)

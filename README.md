@@ -2,16 +2,34 @@
   <img src="logo/icon.svg" width="96" height="96" alt="dejavu logo — a lowercase d with two amber echo strokes">
 </p>
 
-<h3 align="center">dejavu — OpenCode error-gate plugin</h3>
+<h3 align="center">dejavu — error gates for AI coding agents</h3>
 
 <p align="center">
   <img src="https://img.shields.io/badge/license-MIT-blue.svg" alt="MIT License">
-  <img src="https://img.shields.io/badge/OpenCode-plugin-3178c6.svg" alt="OpenCode plugin">
+  <img src="https://img.shields.io/badge/harnesses-7-green.svg" alt="OpenCode, Claude Code, Codex, Gemini CLI, Cursor, Copilot CLI, Crush">
   <img src="https://img.shields.io/badge/TypeScript-Bun-black.svg" alt="TypeScript + Bun">
-  <img src="https://github.com/WhiteBite/opencode-dejavu/actions/workflows/ci.yml/badge.svg" alt="CI">
+  <img src="https://github.com/WhiteBite/dejavu-gates/actions/workflows/ci.yml/badge.svg" alt="CI">
 </p>
 
-Cross-session **memory prosthesis with teeth** for [OpenCode](https://github.com/anomalyco/opencode). AI agents repeat the same mistakes because they forget between sessions — and markdown rules don't fix that. dejavu mechanically detects recurring tool-call failures (bash, read, edit, write, glob, grep) and promotes them into enforced gates: a reminder on the next attempt, a hard block on same-session repeat offense. TypeScript + Bun, ships as source, no build step.
+Cross-session **memory prosthesis with teeth** for AI coding agents. Agents repeat the same mistakes because they forget between sessions — and markdown rules don't fix that. dejavu mechanically detects recurring tool-call failures (bash, read, edit, write, glob, grep) and promotes them into enforced gates: a reminder on the next attempt, a hard block on same-session repeat offense. One engine, many hosts: OpenCode (plugin), Claude Code, Codex CLI, Gemini CLI, Cursor, Copilot CLI, Crush (hook-handler CLI). TypeScript + Bun, ships as source, no build step.
+
+> Renamed from `opencode-dejavu` — the npm package `opencode-dejavu` is deprecated; switch your config to `dejavu-gates`.
+
+## Supported harnesses
+
+| Harness | Install | Block (pre) | Remind NOTE (post) | Notes |
+|---|---|---|---|---|
+| **OpenCode** | npm plugin / source | ✅ | ✅ | full integration: all channels, repeat guard, compaction context |
+| **Claude Code** | `install-hooks.ts` | ✅ | ✅ | `additionalContext` annotations; hooks carry no exit codes → text detection |
+| **Codex CLI** | `install-hooks.ts` | ✅ | ✅ | upstream hooks fire for **Bash only**; needs `[features] hooks = true` + `/hooks` trust |
+| **Gemini CLI** | `install-hooks.ts` | ✅ | ✅ | BeforeTool/AfterTool |
+| **Cursor** | `install-hooks.ts` | ✅ | ✅ | shell events + CC-compatible events |
+| **Copilot CLI** | `install-hooks.ts` | ✅ | ✅ | camelCase + PascalCase payload families |
+| **Crush** | `install-hooks.ts` | ✅ | ❌ degraded | upstream has PreToolUse only — enforcement + shared store still protect; no post annotations |
+| Zed, Aider | — | ❌ | ❌ | no hook API to intercept tool calls — not portable |
+| Windsurf, Amp, Kiro | — | (planned) | ❌ | block-only / fire-and-forget surfaces; deferred until context injection exists |
+
+**Unified store — gates travel across harnesses.** Every host reads/writes the same store (`<repo>/.opencode/dejavu/` + `~/.config/opencode/dejavu/`, `DEJAVU_HOME` overrides). Call signatures are harness-neutral (tool names and arg fields are normalized before signing), so a gate learned in Claude Code fires in OpenCode, Cursor, or anywhere else — and vice versa.
 
 ## How it works
 
@@ -19,7 +37,7 @@ Cross-session **memory prosthesis with teeth** for [OpenCode](https://github.com
 tool call fails  →  signature normalized (paths/numbers/hashes stripped)
                  →  pattern-key counted, sessions tracked
                  →  3 failures across 2 distinct sessions  →  gate promoted
- next attempt     →  [dejavu] REMINDER thrown (call aborted, agent sees the correction)
+ next attempt     →  [dejavu] REMINDER (call aborted, agent sees the correction)
  retry fails again →  same-session repeat offense → hard BLOCK on further attempts
  diagnostic cmd   →  gate stays remind-only: the call RUNS and the reminder rides
                      on the failing output as a [dejavu] NOTE (once per session)
@@ -35,20 +53,23 @@ Design decisions (post-mortem of existing approaches):
 - **The metric is recurrence-after-gate.** Tracked per gate as `recurredAfterGate` — if gates don't reduce recurrence, the whole approach is wrong and you'll see it in the data.
 - **Enforcement has negative feedback.** The metric acts: a gate that keeps failing after promotion (3+ recurrences across 2+ sessions that reoffended after a reminder) or keeps getting explicitly bypassed (3+ `dejavu:proceed` overrides across 2+ distinct sessions on a blocking gate — reminding-gate overrides are logged but not counted, and a single stubborn/injected session cannot disarm a gate) is friction, not teaching — it demotes itself to `watching` and never re-promotes mechanically (`feedbackDemoted`). A human can re-enforce by setting `status` back and clearing `feedbackDemoted` in `gates.json`; the gate then gets a fresh grace window.
 - **No identity, no teeth.** A signature whose substance was entirely parameterized away (`cmd <path> <str>`, `node <str>`) matches a whole command family and can never enforce — it may only watch. Over-generic shapes degrade to evidence instead of punishing unrelated calls.
+- **Fail-open, always.** The hook CLI never wedges a host: malformed payloads, a broken store, or an internal dejavu bug produce `{}` + exit 0. stdout carries only the decision JSON; everything else goes to stderr.
 
 ## Install
+
+### OpenCode
 
 **npm (recommended)** — one line, OpenCode installs it automatically at startup:
 
 ```jsonc
 // ~/.config/opencode/opencode.json (global) or opencode.json (project)
-{ "plugin": ["opencode-dejavu"] }
+{ "plugin": ["dejavu-gates"] }
 ```
 
 **From source:**
 
 ```bash
-git clone https://github.com/WhiteBite/opencode-dejavu ~/.config/opencode/vendor/dejavu
+git clone https://github.com/WhiteBite/dejavu-gates ~/.config/opencode/vendor/dejavu
 cd ~/.config/opencode/vendor/dejavu && bun install
 ```
 
@@ -62,49 +83,78 @@ Status command: copy `command/dejavu.md` to `~/.config/opencode/command/dejavu.m
 
 Restart OpenCode. Gates appear automatically as failures recur — nothing to configure.
 
+### Claude Code / Codex / Gemini CLI / Cursor / Copilot CLI / Crush
+
+Requires [Bun](https://bun.sh) on PATH. Clone (or `npm install dejavu-gates` and run from `node_modules/dejavu-gates`):
+
+```bash
+git clone https://github.com/WhiteBite/dejavu-gates && cd dejavu-gates && bun install
+bun scripts/install-hooks.ts --harness claude            # project scope (cwd)
+bun scripts/install-hooks.ts --harness claude --user     # user scope (~/.claude/...)
+bun scripts/install-hooks.ts --harness codex --dry-run   # preview without writing
+```
+
+The generator merges hook entries into the harness's config (`.claude/settings.json`, `.codex/hooks.json`, `.gemini/settings.json`, `.cursor/hooks.json`, `.github/hooks/dejavu.json`, `.crush/crush.json`) pointing at `bun "<clone>/src/cli.ts" <pre|post> --harness <name>`. It is idempotent, preserves other hooks/fields, and refuses to touch an unparseable config.
+
+Harness specifics:
+
+- **Codex**: enable `[features] hooks = true` in `~/.codex/config.toml` and approve the hooks via `/hooks` once (trust prompt). Upstream fires Pre/PostToolUse for the Bash tool only.
+- **Crush**: PreToolUse only (no AfterTool upstream) — dejavu runs degraded: blocking works, reminders can't annotate; the shared store still teaches Crush from gates learned elsewhere.
+- **Claude Code**: `PostToolUseFailure` is wired to the same post handler; payloads carry no exit codes, so failure detection runs on output text (the engine's text channel).
+
+Manual invocation (any harness with command hooks):
+
+```bash
+echo '{"hook_event_name":"PreToolUse","session_id":"s","tool_name":"Bash","tool_input":{"command":"deploy.sh"},"cwd":"/repo"}' \
+  | bun src/cli.ts pre --harness claude --store /repo
+# exit 0 + {} = allow; exit 2 + stderr = blocked with a [dejavu] message
+```
+
 ## Robustness & safety
 
-- **Blocking policy** — only `bash` commands that are NOT diagnostics may ever become blocking gates. Diagnostics and iteration commands (tsc/eslint/mypy/pytest/gradle-test/flutter/curl/grep, `dart run`, `go run|build|test|vet`, `cargo run|build|test|clippy`...) promote to `reminding` — they annotate the failing output with a `[dejavu] NOTE` (once per session) and never block or interrupt the run, so iterating on tests/builds is never punished. File probes (read/edit/write/glob/grep) stay `watching`: measured, visible in reports, never interrupting. `canBlock()`/`canRemind()` in `src/patterns.ts` are the single source of truth. Signatures without residual identity (see above) enforce at no tier.
-- **One-liner identity** — for `python -c` / `node -e` / `bun -e` and friends the code payload IS the call, so it is fingerprinted (`<code:hash>`) instead of flattened to `<str>`: different scripts never share a gate, the same script failing repeatedly still converges. PowerShell shapes are covered — quoted exe paths (`& "C:\...\python.exe" -c ...`), here-string payloads, env-prefixed invocations (`PYTHONPATH=x python -c ...`). Legacy bare `-c <str>` shapes never enforce at any tier (residual-identity guard).
+- **Blocking policy** — only `bash` commands that are NOT diagnostics may ever become blocking gates. Diagnostics and iteration commands (tsc/eslint/mypy/pytest/phpunit/rspec/rubocop/gradle-test/`mvn test`/`dotnet test`/flutter/curl/grep, `dart run`, `go run|build|test|vet`, `cargo run|build|test|clippy`, `swift build|test`...) promote to `reminding` — they annotate the failing output with a `[dejavu] NOTE` (once per session) and never block or interrupt the run, so iterating on tests/builds is never punished. File probes (read/edit/write/glob/grep) stay `watching`: measured, visible in reports, never interrupting. `canBlock()`/`canRemind()` in `src/patterns.ts` are the single source of truth. Signatures without residual identity (see above) enforce at no tier.
+- **One-liner identity** — for `python -c` / `node -e` / `bun -e` / `php -r` / `ruby -e` / `perl -e` / `julia -e` / `lua -e` / `Rscript -e` and PowerShell `-Command` the code payload IS the call, so it is fingerprinted (`<code:hash>`) instead of flattened to `<str>`: different scripts never share a gate, the same script failing repeatedly still converges. `-r` fingerprints only for php (node/ruby/perl `-r` is a preload flag). PowerShell shapes are covered — quoted exe paths (`& "C:\...\python.exe" -c ...`), here-string payloads, env-prefixed invocations (`PYTHONPATH=x python -c ...`). Legacy bare `-c <str>` shapes never enforce at any tier (residual-identity guard).
 - **Wrapper unwrapping** — `cmd /c|/k "..."` normalizes to the INNER command: the gate key, identity and diagnostic tier all see the real call instead of a `cmd <path> <str>` shape matching every cmd invocation.
-- **Clean persistence** — terminal control characters (PowerShell VT colors, NULs) are stripped before anything touches disk; signatures, snippets and corrections never carry ANSI escapes.
+- **Clean persistence** — terminal control characters (PowerShell VT colors, NULs) are stripped before anything touches disk; signatures, snippets and corrections never carry ANSI escapes. Harness payloads are external untrusted input and cross the same `sanitizeForStore()` boundary before anything is persisted.
 - **Secret scrubbing** — every signature and snippet passes `scrubSecrets()` (OpenAI/Anthropic/AWS/GitHub/Slack/Stripe/JWT/bearer/DB-conn-string/PEM patterns + `root@host`) before touching disk. Historical data is cleaned by `migrate()` at init or via `bun scripts/migrate.ts <dirs...>` (also scrubs logs).
 - **Intended non-zero exits** — exit 1 from diagnostics is NOT a failure (that is their normal "found nothing / found issues" outcome). Exit ≥ 2 always counts.
 - **Aborted ≠ failed** — cancelled/aborted tool executions ("Tool execution aborted") are infrastructure noise and are never counted as failures.
-- **Long-running guard** — a FOREGROUND dev-server/watcher start (`npm run dev`, `next dev`, `vite`, `flask run`, `uvicorn`, `python -m http.server`, `mvn spring-boot:run`, `gradle bootRun`, …) would block the bash call until its ~2-min timeout and strand an orphan process. dejavu interrupts it in the before-hook with a "run detached" reminder (tmux / `nohup … &` / `Start-Process` / a startup script that spawns detached). Detached forms (trailing `&`, `nohup`, `tmux`, `Start-Process`) and one-shots/builds (`vite build`, `npm run build`) pass silently; `# dejavu:proceed` allows a deliberate foreground run. The starter list is deliberately conservative (ambiguous `node <file>`, `go run`, `dotnet run` are not flagged).
+- **Long-running guard** — a FOREGROUND dev-server/watcher start (`npm run dev`, `next dev`, `vite`, `flask run`, `uvicorn`, `python -m http.server`, `mvn spring-boot:run`, `gradle bootRun`, …) would block the bash call until its timeout and strand an orphan process. dejavu interrupts it in the before-hook with a "run detached" reminder (tmux / `nohup … &` / `Start-Process` / a startup script that spawns detached). Detached forms (trailing `&`, `nohup`, `tmux`, `Start-Process`) and one-shots/builds (`vite build`, `npm run build`) pass silently; `# dejavu:proceed` allows a deliberate foreground run. The starter list is deliberately conservative (ambiguous `node <file>`, `go run`, `dotnet run` are not flagged).
 - **Suppressed-spawn guard** — compensating measure for [anomalyco/opencode#29831](https://github.com/anomalyco/opencode) (remove when the upstream fix ships): a call that spawns a DETACHED daemon while piping/redirecting stdout (`… start | Out-Null`, `… start > $null`) hangs forever — opencode ends a bash call only on stdio EOF, and the living daemon keeps the pipe open. A static bounded list (`DETACHED_SPAWNERS`) is interrupted in the before-hook with the correction "run the spawn bare (1-3 lines of output) and poll status in a separate call". Bare spawns, non-spawn verbs, and stderr-only redirects (`2>`, `2>&1`) pass; `# dejavu:proceed` bypasses (logged as a warning).
 - **Inherited-spawn guard** — the second leak path of the same EOF semantics, empirically verified: `Start-Process -RedirectStandard*`/`-Wait` turns ON handle inheritance, so the spawned process receives the call's stdio pipes and holds them until it exits — a daemon that outlives the call (`-WindowStyle Hidden|Minimized`, or a known server starter as the spawned command) hangs the call forever, and redirecting all three streams does NOT help (a bare `Start-Process` leaks nothing). The before-hook interrupts that shape and teaches bare spawns (daemon writes its own logs) or a two-stage spawn (outer bare `Start-Process` of a pwsh one-liner that redirects inside); `# dejavu:proceed` bypasses (logged).
 - **Orphan-job guard** — `Start-Job` without an in-call wait runs inside the call's PowerShell and is killed silently when the call ends: "background" work that never survives, with no error anywhere. The before-hook interrupts it and teaches the detached bare-Start-Process pattern (or `Wait-Job`/`Receive-Job -Wait` for in-call results); `# dejavu:proceed` bypasses (logged).
-- **File content is not command output** — text failure signatures are scanned for `bash` only; `read`/`edit`/`write` failures come exclusively from the event channel (a file containing "TypeError" is not a failure).
-- **Concurrency** — gates.json mutations run under an exclusive lockfile; log appends and rotation take their own lock (every OpenCode window shares the global log); writes are tmp+rename with EPERM/EACCES/EBUSY retry (Windows AV/indexer). NT long paths get the `\\?\` prefix. Parallel tool calls in the SAME window serialize on an in-process queue before ever touching the file lock — two concurrent sections of one process can no longer degrade-and-clobber each other. Across processes, if a lock cannot be acquired within 3s the critical section degrades to unlocked (the tool pipeline must never hang) and emits a `degraded` log event — the only window where updates can be lost is visible (gates, index AND log locks all report it). A transiently-unreadable store (AV lock, `EISDIR`) throws instead of parsing as empty, so a failed read can never let the next save clobber real gates.
-- **Multi-window safe** — the remind→block escalation chain is persisted on the gate itself (`remindedSessions`/`failedSessions`), not in process memory: several OpenCode windows on one store — and process restarts — all see the same chain. Enforcement always reads fresh gate state under the store lock.
+- **File content is not command output** — in OpenCode, text failure signatures are scanned for `bash` only; `read`/`edit`/`write` failures come exclusively from the event channel (a file containing "TypeError" is not a failure). External harnesses deliver file-tool failures through their post hooks, where the tool's own error text (not file content) is the payload.
+- **Concurrency** — gates.json mutations run under an exclusive lockfile; log appends and rotation take their own lock; writes are tmp+rename with EPERM/EACCES/EBUSY retry (Windows AV/indexer). NT long paths get the `\\?\` prefix. Parallel tool calls in the SAME process serialize on an in-process queue before ever touching the file lock. Across processes (several OpenCode windows, or parallel hook-CLI invocations from one harness), if a lock cannot be acquired within 3s the critical section degrades to unlocked (the tool pipeline must never hang) and emits a `degraded` log event. A transiently-unreadable store (AV lock, `EISDIR`) throws instead of parsing as empty, so a failed read can never let the next save clobber real gates.
+- **Multi-process safe** — the remind→block escalation chain is persisted on the gate itself (`remindedSessions`/`failedSessions`), not in process memory: several windows, several harnesses, and short-lived hook-CLI processes on one store all see the same chain. Enforcement always reads fresh gate state under the store lock.
 - **Near-duplicate consolidation** — new failures merge into existing patterns via normalized Levenshtein ≤ 0.3 with an absolute floor of 3 edits (replaces token Jaccard, which collapsed all `<str>` placeholders; the floor stops `git push` vs `git pull`-style merges).
-- **Bounded memory** — per-session maps are capped (50 entries per gate) and freed on `session.deleted`; handled part IDs evict FIFO; TTL expiry and log rotation re-run every 6 h in long-lived processes.
+- **Bounded memory** — per-session maps are capped (50 entries per gate) and freed on session end; handled part IDs evict FIFO; TTL expiry and log rotation re-run every 6 h in long-lived processes (the CLI runs its idempotent init passes per invocation and flushes deferred log events before exit).
 - **Migration** — gates outside the blocking policy are re-tiered automatically (diagnostics land in `reminding`, everything else in `watching`); already-proven recurring diagnostics start reminding immediately; project copies of already-global gates are merged into the global gate (evidence is consolidated, never deleted).
-- **Self-healing** — every init reconciles the stores: an unparseable `gates.json` is quarantined (bytes preserved as `gates.json.corrupt-<ts>`), gate records are strictly parsed and mechanically repaired (inverted dates swapped, duplicate keys merged, secrets/control-chars re-sanitized, stale blocking demoted), unparseable log lines are excised to `log.jsonl.corrupt`, and the cross-project index is reconciled (missing entries rebuilt; entries are never pruned on a single project's initiative — one process cannot see other projects' gates, and rot is bounded by the TTL sweep). Every repair is logged as a `repaired`/`quarantined` event.
-- **Gates heal, not just accumulate** — dejavu sees successes too: a SUCCESS matching an enforced gate grows `succeededAfterGate`, and after 3 in a row the gate retires to `watching` (logged `healed`), so a command you fixed stops triggering reminders. A failure resets the streak. This kills the "ruff check passed 10 times but dejavu still reminds" false positive. The negative twin: a gate the agent keeps fighting (recurrences or explicit overrides) demotes itself (logged `demoted`) — enforcement listens to behavior in both directions. Third path: a gate reminded 5+ times with zero reoffense has TAUGHT its lesson (the agent changes behavior, so no success ever heals it) — it retires softly (logged `retired-taught`), re-promotion on new failures stays possible. Heal-aware: a blocking gate with a live heal streak (`succeededAfterGate > 0`) does not interrupt the first run — it lets a likely-fixed command run and blocks only a repeat failure.
-- **Auto-corrections, no manual work** — a promoted gate always ships with a mechanical, overridable default correction chosen by command family (stale `--check` artifacts, failing tests, type errors, network, installs) or from the captured error line, so a gate never sits "NOT TEACHING" awaiting a human. `migrate()` backfills existing gates. Snippets now keep the last output line (`failureSnippet`) instead of a bare "exit code N".
-- **Repeat channel** — DashScope/Qwen hard-rejects a request whose history carries the same tool call (name + args byte-identical) in consecutive rounds (HTTP 400), and one rejection poisons the session forever. The transform hook scans every outgoing payload statelessly: occurrences past the first of any identical-consecutive series get a `_dejavu_repeat` marker (payload-only, never persisted — store stays the source of truth), a series reaching the tail gets a `[dejavu] REPETITION` note on its last tool result, and a third identical call is hard-blocked in the before-hook. Bypass: `_dejavu_proceed: true` in args (logged as override). The mutation is deliberately minimal (one marker key, only when looping) — it keeps provider prefix-cache loss to the burst that is already about to die; the alternative is a poisoned session. No gates, no persistence, no promotion — pure payload hygiene.
+- **Self-healing** — every init reconciles the stores: an unparseable `gates.json` is quarantined (bytes preserved as `gates.json.corrupt-<ts>`), gate records are strictly parsed and mechanically repaired (inverted dates swapped, duplicate keys merged, secrets/control-chars re-sanitized, stale blocking demoted), unparseable log lines are excised to `log.jsonl.corrupt`, and the cross-project index is reconciled. Every repair is logged as a `repaired`/`quarantined` event.
+- **Gates heal, not just accumulate** — dejavu sees successes too: a SUCCESS matching an enforced gate grows `succeededAfterGate`, and after 3 in a row the gate retires to `watching` (logged `healed`), so a command you fixed stops triggering reminders. A failure resets the streak. The negative twin: a gate the agent keeps fighting (recurrences or explicit overrides) demotes itself (logged `demoted`) — enforcement listens to behavior in both directions. Third path: a gate reminded 5+ times with zero reoffense has TAUGHT its lesson — it retires softly (logged `retired-taught`), re-promotion on new failures stays possible. Heal-aware: a blocking gate with a live heal streak does not interrupt the first run — it lets a likely-fixed command run and blocks only a repeat failure.
+- **Auto-corrections, no manual work** — a promoted gate always ships with a mechanical, overridable default correction chosen by command family (stale `--check` artifacts, failing tests, type errors, network, installs, go/cargo/maven/dotnet/rspec/phpunit/make builds) or from the captured error line, so a gate never sits "NOT TEACHING" awaiting a human. `migrate()` backfills existing gates.
+- **Repeat channel (OpenCode only)** — DashScope/Qwen hard-rejects a request whose history carries the same tool call (name + args byte-identical) in consecutive rounds (HTTP 400), and one rejection poisons the session forever. The transform hook scans every outgoing payload statelessly: occurrences past the first of an identical-consecutive series get a `_dejavu_repeat` marker (payload-only, never persisted), a series reaching the tail gets a `[dejavu] REPETITION` note on its last tool result, and a third identical call is hard-blocked in the before-hook. Bypass: `_dejavu_proceed: true` in args (logged as override). No gates, no persistence, no promotion — pure payload hygiene.
 
 ## Observability (debugging aids)
 
 - Every `log.jsonl` gets an `init` event with `PLUGIN_VERSION`; `detected` events carry `channel` (`exit`/`text`/`event`) and the raw exit code; `reminded`/`blocked` carry `via` (`exact`/`fuzzy`/`segment`). Stale plugin sessions are therefore visible in the data.
 - `bun scripts/doctor.ts [--repair] [projectDirs...]` — one-command report over every invariant the data model implies: gate shape, duplicate keys, temporal order, nested-token corruption, blocking without evidence, policy violations, index↔gates consistency, stale project copies, missed escalation, log integrity, secrets, version drift. `--repair` heals first (idempotent), then reports.
 - `bun scripts/analyze.ts [projectDirs...]` — store summary: statuses, tools, top patterns.
-- `/dejavu` command (installed globally) runs doctor first, then reports.
+- `/dejavu` command (OpenCode, installed globally) runs doctor first, then reports.
+- Hook CLI diagnostics: set `DEJAVU_DEBUG=1` to see engine log lines on stderr (stdout always stays pure JSON).
 
 ## Detection coverage
 
 | Channel | Catches |
 |---|---|
-| `tool.execute.after` + `metadata.exit` | bash failures (non-zero exit, TS errors, test failures, stack traces) |
-| `message.part.updated` event scan | tool-level failures (read of missing file, rejected edits) that never reach the after-hook; error text is Sentry-style parameterized (uuid/ip/url/hex/date → placeholders) |
+| exit code + output text (OpenCode `tool.execute.after`) | bash failures (non-zero exit, TS errors, test failures, stack traces) |
+| output text only (external harness post hooks — no exit codes exist there) | failure-shaped output: `error TS…`, `FAIL`, `panic:`, `[ERROR]`, PHPUnit/`FAILURES!`, `Fatal error:`, TAP `not ok`, … |
+| `message.part.updated` event scan (OpenCode) | tool-level failures (read of missing file, rejected edits) that never reach the after-hook; error text is Sentry-style parameterized |
 | chain-segment matching | gates fire even when the gated command hides inside `x && gated-cmd` chains, `cmd /c "..."` wrappers, or `$(...)` / backtick substitutions |
-| `experimental.chat.messages.transform` | repeat channel: consecutive identical tool calls are sanitized in the outgoing payload (DashScope 400 prevention) + NOTE at 2nd round, hard block at 3rd |
+| `experimental.chat.messages.transform` (OpenCode) | repeat channel: consecutive identical tool calls sanitized in the outgoing payload (DashScope 400 prevention) + NOTE at 2nd round, hard block at 3rd |
 | companion skill | agent behavior protocol (how to react, when to annotate) |
 | `/dejavu` command | status report: active gates, recurrence metric, review flags |
 
-Not covered (by design, v1): semantically-equivalent-but-syntactically-different failures beyond fuzzy (Levenshtein ≤ 0.3, ≥ 3 edits) matching.
+Language ecosystems covered by failure detection: JS/TS, Python, Go, Rust, Java/Kotlin/Scala (Maven/Gradle/sbt), .NET, Ruby, PHP (PHPUnit), Dart/Flutter, C/C++, Elixir; shells: bash, PowerShell, cmd. Not covered (by design): semantically-equivalent-but-syntactically-different failures beyond fuzzy (Levenshtein ≤ 0.3, ≥ 3 edits) matching.
 
 ## Data files
 
@@ -116,31 +166,36 @@ Not covered (by design, v1): semantically-equivalent-but-syntactically-different
 | `*/dejavu/log.jsonl` | every event: detected, promoted, reminded, retry-allowed, blocked, override, expired, recurred-after-gate, demoted, healed, retired-healed, retired-taught, repaired, quarantined, degraded, init |
 | `*/dejavu/*.corrupt*` | quarantined corruption (unparseable gates.json, excised log lines) — bytes preserved for forensics; safe to delete after inspection |
 
-Both are human-editable. Removing a gate object disables it. Editing `correction` improves what the agent is told. Clearing `feedbackDemoted` (and setting `status` back to `blocking`/`reminding`) re-enforces a gate the agent's behavior retired — it gets a fresh grace window via `feedbackBaseline`.
+The store paths are historical (`.opencode/`) but the store is harness-neutral — ALL harnesses share it. Both files are human-editable. Removing a gate object disables it. Editing `correction` improves what the agent is told. Clearing `feedbackDemoted` (and setting `status` back to `blocking`/`reminding`) re-enforces a gate the agent's behavior retired — it gets a fresh grace window via `feedbackBaseline`.
 
 ## Development
 
 ```bash
 bun install
-bun run typecheck        # tsc --noEmit (index.ts, src/**, scripts/**, test/**)
-bun test/smoke.ts        # behavioral smoke test, no framework needed
-bun test/property.ts     # seeded generator: normalization/fuzzy invariants
-bun test/fuzz.ts         # mutation fuzz: no crash, no invariant break
-bun run lint:ast         # ast-grep structural gates (needs ast-grep on PATH)
+bun run typecheck          # tsc --noEmit (index.ts, src/**, scripts/**, test/**)
+bun test/smoke.ts          # OpenCode plugin behavioral suite (drives index.ts hooks)
+bun test/enforce.ts        # engine characterization (harness-agnostic core)
+bun test/adapters.ts       # adapter mapping + decision dialects
+bun test/cli.ts            # CLI end-to-end (spawn, promotion, block/annotate, fail-open)
+bun test/language-gaps.ts  # language-ecosystem coverage of patterns.ts
+bun test/property.ts       # seeded generator: normalization/fuzzy invariants
+bun test/fuzz.ts           # mutation fuzz: no crash, no invariant break
+bun run lint:ast           # ast-grep structural gates (needs ast-grep on PATH)
 ```
 
-Tunables are named constants at the top of `index.ts` and `src/store.ts`: `PROMOTE_COUNT` (3), `PROMOTE_COUNT_PROBE` (5), `PROMOTE_SESSIONS` (2), `GLOBAL_PROJECTS` (2), `TTL_DAYS` (60), `NOISE_TTL_DAYS` (7, only for never-recurred one-offs), `REVIEW_FIRES` (10), `MAX_GATES` (2000), `HEAL_SUCCESSES` (3), `DEMOTE_RECURRENCES` (3), `DEMOTE_REOFFENSE_SESSIONS` (2), `DEMOTE_OVERRIDES` (3), `DEMOTE_OVERRIDE_SESSIONS` (2), `TAUGHT_REMINDERS` (5), `ORPHAN_CANDIDATE_DAYS` (7).
+Architecture: `src/patterns.ts` + `src/store.ts` + `src/validate.ts` (pure engine + persistence), `src/enforce.ts` + siblings (harness-agnostic enforcement: `enforceBefore`/`enforceAfter`/`recordEventFailure`/`cleanupSession` over `EnforceContext`), `src/adapters/` (payload ↔ contract mapping per harness), `src/cli.ts` (hook-handler entry for external harnesses), `index.ts` (OpenCode plugin host). Tunables are named constants at the top of their modules (`src/store.ts`, `src/context.ts`, `src/before.ts`, `src/repeat.ts`, `index.ts`).
 
-Structural gates live in `.ast-grep/rules/` (run by `bun run lint:ast` and CI): `no-load-force-flag` forbids `load(true)`/`loadIndex(true)` — the write-capable read is named `loadForMutation()`/`loadIndexForMutation()` so the capability is not hidden behind a boolean.
+Structural gates live in `.ast-grep/rules/` (run by `bun run lint:ast` and CI): `no-load-force-flag` forbids `load(true)`/`loadIndex(true)`; `no-raw-gates-splice` forbids raw splices on gate arrays.
 
 ## Roadmap
 
-- v2: recurrence-after-gate reporting command; V2 plugin API error hooks — `tool.execute.error` is drafted upstream (opencode issue #27900) but unmerged; the event-stream scan remains the file-tool failure channel until it lands
-- v3: auto-proposal of ast-grep rules for statically detectable patterns (repo-level CI gates)
+- Windsurf / Amp / Kiro adapters — blocked on usable context-injection surfaces (block-only today); the adapter slots exist
+- recurrence-after-gate reporting command; OpenCode V2 error hooks — `tool.execute.error` drafted upstream (opencode issue #27900), unmerged
+- auto-proposal of ast-grep rules for statically detectable patterns (repo-level CI gates)
 
 ## Disclaimer
 
-dejavu is a community project. It is not built by the OpenCode team and is not affiliated with them in any way.
+dejavu is a community project. It is not built by, and not affiliated with, the OpenCode, Anthropic, OpenAI, Google, Anysphere (Cursor), GitHub, or Charm teams.
 
 ## License
 

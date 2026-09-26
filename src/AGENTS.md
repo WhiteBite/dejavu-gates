@@ -1,8 +1,8 @@
-# src/ — pattern engine + gate persistence
+# src/ — pattern engine + gate persistence + enforcement engine + harness adapters
 
 ## OVERVIEW
 
-Three dependency-free modules: `patterns.ts` (pure functions — call identity, normalization, detection, policy), `store.ts` (stateful — gates.json/log.jsonl I/O under locks, promotion, scope escalation, feedback demotion) and `validate.ts` (the parse/repair boundary every persisted gate crosses).
+Dependency-free core: `patterns.ts` (pure functions — call identity, normalization, detection, policy), `store.ts` (stateful — gates.json/log.jsonl I/O under locks, promotion, scope escalation, feedback demotion) and `validate.ts` (the parse/repair boundary every persisted gate crosses). On top of it, the harness-agnostic enforcement engine (`types.ts` contract + `context/before/after/event/guards/repeat/messages` + `enforce.ts` public surface) consumed by two hosts: `../index.ts` (OpenCode plugin) and `cli.ts` (hook-handler CLI). `adapters/` maps six external harnesses' hook payloads to the contract. Engine and adapters import only `node:` builtins + sibling modules — never a harness SDK.
 
 ## WHERE TO LOOK
 
@@ -25,6 +25,14 @@ Three dependency-free modules: `patterns.ts` (pure functions — call identity, 
 | Enforcement negative feedback | store.ts | `checkFeedbackDemotion` + `retireTaught`/`retireAntiNag`; thresholds `DEMOTE_RECURRENCES`/`DEMOTE_OVERRIDES`/`DEMOTE_OVERRIDE_SESSIONS`; counters `overrideCount`/`overrideSessions`/`recurredAfterGate`, grace via `feedbackBaseline` |
 | Gate parse/repair boundary | validate.ts | `coerceGateShape` (strict parse), `repairGate` (mechanical coercion), `hasNestedTokens` (corruption fingerprint) |
 | fs safety | store.ts | `ntPath`, `atomicWrite`, `withLock` (in-process queue + cross-process file lock) |
+| Cross-harness contract | types.ts | `NormalizedEvent`/`Verdict`/`OutboundDecision`/`HarnessAdapter` — types only, zero imports |
+| Enforcement entry points | before.ts / after.ts / event.ts | `enforceBefore`/`enforceAfter`/`recordEventFailure`/`cleanupSession`; verdicts out, never GateSignal (hosts translate) |
+| Host-injected dependencies | context.ts | `EnforceContext` (stores/ephemeral/log/onHookError/platform/projectDir), `EphemeralState` + `createEphemeralState` (CLI degradation contract in its JSDoc), caps + dedup helpers |
+| Teaching texts | messages.ts | `remindMessage`/`remindNote`/`blockMessage` — verbatim wording, tier-truthful |
+| Proactive guards | guards.ts | long-running/wait-loop/suppressed-spawn/inherited-spawn/orphan-job + bypass warnings |
+| Repeat-series block | repeat.ts | `repeatSeriesDecision` — override kind FALLS THROUGH to gate processing |
+| Harness payload mapping | adapters/*.ts | per-harness `mapInbound`/`mapOutbound`; `adapters/shared.ts` — `internalTool`/`internalArgs`/`str`/`rec`/`num`/`allowDecision`/`denyDecision` |
+| Hook-handler CLI | cli.ts | argv/stdin parse → adapter → engine → decision JSON; fail-open; registry `ADAPTERS` |
 
 ## INVARIANTS (do not break)
 
@@ -88,6 +96,12 @@ Three dependency-free modules: `patterns.ts` (pure functions — call identity, 
 - `segmentHasIdentity` treats bare flags (`-x`/`--foo`) after a wrapper head as switches, not identity — a flag-only wrapper (`cmd <path> <str> -f`) matches a command family and may only watch. Family VERB PHRASES extend the rule: `git commit` (message always parameterized, staged content invisible — a bare `git commit` gate matches EVERY commit), `npx <runner>` (tsx/ts-node/esno/vite-node — the package is the verb, the script is the call), and a run-subcommand right after a wrapper head (`bun run <str>`) — identity must come from a concrete argument AFTER the verb phrase (`git commit src/foo.ts -m <str>`, `npx tsx scripts/x.ts`, `bun run scripts/build.ts` all keep it)
 - Env assignments (`$env:X=…`, `FOO=bar`) and `start-sleep` are transparent producers (they cannot be the failing producer) — like navigation, they break neither exit-1 immunity nor attribution
 - `promotionCount` increments on every promotion and is never reset (`mergeGate` sums it) — the rot-proof FLAPPY measure (the log-based one rots with rotation); `save()` stamps `lastInitVersion` with the WRITER's own version — the durable drift signal (log init events rotate away)
+- mapOutbound canonical contract: POST never blocks — the call already ran, so annotation is checked FIRST (rides on allow, exit 0, `additionalContext`-shaped JSON per harness, 10k cap where documented); only PRE denies (exit-2+stderr for claude/codex/gemini, native JSON deny for cursor/copilot/crush). An early `action === "allow"` return before the annotation branch kills the reminding NOTE (the 2.39 pre-release bug, pinned by test/adapters.ts + test/cli.ts)
+- Engine functions return verdicts and never throw GateSignal — translating a deny verdict into the host's abort dialect is the HOST's job (index.ts throws GateSignal; cli.ts sets exit 2 + stderr). Engine bugs propagate to the host's catch (index: logHookError + fail-open; cli: `{}` + exit 0)
+- CLI stdout is the harness's decision-JSON channel — nothing in src/** may write to stdout; engine diagnostics go through `EnforceContext.log` (the CLI wires it to stderr, DEJAVU_DEBUG-gated). The CLI fails OPEN on every fault path (malformed stdin / broken store / internal error → `{}` exit 0); only usage errors exit 1 and deliberate blocks exit 2
+- Harness payloads are untrusted external input: `mapInbound` never throws (unrecognized → `null` → no-op), and every string crossing into persistence goes through the same `sanitizeForStore()` boundary as the OpenCode channel (recordFailure re-sanitizes defensively)
+- Adapters normalize tool names/arg fields BEFORE `callSignature` (via `internalTool`/`internalArgs`) so signatures are harness-neutral — the unified store only works while a Claude `Bash{command}` and an OpenCode `bash{command}` produce the identical signature
+- EphemeralState degradation is a contract, not a bug: a fresh state per CLI process weakens repeat-series/pendingCalls/dedup-window/iteration-discriminator to single-call scope; gate enforcement stays multi-process safe because the remind→block chain is persisted ON THE GATE (`createEphemeralState()` JSDoc is the reference)
 
 ## ANTI-PATTERNS
 
@@ -107,3 +121,6 @@ Three dependency-free modules: `patterns.ts` (pure functions — call identity, 
 - Do NOT promise blocks in reminding-tier messages — tier-truthful wording only; a wrong enforcement model teaches the agent wrongly
 - Do NOT read `log.jsonl` outside the log lock for rewrite-style operations (excise/rotate) — an unlocked read + locked rewrite drops concurrent appends
 - Do NOT count reminding-tier overrides toward `DEMOTE_OVERRIDES` — only blocking friction demotes
+- Do NOT import a harness SDK into src/** — the engine + adapters depend only on node: builtins and siblings; harness specifics live in index.ts (OpenCode) or the adapter's payload mapping
+- Do NOT add an adapter deny path that returns exit 0 with empty stdout for claude/codex/gemini, or exit 2 for cursor/copilot/crush — each harness has ONE verified deny dialect (see the adapter JSDoc); mixing them silently un-blocks or double-signals
+- Do NOT "fix" the per-invocation CLI init (reconcileAll/migrate/expireAll per hook call) by removing it — it is the accepted cost of the short-lived host; the version-stamp skip makes repeated invocations cheap, and flushDeferredAll before exit keeps forensics

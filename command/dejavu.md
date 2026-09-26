@@ -7,7 +7,7 @@ First run the pathology report (it surfaces every known defect class in one pass
     bun ~/.config/opencode/vendor/dejavu/scripts/doctor.ts
 
 No arguments needed: doctor discovers every project store from the global index.
-For npm installs the script lives in the plugin package instead (e.g. `node_modules/opencode-dejavu/scripts/doctor.ts`); if dejavu was cloned elsewhere, use that checkout's `scripts/doctor.ts`.
+For npm installs the script lives in the plugin package instead (e.g. `node_modules/dejavu-gates/scripts/doctor.ts`); if dejavu was cloned elsewhere, use that checkout's `scripts/doctor.ts`.
 Add `--repair` to heal first (idempotent): quarantines corrupt files, merges duplicates, excises broken log lines, reconciles the index, prunes true-orphan index keys (safe in doctor — it sees every scope), applies feedback-demotion catch-up.
 
 Then read the state files for detail:

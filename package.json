@@ -1,7 +1,7 @@
 {
-  "name": "opencode-dejavu",
+  "name": "dejavu-gates",
   "version": "2.39.0",
-  "description": "Cross-session memory prosthesis for OpenCode: detects recurring tool-call failures and promotes them into enforced gates. Remind first, block on same-session repeat offense.",
+  "description": "Cross-session error gates for AI coding agents: detects recurring tool-call failures and promotes them into enforced gates. Remind first, block on same-session repeat offense. Works with OpenCode, Claude Code, Codex CLI, Gemini CLI, Cursor, Copilot CLI, and Crush.",
   "type": "module",
   "main": "index.ts",
   "files": [
@@ -17,19 +17,26 @@
   "keywords": [
     "opencode",
     "opencode-plugin",
+    "claude-code",
+    "codex",
+    "gemini-cli",
+    "cursor",
+    "copilot-cli",
+    "crush",
     "ai-agents",
     "coding-agent",
     "error-gates",
+    "hooks",
     "memory",
     "reliability",
     "bun"
   ],
   "repository": {
     "type": "git",
-    "url": "https://github.com/WhiteBite/opencode-dejavu.git"
+    "url": "https://github.com/WhiteBite/dejavu-gates.git"
   },
-  "homepage": "https://github.com/WhiteBite/opencode-dejavu",
-  "bugs": "https://github.com/WhiteBite/opencode-dejavu/issues",
+  "homepage": "https://github.com/WhiteBite/dejavu-gates",
+  "bugs": "https://github.com/WhiteBite/dejavu-gates/issues",
   "scripts": {
     "typecheck": "tsc --noEmit",
     "test": "bun test/smoke.ts",

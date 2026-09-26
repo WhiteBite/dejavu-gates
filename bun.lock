@@ -3,7 +3,7 @@
   "configVersion": 1,
   "workspaces": {
     "": {
-      "name": "dejavu-opencode-plugin",
+      "name": "dejavu-gates",
       "devDependencies": {
         "@opencode-ai/plugin": "^1.18.0",
         "@types/node": "^24.0.0",
