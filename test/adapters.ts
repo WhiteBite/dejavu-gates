@@ -10,16 +10,9 @@ import { copilotAdapter } from "../src/adapters/copilot"
 import { crushAdapter } from "../src/adapters/crush"
 import type { NormalizedEvent, Verdict, OutboundDecision } from "../src/types"
 import { UNKNOWN_SESSION } from "../src/adapters/shared"
+import { makeChecker } from "./helpers"
 
-let failures = 0
-function check(name: string, ok: boolean): void {
-  if (ok) {
-    console.log(`ok   - ${name}`)
-  } else {
-    failures += 1
-    console.error(`FAIL - ${name}`)
-  }
-}
+const { check, report } = makeChecker()
 
 // --- claude: mapInbound pre ---
 const claudePreBash = { tool_name: "Bash", tool_input: { command: "echo hello" }, session_id: "cs-1", tool_use_id: "tu-cla-1", cwd: "/tmp" }
@@ -395,8 +388,4 @@ check("crush session-event → allowDecision (degraded no-op)", crdse.exitCode =
 // --- crush: non-object inbound → null ---
 check("crush non-object payload → null", crushAdapter.mapInbound("pre", 42) === null)
 
-if (failures > 0) {
-  console.error(`\n${failures} check(s) failed`)
-  process.exit(1)
-}
-console.log("\nall checks passed")
+report()

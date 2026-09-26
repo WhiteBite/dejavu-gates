@@ -13,16 +13,9 @@ import {
   normalizeCommand,
   suggestCorrection,
 } from "../src/patterns"
+import { makeChecker } from "./helpers"
 
-let failures = 0
-function check(name: string, ok: boolean): void {
-  if (ok) {
-    console.log(`ok   - ${name}`)
-  } else {
-    failures += 1
-    console.error(`FAIL - ${name}`)
-  }
-}
+const { check, report } = makeChecker()
 
 // --- D1: interpreter one-liners ---
 const phpA = normalizeCommand('php -r "echo 1;"')
@@ -97,8 +90,4 @@ const wrapped = bashSegmentSignatures("cmd /c mvn test")
 check("cmd /c unwrap reaches mvn test in segment signatures", wrapped.includes("bash:mvn test"))
 check("cmd /c mvn test signature is remind-tier, never blocking", canRemind("bash", "bash:mvn test") && !canBlock("bash", "bash:mvn test"))
 
-if (failures > 0) {
-  console.error(`\n${failures} check(s) failed`)
-  process.exit(1)
-}
-console.log("\nall checks passed")
+report()

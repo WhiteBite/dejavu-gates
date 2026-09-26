@@ -17,16 +17,9 @@ import {
 import { callSignature, patternKey } from "../src/patterns"
 import { GateStore, GLOBAL_PROJECTS, Stores, type Gate } from "../src/store"
 import type { NormalizedEvent } from "../src/types"
+import { makeChecker } from "./helpers"
 
-let failures = 0
-function check(name: string, ok: boolean): void {
-  if (ok) {
-    console.log(`ok   - ${name}`)
-  } else {
-    failures += 1
-    console.error(`FAIL - ${name}`)
-  }
-}
+const { check, report } = makeChecker()
 
 const tmp = await mkdtemp(join(tmpdir(), "dejavu-enforce-test-"))
 process.env.DEJAVU_HOME = join(tmp, "dejavu-home")
@@ -250,8 +243,4 @@ check("a third process hard-blocks the repeat — the chain survives fresh ephem
 
 await rm(tmp, { recursive: true, force: true })
 
-if (failures > 0) {
-  console.error(`\n${failures} check(s) failed`)
-  process.exit(1)
-}
-console.log("\nall checks passed")
+report()

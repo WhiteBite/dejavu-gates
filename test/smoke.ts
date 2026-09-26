@@ -43,6 +43,7 @@ import {
 } from "../src/patterns"
 import { DEMOTE_OVERRIDES, GLOBAL_PROJECTS, GateStore, MAX_SESSIONS, NOISE_TTL_DAYS, PLUGIN_VERSION, Stores, TTL_DAYS, mergeGate, type Gate } from "../src/store"
 import { repairGate } from "../src/validate"
+import { makeChecker } from "./helpers"
 
 type Ctx = Parameters<typeof Dejavu>[0]
 type Hooks = Awaited<ReturnType<typeof Dejavu>>
@@ -82,15 +83,7 @@ interface GateRow {
   promotionCount?: number
 }
 
-let failures = 0
-function check(name: string, ok: boolean): void {
-  if (ok) {
-    console.log(`ok   - ${name}`)
-  } else {
-    failures += 1
-    console.error(`FAIL - ${name}`)
-  }
-}
+const { check, report } = makeChecker()
 
 const tmp = await mkdtemp(join(tmpdir(), "dejavu-test-"))
 process.env.DEJAVU_HOME = join(tmp, "global")
@@ -2858,8 +2851,4 @@ check("global store restarts fresh after quarantine", (await readJson(join(r8Glo
 
 await rm(tmp, { recursive: true, force: true })
 
-if (failures > 0) {
-  console.error(`\n${failures} check(s) failed`)
-  process.exit(1)
-}
-console.log("\nall checks passed")
+report()

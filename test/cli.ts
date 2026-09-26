@@ -8,20 +8,13 @@ import { mkdtemp, readFile } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { fileURLToPath } from "node:url"
+import { makeChecker } from "./helpers"
 
 const repoRoot = fileURLToPath(new URL("..", import.meta.url))
 const cliPath = join(repoRoot, "src", "cli.ts")
 const root = await mkdtemp(join(tmpdir(), "dejavu-cli-test-"))
 
-let failures = 0
-function check(name: string, ok: boolean): void {
-  if (ok) {
-    console.log(`ok   - ${name}`)
-  } else {
-    failures += 1
-    console.error(`FAIL - ${name}`)
-  }
-}
+const { check, report } = makeChecker()
 
 interface CliResult {
   stdout: string
@@ -174,8 +167,4 @@ check("malformed stdin → exit 0 + {} (fail-open)", malformed.exitCode === 0 &&
 const noHarness = spawnSync("bun", [cliPath, "pre"], { input: "{}", env: { ...process.env, DEJAVU_HOME: block.globalDir }, cwd: repoRoot, encoding: "utf8" })
 check("missing --harness → exit 1 + usage on stderr", (noHarness.status ?? 0) === 1 && (noHarness.stderr ?? "").includes("usage"))
 
-if (failures > 0) {
-  console.error(`\n${failures} check(s) failed`)
-  process.exit(1)
-}
-console.log("\nall checks passed")
+report()
