@@ -87,8 +87,8 @@ export function denyDecision(reason: string): OutboundDecision {
   return { json: {}, exitCode: 2, stderr: reason }
 }
 
-/** Shared mapOutbound skeleton: post never blocks (annotation rides on allow),
- * only pre denies. Adapters supply their dialect; the contract cannot be violated per-adapter. */
+/** Shared mapOutbound skeleton: post never blocks (annotation rides on allow);
+ * pre AND session-event share the deny/allow path. Adapters supply their dialect. */
 export function makeOutbound(dialect: {
   deny: (reason: string) => OutboundDecision
   annotate: ((annotation: string) => OutboundDecision) | null
