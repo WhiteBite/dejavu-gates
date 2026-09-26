@@ -178,6 +178,8 @@ bun test/enforce.ts        # engine characterization (harness-agnostic core)
 bun test/adapters.ts       # adapter mapping + decision dialects
 bun test/cli.ts            # CLI end-to-end (spawn, promotion, block/annotate, fail-open)
 bun test/language-gaps.ts  # language-ecosystem coverage of patterns.ts
+bun test/guards.ts         # proactive guards characterization (fire shapes, precedence, bypass)
+bun test/messages.ts       # teaching-text framing (tier-truthful, data-label, correction bound)
 bun test/property.ts       # seeded generator: normalization/fuzzy invariants
 bun test/fuzz.ts           # mutation fuzz: no crash, no invariant break
 bun run lint:ast           # ast-grep structural gates (needs ast-grep on PATH)

@@ -17,6 +17,8 @@ jobs:
       - run: bun test/adapters.ts
       - run: bun test/cli.ts
       - run: bun test/language-gaps.ts
+      - run: bun test/guards.ts
+      - run: bun test/messages.ts
       - run: bun test/property.ts
       - run: bun test/fuzz.ts
       - name: Install ast-grep
