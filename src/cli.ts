@@ -11,8 +11,6 @@
  * (engine log lines only when DEJAVU_DEBUG is set).
  */
 import { readFileSync } from "node:fs"
-import { homedir } from "node:os"
-import { join } from "node:path"
 import { claudeAdapter } from "./adapters/claude"
 import { codexAdapter } from "./adapters/codex"
 import { copilotAdapter } from "./adapters/copilot"
@@ -28,7 +26,7 @@ import {
   recordEventFailure,
   type EnforceContext,
 } from "./enforce"
-import { GateStore, GLOBAL_PROJECTS, NOISE_TTL_DAYS, Stores, TTL_DAYS } from "./store"
+import { createStores, GLOBAL_PROJECTS, NOISE_TTL_DAYS, TTL_DAYS } from "./store"
 import type {
   HarnessAdapter,
   HarnessName,
@@ -100,13 +98,6 @@ function readHookPayload(): unknown {
   }
 }
 
-/** Store wiring mirrored from index.ts: DEJAVU_HOME global dir + per-project .opencode/dejavu. */
-function buildStores(projectDir: string): Stores {
-  const globalDir = process.env.DEJAVU_HOME ?? join(homedir(), ".config", "opencode", "dejavu")
-  const projectStore = projectDir !== "" ? new GateStore(join(projectDir, ".opencode", "dejavu")) : null
-  return new Stores(new GateStore(globalDir), projectStore)
-}
-
 function formatError(error: unknown): string {
   return error instanceof Error ? error.message : String(error)
 }
@@ -152,7 +143,7 @@ async function main(): Promise<number> {
     return 0
   }
   const projectDir = args.store ?? event.cwd ?? process.cwd()
-  const stores = buildStores(projectDir)
+  const stores = createStores(projectDir)
   try {
     // per-invocation init is the CLI's accepted cost — all three passes are idempotent
     await stores.reconcileAll(GLOBAL_PROJECTS)
