@@ -46,6 +46,13 @@ const CORPUS = [
   '& "C:\\Python312\\python.exe" -c @"print(1)"@',
   "grep -rn 'TODO' src/ | head -5",
   "flutter analyze --no-fatal-infos --machine 1>&2 | select-string warning",
+  'php -r "echo 1;"',
+  'julia -e "println(1)"',
+  'lua -e "print(1)"',
+  'Rscript -e "cat(1)"',
+  'php -d memory_limit=256M -r "exit(1);"',
+  "node -r ts-node/register server.js",
+  "python -m http.server",
 ]
 
 // --- mutation -----------------------------------------------------------------------

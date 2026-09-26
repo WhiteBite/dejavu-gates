@@ -59,6 +59,13 @@ const ONELINERS = [
   'python -c "import os; print(os.name)"',
   'pwsh -Command "Get-Process"',
   "python3 -u -c \"open('f').read()\"",
+  'php -r "echo 1;"',
+  'julia -e "println(1)"',
+  'lua -e "print(1)"',
+  'Rscript -e "cat(1)"',
+  'php -d memory_limit=256M -r "exit(1);"',
+  "node -r ts-node/register server.js",
+  "python -m http.server",
 ]
 const PATHS = ["C:\\Users\\dev\\project\\file.ts", "/usr/local/bin/tool", "./relative/path.txt", "D:\\Sources\\AI\\repo\\src\\index.ts"]
 const HEXES = ["abc123def456", "7f3a9b2c", "deadbeefcafe0123", "1234567"]
