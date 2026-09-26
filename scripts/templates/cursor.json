@@ -1,0 +1,17 @@
+{
+  "version": 1,
+  "hooks": {
+    "beforeShellExecution": [
+      { "command": "{{CLI}} pre --harness cursor", "timeout": 30 }
+    ],
+    "afterShellExecution": [
+      { "command": "{{CLI}} post --harness cursor", "timeout": 30 }
+    ],
+    "preToolUse": [
+      { "command": "{{CLI}} pre --harness cursor", "timeout": 30 }
+    ],
+    "postToolUse": [
+      { "command": "{{CLI}} post --harness cursor", "timeout": 30 }
+    ]
+  }
+}

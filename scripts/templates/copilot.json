@@ -1,0 +1,11 @@
+{
+  "version": 1,
+  "hooks": {
+    "preToolUse": [
+      { "type": "command", "command": "{{CLI}} pre --harness copilot", "timeoutSec": 30 }
+    ],
+    "postToolUse": [
+      { "type": "command", "command": "{{CLI}} post --harness copilot", "timeoutSec": 30 }
+    ]
+  }
+}

@@ -1,0 +1,20 @@
+{
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "^Bash$",
+        "hooks": [
+          { "type": "command", "command": "{{CLI}} pre --harness codex", "timeout": 30 }
+        ]
+      }
+    ],
+    "PostToolUse": [
+      {
+        "matcher": "^Bash$",
+        "hooks": [
+          { "type": "command", "command": "{{CLI}} post --harness codex", "timeout": 30 }
+        ]
+      }
+    ]
+  }
+}
