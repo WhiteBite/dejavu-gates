@@ -19,8 +19,9 @@ check("long-running allows one-shot vite build", proactiveGuardMessage("vite bui
 check("long-running allows trailing-& detached form", proactiveGuardMessage("npm run dev &") === null)
 check("long-running allows bare Start-Process detached form", proactiveGuardMessage("Start-Process npm -ArgumentList 'run','dev'") === null)
 check("long-running allows tmux new-session detached form", proactiveGuardMessage("tmux new-session -d 'npm run dev'") === null)
-// isDetached's standalone-& regex also matches the & inside 2>&1 — suspected gap, reported not fixed
-check("KNOWN GAP: foreground npm run dev 2>&1 passes the long-running guard", proactiveGuardMessage("npm run dev 2>&1") === null)
+check("long-running fires on foreground npm run dev 2>&1 (fd-dup is not backgrounding)", msg("npm run dev 2>&1").includes("[dejavu] LONG-RUNNING"))
+check("real background after fd-dup stays detached", proactiveGuardMessage("npm run dev 2>&1 &") === null)
+check("nohup with redirect and trailing & stays detached", proactiveGuardMessage("nohup npm run dev > server.log 2>&1 &") === null)
 
 // --- WAIT-LOOP ---
 check("wait-loop fires on bash until/curl/sleep poll", msg("until curl -sf http://localhost:3000; do sleep 2; done").includes("[dejavu] WAIT-LOOP"))
@@ -80,8 +81,7 @@ check(
 )
 check("bypass warning names the orphan-job guard", (guardBypassWarnings("Start-Job -ScriptBlock { Get-ChildItem }")[0] ?? "").includes("orphan-job guard bypassed"))
 check("bypass warnings empty for a benign command", guardBypassWarnings("ls -la").length === 0)
-// guards.ts has no wait-loop branch in guardBypassWarnings — pinned asymmetry
-check("bypassed wait-loop logs no warning", guardBypassWarnings("until curl -sf http://localhost:3000; do sleep 2; done").length === 0)
+check("bypass warning names the wait-loop guard", (guardBypassWarnings("until curl -sf http://localhost:3000; do sleep 2; done")[0] ?? "").includes("wait-loop guard bypassed"))
 
 const longCmd = "npm run dev # " + "x".repeat(250)
 const longWarns = guardBypassWarnings(longCmd)

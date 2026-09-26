@@ -1298,7 +1298,7 @@ function isDetached(command: string): boolean {
   // mid-chain, or closing a subshell (`(cmd &)`). `&&` chains stay foreground.
   // BUT `& … wait` blocks until the background job finishes, and `nohup X`
   // without `&` still runs in the foreground — both are NOT detached.
-  if (/(^|[^&])&([^&]|$)/.test(command.trim())) return !/\bwait\b/i.test(command)
+  if (/(^|[^&>])&([^&]|$)/.test(command.trim())) return !/\bwait\b/i.test(command)
   if (/\b(nohup|disown)\b/i.test(command)) return false // needs `&` to detach; handled above
   return false
 }

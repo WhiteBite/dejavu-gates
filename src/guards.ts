@@ -41,6 +41,7 @@ export function proactiveGuardMessage(command: string): string | null {
 export function guardBypassWarnings(command: string): string[] {
   const warnings: string[] = []
   if (shouldWarnLongRunning(command)) warnings.push(`dejavu: long-running guard bypassed via dejavu:proceed — command may hang: ${command.slice(0, 200)}`)
+  if (shouldWarnWaitLoop(command)) warnings.push(`dejavu: wait-loop guard bypassed via dejavu:proceed — command may hang: ${command.slice(0, 200)}`)
   if (shouldWarnSuppressedSpawn(command)) warnings.push(`dejavu: suppressed-spawn guard bypassed via dejavu:proceed — command may hang: ${command.slice(0, 200)}`)
   if (shouldWarnInheritedSpawn(command)) warnings.push(`dejavu: inherited-spawn guard bypassed via dejavu:proceed — command may hang: ${command.slice(0, 200)}`)
   if (shouldWarnOrphanJob(command)) warnings.push(`dejavu: orphan-job guard bypassed via dejavu:proceed — job dies with the call: ${command.slice(0, 200)}`)
