@@ -5,7 +5,7 @@
     "": {
       "name": "dejavu-opencode-plugin",
       "devDependencies": {
-        "@opencode-ai/plugin": "latest",
+        "@opencode-ai/plugin": "^1.18.0",
         "@types/node": "^24.0.0",
         "typescript": "^5.5.0",
       },
