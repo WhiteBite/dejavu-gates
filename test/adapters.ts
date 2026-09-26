@@ -67,7 +67,7 @@ check("claude post PostToolUseFailure appends error after response text", ce7?.o
 
 // --- claude: mapOutbound allow ---
 const ao1 = claudeAdapter.mapOutbound("pre", { action: "allow", reason: null, annotation: null, degraded: false })
-check("claude mapOutbound allow → json={}, exitCode 0, stderr null", ao1.json === undefined || Object.keys(ao1.json as object).length === 0 && ao1.exitCode === 0 && ao1.stderr === null)
+check("claude mapOutbound allow → json={}, exitCode 0, stderr null", Object.keys(ao1.json as object).length === 0 && ao1.exitCode === 0 && ao1.stderr === null)
 
 // --- claude: mapOutbound deny (exit-2 dialect) ---
 const do1 = claudeAdapter.mapOutbound("pre", { action: "deny", reason: "[dejavu] BLOCKED", annotation: null, degraded: false })

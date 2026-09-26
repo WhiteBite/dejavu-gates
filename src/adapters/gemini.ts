@@ -99,7 +99,7 @@ export const geminiAdapter: HarnessAdapter = {
       }
     }
     // pre: deny blocks the call (exit-2 + stderr dialect), allow passes it through
-    if (verdict.action === "deny") return denyDecision(verdict.reason ?? "")
+    if (verdict.action === "deny") return denyDecision(verdict.reason ?? "[dejavu] BLOCKED")
     return allowDecision()
   },
 }

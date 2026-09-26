@@ -145,7 +145,7 @@ export const cursorAdapter: HarnessAdapter = {
         json: {
           permission: "deny",
           user_message: "[dejavu] repeated failing call blocked",
-          agent_message: verdict.reason ?? "",
+          agent_message: verdict.reason ?? "[dejavu] BLOCKED",
         },
         exitCode: 0,
         stderr: null,

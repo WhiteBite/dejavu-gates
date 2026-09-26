@@ -53,7 +53,7 @@ export const crushAdapter: HarnessAdapter = {
 
     // Crush native decision dialect: JSON on stdout, exit 0
     return {
-      json: { version: 1, decision: "deny", halt: false, reason: verdict.reason ?? "" },
+      json: { version: 1, decision: "deny", halt: false, reason: verdict.reason ?? "[dejavu] BLOCKED" },
       exitCode: 0,
       stderr: null,
     }

@@ -184,7 +184,7 @@ export const copilotAdapter: HarnessAdapter = {
     // pre: deny blocks via Copilot's native permissionDecision JSON
     if (verdict.action === "deny") {
       return {
-        json: { permissionDecision: "deny", permissionDecisionReason: verdict.reason ?? "" },
+        json: { permissionDecision: "deny", permissionDecisionReason: verdict.reason ?? "[dejavu] BLOCKED" },
         exitCode: 0,
         stderr: null,
       }
