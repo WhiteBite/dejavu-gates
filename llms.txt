@@ -44,13 +44,13 @@ npm (recommended):
 
 ```jsonc
 // ~/.config/opencode/opencode.json
-{ "plugin": ["opencode-dejavu"] }
+{ "plugin": ["dejavu-gates"] }
 ```
 
 From source:
 
 ```bash
-git clone https://github.com/WhiteBite/opencode-dejavu ~/.config/opencode/vendor/dejavu
+git clone https://github.com/WhiteBite/dejavu-gates ~/.config/opencode/vendor/dejavu
 ```
 
 ```ts

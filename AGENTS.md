@@ -48,7 +48,7 @@ dejavu-gates/
 | Persistence, locks, promotion, global escalation | `src/store.ts` | `Stores.recordFailure()` is the core; cross-project evidence lives in global `index.json` |
 | Self-healing / reconcile | `src/store.ts` + `src/validate.ts` | `Stores.reconcileAll()` at every init; `doctor --repair` on demand |
 | Tunables | `src/store.ts`, `src/context.ts`, `src/before.ts`, `src/repeat.ts`, `index.ts` | promote thresholds in store; retirement tunables + caps in context; review/race in before; repeat-block in repeat; TTL/transform-only in index |
-| Pathology checks | `scripts/doctor.ts` | defect classes: unparseable/bad records, duplicate keys, temporal inversion, nested tokens, enforced-without-evidence, stale blocking/reminding, not-teaching, annoying, stale-correction, review-flagged, reminders-ignored, unsanitized, stale copies, corrupt logs, version drift, cross-store index checks; no-arg run discovers projects from the index |
+| Pathology checks | `scripts/doctor.ts` | defect classes: unparseable/bad records, duplicate keys, temporal inversion, nested tokens, enforced-without-evidence, stale blocking/reminding, not-teaching, annoying, stale-correction, review-flagged, reminders-ignored, unsanitized, stale copies, corrupt logs, version drift, cross-store index checks, flappy, flood evictions, cross-channel double-count, quarantine artifacts, feedback-demoted, overridden, lock degradations; no-arg run discovers projects from the index |
 
 ## CODE MAP
 
