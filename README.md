@@ -82,10 +82,24 @@ The installer merges idempotently into each harness's config (foreign hooks and 
 |---|---|
 | Claude Code | `claude plugin marketplace add WhiteBite/dejavu-gates` then `claude plugin install dejavu-gates@dejavu-marketplace` |
 | Codex CLI | `codex plugin add WhiteBite/dejavu-gates` (then `[features] hooks = true` + `/hooks` trust once) |
-| Copilot CLI | `copilot plugin install WhiteBite/dejavu-gates` |
-| Cursor | IDE: `/add-plugin` → browse marketplace → dejavu-gates (or copy the repo to `~/.cursor/plugins/local/dejavu-gates`) |
+| Copilot CLI (experimental) | `copilot plugin install WhiteBite/dejavu-gates` |
+| Cursor (experimental) | IDE: `/add-plugin` → browse marketplace → dejavu-gates (or copy the repo to `~/.cursor/plugins/local/dejavu-gates`) |
 | Gemini CLI | `gemini extensions install https://github.com/WhiteBite/dejavu-gates` |
 | Crush | no plugin system — use the installer above or edit `crush.json` by hand |
+
+### GitHub Packages (authenticated mirror)
+
+Every release is also published to GitHub Packages as `@whitebite/dejavu-gates`. GitHub Packages requires a token even for public packages, so npmjs.com above stays the recommended channel:
+
+```ini
+# .npmrc
+@whitebite:registry=https://npm.pkg.github.com/
+//npm.pkg.github.com/:_authToken=<PAT with read:packages>
+```
+
+```bash
+npm i -D @whitebite/dejavu-gates
+```
 
 ### OpenCode
 
