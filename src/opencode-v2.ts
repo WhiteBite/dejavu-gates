@@ -41,7 +41,7 @@ export async function v2Setup(ctx: Plugin.Context): Promise<() => void> {
   const debugEnv = process.env.DEJAVU_DEBUG
   const debug = debugEnv !== undefined && debugEnv !== "" && debugEnv !== "0"
   const log = (service: string, level: string, message: string): void => {
-    if (level === "warn" || level === "error" || debug) {
+    if (level !== "debug" || debug) {
       process.stderr.write(`[dejavu] ${service} (${level}): ${message}\n`)
     }
   }
@@ -75,6 +75,7 @@ export async function v2Setup(ctx: Plugin.Context): Promise<() => void> {
     if (notTeaching > 0 || review > 0) {
       await stores.logAll({ type: "health", key: "dejavu", snippet: `not-teaching ${notTeaching}, review ${review}` })
     }
+    log("dejavu", "info", `dejavu initialized v${PLUGIN_VERSION}`)
   } catch (error) {
     // init failures must not prevent hook registration — but must be visible
     log("dejavu", "error", `dejavu init failed: ${error instanceof Error ? error.message : String(error)}`)
@@ -107,8 +108,8 @@ export async function v2Setup(ctx: Plugin.Context): Promise<() => void> {
         phase: "pre",
         tool: event.tool,
         args: (event.input ?? {}) as Record<string, unknown>,
-        sessionId: event.sessionID,
-        callId: event.id,
+        sessionId: typeof event.sessionID === "string" ? event.sessionID : "unknown",
+        callId: typeof event.id === "string" ? event.id : null,
         cwd: projectDir,
         output: null,
         exitCode: null,
@@ -129,11 +130,11 @@ export async function v2Setup(ctx: Plugin.Context): Promise<() => void> {
       if (event.status === "error") {
         const normalized: NormalizedEvent = {
           harness: "opencode",
-          phase: "post",
+          phase: "session-event",
           tool: event.tool,
           args: (event.input ?? {}) as Record<string, unknown>,
-          sessionId: event.sessionID,
-          callId: event.id,
+          sessionId: typeof event.sessionID === "string" ? event.sessionID : "unknown",
+          callId: typeof event.id === "string" ? event.id : null,
           cwd: projectDir,
           output: event.error?.message ?? "unknown error",
           exitCode: null,
@@ -151,8 +152,8 @@ export async function v2Setup(ctx: Plugin.Context): Promise<() => void> {
         phase: "post",
         tool: event.tool,
         args: (event.input ?? {}) as Record<string, unknown>,
-        sessionId: event.sessionID,
-        callId: event.id,
+        sessionId: typeof event.sessionID === "string" ? event.sessionID : "unknown",
+        callId: typeof event.id === "string" ? event.id : null,
         cwd: projectDir,
         output: text,
         exitCode,
@@ -161,8 +162,13 @@ export async function v2Setup(ctx: Plugin.Context): Promise<() => void> {
       }
       const outcome = await enforceAfter(normalized, enforceCtx)
       if (outcome.annotation !== null) {
-        const extended = text.length > 0 ? text + "\n\n" + outcome.annotation : outcome.annotation
-        event.result = { ...result, content: extended }
+        const content = result?.content
+        if (Array.isArray(content)) {
+          event.result = { ...result, content: [...content, { type: "text", text: `\n\n${outcome.annotation}` }] }
+        } else {
+          const extended = text.length > 0 ? text + "\n\n" + outcome.annotation : outcome.annotation
+          event.result = { ...result, content: extended }
+        }
       }
     } catch (error) {
       onHookError("after", error)
@@ -173,10 +179,9 @@ export async function v2Setup(ctx: Plugin.Context): Promise<() => void> {
   const eventLoop = (async (): Promise<void> => {
     try {
       for await (const evt of ctx.event.subscribe({ signal: abort.signal })) {
-        if ((evt as { type?: string }).type === "session.deleted") {
-          const sid = (evt as { data?: { sessionID?: unknown } }).data?.sessionID
-          if (typeof sid === "string") await cleanupSession(sid, enforceCtx)
-        }
+        if (evt.type !== "session.deleted") continue
+        const sid = evt.data.sessionID
+        if (typeof sid === "string") await cleanupSession(sid, enforceCtx)
       }
     } catch (error) {
       if ((error as { name?: string }).name !== "AbortError") onHookError("event-loop", error)
