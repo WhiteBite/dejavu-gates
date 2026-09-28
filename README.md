@@ -89,11 +89,17 @@ The installer merges idempotently into each harness's config (foreign hooks and 
 
 ### OpenCode
 
-**npm (recommended)** — one line, OpenCode installs it automatically at startup:
+**npm (recommended)** — OpenCode installs it automatically at startup. OpenCode V1 uses the `"plugin"` key; V2 renamed it to `"plugins"`:
 
 ```jsonc
 // ~/.config/opencode/opencode.json (global) or opencode.json (project)
+// OpenCode V1 (@opencode-ai/plugin)
 { "plugin": ["dejavu-gates"] }
+```
+
+```jsonc
+// OpenCode V2 (@opencode/cli) — or run `opencode plugin add dejavu-gates`
+{ "plugins": ["dejavu-gates"] }
 ```
 
 **From source:**

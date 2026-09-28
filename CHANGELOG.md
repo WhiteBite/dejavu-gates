@@ -1,5 +1,23 @@
 # Changelog
 
+## 2.40.0 — 2026-09-28
+
+### Added (one-command installer)
+- **`npx -y dejavu-gates install`** auto-detects installed harnesses from config markers (project or `--user` scope), installs project-scope by default. `uninstall` removes only dejavu-managed entries, foreign hooks survive. `hooks --check` drift report: ok / stale (moved clone) / missing / broken. Idempotent merge into each harness's config (foreign hooks/fields preserved), backs every file up to `<config>.dejavu-bak` before mutating, refuses unparseable configs, writes hook commands calling the installed package's CLI directly (never `npx` in the hot path). `bin` entries `dejavu` / `dejavu-gates` point at `bin/dejavu.mjs`. `scripts/install-hooks.ts` is now a thin wrapper over the shared installer.
+
+### Added (native plugin manifests)
+- **Claude Code**: `.claude-plugin/plugin.json` + marketplace manifest (`marketplace.json`) + `hooks/claude.json`; resolved via `${CLAUDE_PLUGIN_ROOT}`. Gemini CLI: `gemini-extension.json` + `hooks/hooks.json`; resolved via `${extensionPath}`. Both confirmed spec-correct against published harness specs. Cursor (`.cursor-plugin/plugin.json`) and Copilot CLI (root `plugin.json`) ship as EXPERIMENTAL — their manifest formats are not yet confirmed against official specs; the CLI-hook install path remains the supported route for those two.
+
+### Added (OpenCode V2 host)
+- **Dual export from one entrypoint.** `export default { id: "dejavu", setup, server }` loads on BOTH OpenCode lines (`@opencode-ai/plugin` V1 and `@opencode/plugin` V2). V1 calls `server()` → the unchanged `Dejavu` factory (byte-identical behavior); V2 calls `setup(ctx)` → `src/opencode-v2.ts` registers `ctx.tool.hook("execute.before"|"execute.after")` (deny-by-throw; V2's `execute.after` `status:"error"` branch replaces the V1 `message.part.updated` event scan), `ctx.event.subscribe()` for `session.deleted` cleanup, and `ctx.session.hook("compaction")`. `@opencode/plugin` is a TYPES-ONLY devDependency (zero runtime deps preserved — `Plugin.define` is identity, a plain `{id, setup}` object is structurally accepted). `engines.opencode: ">=1.18.29"` makes older V1 loaders skip loudly instead of loading a dead plugin. NOTE: the repeat channel (DashScope consecutive-identical-call 400 prevention) is NOT yet ported to V2 — V2's `session.hook("context")` message model (AI-SDK `tool-call`/`tool-result` parts) differs structurally from V1's `parts[].state` and needs runtime verification; gate enforcement + event channel + compaction all work on V2 today.
+- **V2 hook shapes pinned at the type level** against the published `@opencode/plugin@2.0.18` tarball (loader contract verified against upstream `readV1Plugin` + V2 `external.ts` source). Three runtime conventions are type-implied but not yet observed live and are flagged for verification on the first V2 sessions via `log.jsonl`: bash exit codes arriving in `result.metadata.exit`, aborted-call wording matching `isNoiseError`, and annotation mutations of `event.result` propagating to the model-visible transcript.
+
+### Added (tests)
+- `test/install.ts` (installer e2e: install/uninstall/`hooks --check`, backup, foreign-hook survival, copilot standalone, `--user`, broken-config) and `test/v2-host.ts` (dual-export characterization: `server()` parity with the V1 `Dejavu` factory, plus a stub-Context invocation of `v2Setup` — registration set, callback smoke, cleanup aborts the event subscription). Both registered in CI + publish workflows.
+
+### Removed
+- `legacy/opencode-dejavu/` stub directory (the deprecated npm stub package is published separately; the dir had zero code references).
+
 ## 2.39.1 — 2026-09-26
 
 ### Fixed
