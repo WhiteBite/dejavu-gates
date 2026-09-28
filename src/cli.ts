@@ -130,8 +130,8 @@ async function dispatch(
 }
 
 /** CLI entry: parse → normalize → enforce → emit. Returns the process exit code. */
-async function main(): Promise<number> {
-  const args = parseArgs(process.argv.slice(2))
+export async function runHook(argv: string[]): Promise<number> {
+  const args = parseArgs(argv)
   if (args === null) {
     process.stderr.write(`${USAGE}\n`)
     return 1
@@ -186,14 +186,17 @@ async function main(): Promise<number> {
   return decision.exitCode
 }
 
-main().then(
-  (code) => {
-    process.exitCode = code
-  },
-  (error) => {
-    // fail-open last resort — a dejavu bug must never wedge the user's tooling
-    process.stderr.write(`[dejavu] fatal: ${formatError(error)}\n`)
-    process.stdout.write("{}\n")
-    process.exitCode = 0
-  },
-)
+// import.meta.main is a Bun extension absent from @types/node; false when imported (e.g. by src/main.ts)
+if ((import.meta as ImportMeta & { main?: boolean }).main === true) {
+  runHook(process.argv.slice(2)).then(
+    (code) => {
+      process.exitCode = code
+    },
+    (error) => {
+      // fail-open last resort — a dejavu bug must never wedge the user's tooling
+      process.stderr.write(`[dejavu] fatal: ${formatError(error)}\n`)
+      process.stdout.write("{}\n")
+      process.exitCode = 0
+    },
+  )
+}

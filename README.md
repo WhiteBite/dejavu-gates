@@ -28,8 +28,8 @@ Cross-session **memory prosthesis with teeth** for AI coding agents. Agents repe
 | **Claude Code** | `install-hooks.ts` | ✅ | ✅ | `additionalContext` annotations; hooks carry no exit codes → text detection |
 | **Codex CLI** | `install-hooks.ts` | ✅ | ✅ | upstream hooks fire for **Bash only**; needs `[features] hooks = true` + `/hooks` trust |
 | **Gemini CLI** | `install-hooks.ts` | ✅ | ✅ | BeforeTool/AfterTool |
-| **Cursor** | `install-hooks.ts` | ✅ | ✅ | shell events + CC-compatible events |
-| **Copilot CLI** | `install-hooks.ts` | ✅ | ✅ | camelCase + PascalCase payload families |
+| **Cursor** (experimental) | `install-hooks.ts` | ✅ | ✅ | shell events + CC-compatible events |
+| **Copilot CLI** (experimental) | `install-hooks.ts` | ✅ | ✅ | camelCase + PascalCase payload families |
 | **Crush** | `install-hooks.ts` | ✅ | ❌ degraded | upstream has PreToolUse only — enforcement + shared store still protect; no post annotations |
 | Zed, Aider | — | ❌ | ❌ | no hook API to intercept tool calls — not portable |
 | Windsurf, Amp, Kiro | — | (planned) | ❌ | block-only / fire-and-forget surfaces; deferred until context injection exists |
@@ -62,6 +62,31 @@ Design decisions (post-mortem of existing approaches):
 
 ## Install
 
+Prerequisite for every path: [Bun](https://bun.sh) on PATH (hook handlers run raw TypeScript; no build step).
+
+### One command, any harness (recommended)
+
+```bash
+npx -y dejavu-gates install            # auto-detects installed harnesses, installs project-scope
+npx -y dejavu-gates install --user     # user-scope (~/.claude, ~/.codex, ...)
+npx -y dejavu-gates install --harness claude,cursor --yes
+npx -y dejavu-gates uninstall          # removes only dejavu-managed entries, keeps your other hooks
+npx -y dejavu-gates hooks --check      # drift report: ok / stale (moved clone) / missing / broken
+```
+
+The installer merges idempotently into each harness's config (foreign hooks and fields survive), backs the file up to `<config>.dejavu-bak` before mutating, refuses to touch unparseable configs, and writes hook commands that call the installed package's CLI directly (never `npx` in the hot path — hooks fire on every tool call). Or install the package once (`npm i -g dejavu-gates` or `npm i -D dejavu-gates`) and use the `dejavu` / `dejavu-gates` command instead of `npx -y`.
+
+### Native plugin channels (no npx, auto-updating)
+
+| Harness | Command |
+|---|---|
+| Claude Code | `claude plugin marketplace add WhiteBite/dejavu-gates` then `claude plugin install dejavu-gates@dejavu-marketplace` |
+| Codex CLI | `codex plugin add WhiteBite/dejavu-gates` (then `[features] hooks = true` + `/hooks` trust once) |
+| Copilot CLI | `copilot plugin install WhiteBite/dejavu-gates` |
+| Cursor | IDE: `/add-plugin` → browse marketplace → dejavu-gates (or copy the repo to `~/.cursor/plugins/local/dejavu-gates`) |
+| Gemini CLI | `gemini extensions install https://github.com/WhiteBite/dejavu-gates` |
+| Crush | no plugin system — use the installer above or edit `crush.json` by hand |
+
 ### OpenCode
 
 **npm (recommended)** — one line, OpenCode installs it automatically at startup:
@@ -88,9 +113,7 @@ Status command: copy `command/dejavu.md` to `~/.config/opencode/command/dejavu.m
 
 Restart OpenCode. Gates appear automatically as failures recur — nothing to configure.
 
-### Claude Code / Codex / Gemini CLI / Cursor / Copilot CLI / Crush
-
-Requires [Bun](https://bun.sh) on PATH. Clone (or `npm install dejavu-gates` and run from `node_modules/dejavu-gates`):
+### Manual / from a clone (all harnesses)
 
 ```bash
 git clone https://github.com/WhiteBite/dejavu-gates && cd dejavu-gates && bun install
@@ -197,7 +220,7 @@ Structural gates live in `.ast-grep/rules/` (run by `bun run lint:ast` and CI): 
 ## Roadmap
 
 - Windsurf / Amp / Kiro adapters — blocked on usable context-injection surfaces (block-only today); the adapter slots exist
-- recurrence-after-gate reporting command; OpenCode V2 error hooks — `tool.execute.error` drafted upstream (opencode issue #27900), unmerged
+- recurrence-after-gate reporting command; `tool.execute.error` (opencode issue #27900) closed upstream as not planned — event-channel detection remains the supported path
 - auto-proposal of ast-grep rules for statically detectable patterns (repo-level CI gates)
 
 ## Disclaimer

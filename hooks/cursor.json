@@ -1,0 +1,17 @@
+{
+  "version": 1,
+  "hooks": {
+    "beforeShellExecution": [
+      { "command": "bun \"${CURSOR_PLUGIN_ROOT}/src/cli.ts\" pre --harness cursor", "timeout": 30 }
+    ],
+    "afterShellExecution": [
+      { "command": "bun \"${CURSOR_PLUGIN_ROOT}/src/cli.ts\" post --harness cursor", "timeout": 30 }
+    ],
+    "preToolUse": [
+      { "command": "bun \"${CURSOR_PLUGIN_ROOT}/src/cli.ts\" pre --harness cursor", "timeout": 30 }
+    ],
+    "postToolUse": [
+      { "command": "bun \"${CURSOR_PLUGIN_ROOT}/src/cli.ts\" post --harness cursor", "timeout": 30 }
+    ]
+  }
+}
