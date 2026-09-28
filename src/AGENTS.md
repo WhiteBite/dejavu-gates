@@ -2,7 +2,7 @@
 
 ## OVERVIEW
 
-Dependency-free core: `patterns.ts` (pure functions — call identity, normalization, detection, policy), `store.ts` (stateful — gates.json/log.jsonl I/O under locks, promotion, scope escalation, feedback demotion) and `validate.ts` (the parse/repair boundary every persisted gate crosses). On top of it, the harness-agnostic enforcement engine (`types.ts` contract + `context/before/after/event/guards/repeat/messages` + `enforce.ts` public surface) consumed by two hosts: `../index.ts` (OpenCode plugin) and `cli.ts` (hook-handler CLI). `adapters/` maps six external harnesses' hook payloads to the contract. Engine and adapters import only `node:` builtins + sibling modules — never a harness SDK.
+Dependency-free core: `patterns.ts` (pure functions — call identity, normalization, detection, policy), `store.ts` (stateful — gates.json/log.jsonl I/O under locks, promotion, scope escalation, feedback demotion) and `validate.ts` (the parse/repair boundary every persisted gate crosses). On top of it, the harness-agnostic enforcement engine (`types.ts` contract + `context/before/after/event/guards/repeat/messages` + `enforce.ts` public surface) consumed by hosts: `../index.ts` (OpenCode V1 plugin + dual-export entry), `opencode-v2.ts` (OpenCode V2 host glue), and `cli.ts` (hook-handler CLI for external harnesses). `adapters/` maps six external harnesses' hook payloads to the contract. Engine and adapters import only `node:` builtins + sibling modules — never a harness SDK.
 
 ## WHERE TO LOOK
 
@@ -33,6 +33,7 @@ Dependency-free core: `patterns.ts` (pure functions — call identity, normaliza
 | Repeat-series block | repeat.ts | `repeatSeriesDecision` — override kind FALLS THROUGH to gate processing |
 | Harness payload mapping | adapters/*.ts | per-harness `mapInbound`/`mapOutbound`; `adapters/shared.ts` — `internalTool`/`internalArgs`/`str`/`rec`/`num`/`allowDecision`/`denyDecision` |
 | Hook-handler CLI | cli.ts | argv/stdin parse → adapter → engine → decision JSON; fail-open; registry `ADAPTERS` |
+| OpenCode V2 host glue | opencode-v2.ts | `v2Setup` — registers execute.before/after, event.subscribe (session.deleted), compaction on the V2 plugin Context; deny-by-throw; reuses enforceBefore/enforceAfter/recordEventFailure/cleanupSession |
 
 ## INVARIANTS (do not break)
 
@@ -121,6 +122,6 @@ Dependency-free core: `patterns.ts` (pure functions — call identity, normaliza
 - Do NOT promise blocks in reminding-tier messages — tier-truthful wording only; a wrong enforcement model teaches the agent wrongly
 - Do NOT read `log.jsonl` outside the log lock for rewrite-style operations (excise/rotate) — an unlocked read + locked rewrite drops concurrent appends
 - Do NOT count reminding-tier overrides toward `DEMOTE_OVERRIDES` — only blocking friction demotes
-- Do NOT import a harness SDK into src/** — the engine + adapters depend only on node: builtins and siblings; harness specifics live in index.ts (OpenCode) or the adapter's payload mapping
+- Do NOT import a harness SDK into src/** — the engine + adapters depend only on node: builtins and siblings; harness specifics live in index.ts (OpenCode) or the adapter's payload mapping; exception: `opencode-v2.ts` may `import type` from `@opencode/plugin` (types-only, zero runtime dep) because it IS the OpenCode V2 host
 - Do NOT add an adapter deny path that returns exit 0 with empty stdout for claude/codex/gemini, or exit 2 for cursor/copilot/crush — each harness has ONE verified deny dialect (see the adapter JSDoc); mixing them silently un-blocks or double-signals
 - Do NOT "fix" the per-invocation CLI init (reconcileAll/migrate/expireAll per hook call) by removing it — it is the accepted cost of the short-lived host; the version-stamp skip makes repeated invocations cheap, and flushDeferredAll before exit keeps forensics

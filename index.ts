@@ -10,6 +10,7 @@ import {
 } from "./src/enforce"
 import { createStores, GLOBAL_PROJECTS, NOISE_TTL_DAYS, PLUGIN_VERSION, TTL_DAYS } from "./src/store"
 import type { NormalizedEvent } from "./src/types"
+import { v2Setup } from "./src/opencode-v2"
 
 // --- Tunables ---------------------------------------------------------------
 
@@ -351,4 +352,8 @@ export const Dejavu: Plugin = async ({ directory, client }) => {
   }
 }
 
-export default Dejavu
+export default {
+  id: "dejavu",
+  setup: v2Setup,
+  server: (input: Parameters<typeof Dejavu>[0], options?: Parameters<typeof Dejavu>[1]) => Dejavu(input, options),
+}

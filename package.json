@@ -53,8 +53,12 @@
     "lint:ast": "ast-grep scan"
   },
   "license": "MIT",
+  "engines": {
+    "opencode": ">=1.18.29"
+  },
   "devDependencies": {
     "@opencode-ai/plugin": "^1.18.0",
+    "@opencode/plugin": "^2.0.18",
     "@types/node": "^24.0.0",
     "typescript": "^5.5.0"
   }

@@ -24,6 +24,8 @@ jobs:
       - run: bun test/messages.ts
       - run: bun test/property.ts
       - run: bun test/fuzz.ts
+      - run: bun test/install.ts
+      - run: bun test/v2-host.ts
       - run: |
           echo "//registry.npmjs.org/:_authToken=$NODE_AUTH_TOKEN" > .npmrc
           npm publish

@@ -27,6 +27,7 @@ dejavu-gates/
 │   ├── repeat.ts       # repeat-series before-block (override FALLS THROUGH to gate processing)
 │   ├── messages.ts     # remindMessage/remindNote/blockMessage — the teaching texts
 │   ├── adapters/       # per-harness payload↔contract mapping: shared.ts + claude/codex/gemini/cursor/copilot/crush.ts
+│   ├── opencode-v2.ts  # OpenCode V2 host glue: v2Setup registers tool/event/compaction hooks on the V2 plugin Context
 │   └── cli.ts          # hook-handler CLI: stdin JSON → engine → stdout decision JSON, exit 0/2/1, fail-open
 ├── test/               # smoke (plugin), enforce (engine), adapters, cli (e2e spawn), language-gaps, property, fuzz — plain bun scripts
 ├── scripts/            # doctor.ts, analyze.ts, migrate.ts, install-hooks.ts (+ templates/*.json per harness)
@@ -56,7 +57,8 @@ Line numbers intentionally omitted — they rot every round; locate by symbol na
 
 | Symbol | Type | Location | Role |
 |--------|------|----------|------|
-| `Dejavu` | Plugin factory | index.ts | entry point; wires 4 hooks, also `export default` |
+| `Dejavu` | Plugin factory | index.ts | V1 entry of a dual V1/V2 default export; wires 4 hooks |
+| `v2Setup` | fn | src/opencode-v2.ts | OpenCode V2 host: registers execute.before/after (deny via throw), event.subscribe (session.deleted cleanup), and compaction hooks on the V2 plugin Context; reuses the same engine calls as the V1 host |
 | `GateSignal` | class | index.ts | sentinel error — the ONLY error rethrown from hooks |
 | `enforceBefore` / `enforceAfter` | fn | src/before.ts / src/after.ts | the engine's two hook entry points; return verdicts/outcomes, never throw GateSignal (hosts translate) |
 | `recordEventFailure` / `cleanupSession` | fn | src/event.ts | event-channel failure recording + session teardown |
@@ -165,6 +167,8 @@ bun test/guards.ts           # proactive guards characterization (fire shapes, p
 bun test/messages.ts         # teaching-text framing (tier-truthful, data-label, storeDir-derived path)
 bun test/property.ts         # seeded-generator invariants (normalization, capped-fuzzy equivalence, substitutions)
 bun test/fuzz.ts             # mutation fuzz: no crash, no invariant break
+bun test/install.ts          # installer e2e (install/uninstall/hooks --check, backup, foreign-hook survival)
+bun test/v2-host.ts          # OpenCode V2 dual-export characterization (server() parity with V1 Dejavu)
 bun run lint:ast             # ast-grep structural gates (.ast-grep/rules/); needs ast-grep on PATH
 bun scripts/doctor.ts [projectDirs...]
 bun scripts/analyze.ts [projectDirs...]
@@ -175,7 +179,7 @@ bun scripts/install-hooks.ts --harness <claude|codex|gemini|cursor|copilot|crush
 ## NOTES
 
 - `tsconfig.json` covers `index.ts`, `src/**`, `scripts/**`, `test/**` — everything typechecks
-- CI: GitHub Actions (`bun install --frozen-lockfile` + typecheck + smoke + enforce + adapters + cli + language-gaps + guards + messages + property + fuzz + `ast-grep scan`) on every push/PR
+- CI: GitHub Actions (`bun install --frozen-lockfile` + typecheck + smoke + enforce + adapters + cli + language-gaps + guards + messages + property + fuzz + install + v2-host + `ast-grep scan`) on every push/PR
 - Structural gates live in `.ast-grep/rules/` + `sgconfig.yml`: `no-load-force-flag` forbids `load(true)`/`loadIndex(true)` (use the named `loadForMutation()`/`loadIndexForMutation()`). Add a gate here when a bug class is structurally repeatable; sabotage-test it (introduce the bug shape → gate must fire)
 - Install = npm (`{ "plugin": ["dejavu-gates"] }`) or clone + re-export from `~/.config/opencode/plugins/dejavu.ts` (see README); other harnesses via `scripts/install-hooks.ts`
 - `DEJAVU_HOME` env var overrides the global store dir — smoke test and scripts rely on it
