@@ -31,6 +31,13 @@ function flattenResultContent(content: unknown): string {
   return ""
 }
 
+/** V2 renames the bash tool to "shell"; the engine vocabulary stays harness-neutral */
+const ENGINE_TOOL: Record<string, string> = { shell: "bash" }
+
+function engineTool(tool: string): string {
+  return ENGINE_TOOL[tool] ?? tool
+}
+
 /** OpenCode V2 plugin host: registers dejavu's hooks on the V2 plugin Context. */
 export async function v2Setup(ctx: Plugin.Context): Promise<() => void> {
   const projectDir: string = ctx.location.directory
@@ -106,7 +113,7 @@ export async function v2Setup(ctx: Plugin.Context): Promise<() => void> {
       const normalized: NormalizedEvent = {
         harness: "opencode",
         phase: "pre",
-        tool: event.tool,
+        tool: engineTool(event.tool),
         args: (event.input ?? {}) as Record<string, unknown>,
         sessionId: typeof event.sessionID === "string" ? event.sessionID : "unknown",
         callId: typeof event.id === "string" ? event.id : null,
@@ -131,7 +138,7 @@ export async function v2Setup(ctx: Plugin.Context): Promise<() => void> {
         const normalized: NormalizedEvent = {
           harness: "opencode",
           phase: "session-event",
-          tool: event.tool,
+          tool: engineTool(event.tool),
           args: (event.input ?? {}) as Record<string, unknown>,
           sessionId: typeof event.sessionID === "string" ? event.sessionID : "unknown",
           callId: typeof event.id === "string" ? event.id : null,
@@ -150,7 +157,7 @@ export async function v2Setup(ctx: Plugin.Context): Promise<() => void> {
       const normalized: NormalizedEvent = {
         harness: "opencode",
         phase: "post",
-        tool: event.tool,
+        tool: engineTool(event.tool),
         args: (event.input ?? {}) as Record<string, unknown>,
         sessionId: typeof event.sessionID === "string" ? event.sessionID : "unknown",
         callId: typeof event.id === "string" ? event.id : null,

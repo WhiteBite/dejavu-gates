@@ -2,7 +2,7 @@
  * Characterization test for the dual-export entrypoint.
  * Run: bun test/v2-host.ts
  */
-import { mkdtemp, rm } from "node:fs/promises"
+import { mkdtemp, readFile, rm } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import type { Plugin } from "@opencode/plugin"
@@ -144,6 +144,22 @@ try {
       agent: "build",
     })) === null,
   )
+  const failingShell = {
+    tool: "shell",
+    sessionID: "s1",
+    agent: "build",
+    messageID: "m1",
+    id: "c9",
+    input: { command: "obs-fail-cmd" },
+    status: "completed",
+    result: { content: "error: obs regression boom\n", metadata: { exit: 1 } },
+  }
+  check("execute.after records a failing shell call without throwing", (await invokeHook("execute.after", failingShell)) === null)
+  const gateDoc = JSON.parse(await readFile(join(tmp2, "project", ".opencode", "dejavu", "gates.json"), "utf8")) as {
+    gates: Array<{ tool?: string; signature?: string }>
+  }
+  const shellGate = gateDoc.gates.find((gate) => (gate.signature ?? "").includes("obs-fail-cmd"))
+  check("the failing shell call records under the bash vocabulary", shellGate !== undefined && shellGate.tool === "bash")
 
   check("v2Setup returns a function", typeof cleanup === "function")
   let cleanupThrew: unknown = null
