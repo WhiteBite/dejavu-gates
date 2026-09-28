@@ -1,6 +1,11 @@
 # Changelog
 
-## 2.40.0 — 2026-09-28
+## 2.40.1 - 2026-09-28
+
+### Changed
+- **Release pipeline: three channels per tag.** Every `v*` tag now publishes to npmjs.com (`dejavu-gates`), creates a GitHub Release whose notes are the matching CHANGELOG section, and mirrors the package to GitHub Packages as `@whitebite/dejavu-gates` (GH Packages only hosts scoped names; installs from there require a token, so npmjs.com stays the recommended channel). No plugin behavior changes in this release — it ships and verifies the pipeline.
+
+## 2.40.0 - 2026-09-28
 
 ### Added (one-command installer)
 - **`npx -y dejavu-gates install`** auto-detects installed harnesses from config markers (project or `--user` scope), installs project-scope by default. `uninstall` removes only dejavu-managed entries, foreign hooks survive. `hooks --check` drift report: ok / stale (moved clone) / missing / broken. Idempotent merge into each harness's config (foreign hooks/fields preserved), backs every file up to `<config>.dejavu-bak` before mutating, refuses unparseable configs, writes hook commands calling the installed package's CLI directly (never `npx` in the hot path). `bin` entries `dejavu` / `dejavu-gates` point at `bin/dejavu.mjs`. `scripts/install-hooks.ts` is now a thin wrapper over the shared installer.
