@@ -108,6 +108,10 @@ export const cursorAdapter: HarnessAdapter = {
       }
 
       if (phase === "post") {
+        let output = extractOutput(r.tool_output)
+        // postToolUseFailure carries an `error` field - append after the output text
+        const errorText = str(r, "error")
+        if (errorText !== null) output = output === null ? errorText : `${output}\n${errorText}`
         return {
           harness: "cursor",
           phase,
@@ -116,7 +120,7 @@ export const cursorAdapter: HarnessAdapter = {
           sessionId,
           callId,
           cwd,
-          output: extractOutput(r.tool_output),
+          output,
           exitCode: null,
           channel: "text",
           raw,

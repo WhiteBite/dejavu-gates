@@ -264,6 +264,15 @@ export async function runInstall(argv: string[]): Promise<number> {
         return 1
       }
     }
+    // --user on a harness without a documented user scope → reject (before any path resolution)
+    if (args.user) {
+      for (const harness of harnesses) {
+        if (HARNESSES[harness].user === undefined) {
+          process.stderr.write(`${harness}: no user-scope install documented - use project scope\n`)
+          return 1
+        }
+      }
+    }
     if (args.sub === "check") {
       let bad = 0
       for (const harness of harnesses) {
@@ -273,15 +282,6 @@ export async function runInstall(argv: string[]): Promise<number> {
       }
       process.stderr.write(bad === 0 ? "hooks: all targets ok or missing\n" : `hooks: ${bad} target(s) need reinstall\n`)
       return bad === 0 ? 0 : 1
-    }
-    // --user on a harness without a documented user scope → reject
-    if (args.user) {
-      for (const harness of harnesses) {
-        if (HARNESSES[harness].user === undefined) {
-          process.stderr.write(`${harness}: no user-scope install documented - use project scope\n`)
-          return 1
-        }
-      }
     }
     for (const harness of harnesses) {
       if (args.sub === "install") await installOne(harness, args.user, args.dryRun)

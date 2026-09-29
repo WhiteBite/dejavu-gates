@@ -234,6 +234,8 @@ check("cursor post afterShellExecution → tool 'bash'", cu4?.tool === "bash")
 const curPostCC = { tool_name: "Read", tool_input: { file_path: "a.ts" }, tool_output: "file content", session_id: "cc-ses-3" }
 const cu5 = cursorAdapter.mapInbound("post", curPostCC)
 check("cursor post CC → output from tool_output", cu5?.output === "file content")
+const cu5err = cursorAdapter.mapInbound("post", { hook_event_name: "postToolUseFailure", tool_name: "Read", tool_input: { file_path: "f.ts" }, conversation_id: "cu-5e", tool_output: "", error: "read failed: ENOENT" })
+check("cursor postToolUseFailure appends error after tool_output", cu5err?.output === "read failed: ENOENT")
 
 // --- cursor: unrecognized shape → null ---
 const curUnknown = { some_field: "value" }

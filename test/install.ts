@@ -275,6 +275,8 @@ check("install kiro --user prints the no-user-scope message", noUserKiro.stderr.
 const noUserDevin = run(["install", "--harness", "devin", "--user", "--yes"], h17.cwd, h17.home)
 check("install devin --user exits 1", noUserDevin.code === 1)
 check("install devin --user prints the no-user-scope message", noUserDevin.stderr.includes("no user-scope install documented"))
+const checkUserKiro = run(["hooks", "--check", "--harness", "kiro", "--user"], h17.cwd, h17.home)
+check("hooks --check kiro --user exits 1 with the scope message", checkUserKiro.code === 1 && checkUserKiro.stderr.includes("no user-scope install documented"))
 
 // --- optional user scope: harnesses with a documented user scope keep their user paths ---
 const PROJECT_ONLY: readonly Harness[] = ["devin", "kiro"]
