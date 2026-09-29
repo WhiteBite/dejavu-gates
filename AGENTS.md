@@ -169,6 +169,7 @@ bun test/property.ts         # seeded-generator invariants (normalization, cappe
 bun test/fuzz.ts             # mutation fuzz: no crash, no invariant break
 bun test/install.ts          # installer e2e (install/uninstall/hooks --check, backup, foreign-hook survival)
 bun test/v2-host.ts          # OpenCode V2 dual-export characterization (server() parity with V1 Dejavu)
+bun test/cline-plugin.ts     # Cline plugin host characterization (beforeTool skip/afterTool appendContext over a temp store)
 bun run lint:ast             # ast-grep structural gates (.ast-grep/rules/); needs ast-grep on PATH
 bun scripts/doctor.ts [projectDirs...]
 bun scripts/analyze.ts [projectDirs...]
@@ -179,7 +180,7 @@ bun scripts/install-hooks.ts --harness <claude|codex|gemini|cursor|copilot|crush
 ## NOTES
 
 - `tsconfig.json` covers `index.ts`, `src/**`, `scripts/**`, `test/**` — everything typechecks
-- CI: GitHub Actions (`bun install --frozen-lockfile` + typecheck + smoke + enforce + adapters + cli + language-gaps + guards + messages + property + fuzz + install + v2-host + `ast-grep scan`) on every push/PR
+- CI: GitHub Actions (`bun install --frozen-lockfile` + typecheck + smoke + enforce + adapters + cli + language-gaps + guards + messages + property + fuzz + install + v2-host + cline-plugin + `ast-grep scan`) on every push/PR
 - Structural gates live in `.ast-grep/rules/` + `sgconfig.yml`: `no-load-force-flag` forbids `load(true)`/`loadIndex(true)` (use the named `loadForMutation()`/`loadIndexForMutation()`). Add a gate here when a bug class is structurally repeatable; sabotage-test it (introduce the bug shape → gate must fire)
 - Install = npm (`{ "plugin": ["dejavu-gates"] }`) or clone + re-export from `~/.config/opencode/plugins/dejavu.ts` (see README); other harnesses via `scripts/install-hooks.ts`
 - `DEJAVU_HOME` env var overrides the global store dir — smoke test and scripts rely on it

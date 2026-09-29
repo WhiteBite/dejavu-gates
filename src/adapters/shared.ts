@@ -23,6 +23,7 @@ const TOOL_ALIASES: Record<HarnessName, Record<string, string>> = {
   crush: { multiedit: "edit" },
   devin: { exec: "bash", apply_patch: "edit" },
   kiro: { shell: "bash" },
+  cline: { execute_command: "bash", read_file: "read", write_to_file: "write", apply_patch: "edit" },
 }
 
 /** Map a harness tool name to the internal vocabulary ("bash"/"read"/"edit"/"write"/"glob"/"grep"). */

@@ -13,7 +13,7 @@
  */
 
 /** Which harness produced or will consume this event */
-export type HarnessName = "opencode" | "claude" | "codex" | "gemini" | "cursor" | "copilot" | "crush" | "devin" | "kiro"
+export type HarnessName = "opencode" | "claude" | "codex" | "gemini" | "cursor" | "copilot" | "crush" | "devin" | "kiro" | "cline"
 
 /** Phase at which the hook fires */
 export type HookPhase = "pre" | "post" | "session-event"

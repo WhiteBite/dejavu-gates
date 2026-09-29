@@ -28,6 +28,8 @@ jobs:
       - run: bun test/fuzz.ts
       - run: bun test/install.ts
       - run: bun test/v2-host.ts
+      - run: bun test/cline-plugin.ts
+      - run: bun test/cline-plugin.ts
       - run: |
           echo "//registry.npmjs.org/:_authToken=$NODE_AUTH_TOKEN" > .npmrc
           npm publish

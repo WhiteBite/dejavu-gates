@@ -4,6 +4,18 @@
   "description": "Cross-session error gates for AI coding agents: detects recurring tool-call failures and promotes them into enforced gates. Remind first, block on same-session repeat offense. Works with OpenCode, Claude Code, Codex CLI, Gemini CLI, Cursor, Copilot CLI, and Crush.",
   "type": "module",
   "main": "index.ts",
+  "cline": {
+    "plugins": [
+      {
+        "paths": [
+          "./src/cline-plugin.ts"
+        ],
+        "capabilities": [
+          "hooks"
+        ]
+      }
+    ]
+  },
   "bin": {
     "dejavu": "./bin/dejavu.mjs",
     "dejavu-gates": "./bin/dejavu.mjs"

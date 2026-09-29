@@ -23,6 +23,8 @@ jobs:
       - run: bun test/fuzz.ts
       - run: bun test/install.ts
       - run: bun test/v2-host.ts
+      - run: bun test/cline-plugin.ts
+      - run: bun test/cline-plugin.ts
       - name: Install ast-grep
         run: npm install -g @ast-grep/cli@0.45
       - name: AST gates (no-load-force-flag)

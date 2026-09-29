@@ -44,8 +44,8 @@ export function formatStdout(decision: OutboundDecision): string {
   return `${JSON.stringify(decision.json)}\n`
 }
 
-/** harnesses this CLI serves — opencode itself uses the plugin entry (index.ts) */
-type CliHarness = Exclude<HarnessName, "opencode">
+/** harnesses this CLI serves — opencode (index.ts) and cline (src/cline-plugin.ts) use in-process plugin entries */
+type CliHarness = Exclude<HarnessName, "opencode" | "cline">
 
 const ADAPTERS: Record<CliHarness, HarnessAdapter> = {
   claude: claudeAdapter,
