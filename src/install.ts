@@ -116,9 +116,9 @@ async function confirm(question: string): Promise<boolean> {
   }
 }
 
-function targetPath(harness: Harness, user: boolean): string {
+export function targetPath(harness: Harness, user: boolean): string {
   const spec = HARNESSES[harness]
-  return user ? join(homedir(), spec.user) : resolve(spec.project)
+  return user ? join(homedir(), spec.user!) : resolve(spec.project)
 }
 
 /** Single rotating backup of the pre-mutation config; skipped when the file does not exist yet. */
@@ -224,7 +224,11 @@ export async function runInstall(argv: string[]): Promise<number> {
   try {
     if (args.sub === "install") probeBun()
     else warnIfNoBun()
-    const harnesses = args.harnesses ?? detectHarnesses(args.user)
+    let harnesses = args.harnesses ?? detectHarnesses(args.user)
+    // In user-mode auto-detect, skip harnesses that have no documented user path
+    if (args.user && args.harnesses === null) {
+      harnesses = harnesses.filter((h) => HARNESSES[h].user !== undefined)
+    }
     if (args.harnesses === null) {
       process.stderr.write(harnesses.length > 0 ? `detected harnesses: ${harnesses.join(", ")}\n` : "no harness markers detected\n")
     }
@@ -248,6 +252,15 @@ export async function runInstall(argv: string[]): Promise<number> {
       }
       process.stderr.write(bad === 0 ? "hooks: all targets ok or missing\n" : `hooks: ${bad} target(s) need reinstall\n`)
       return bad === 0 ? 0 : 1
+    }
+    // --user on a harness without a documented user scope → reject
+    if (args.user) {
+      for (const harness of harnesses) {
+        if (HARNESSES[harness].user === undefined) {
+          process.stderr.write(`${harness}: no user-scope install documented - use project scope\n`)
+          return 1
+        }
+      }
     }
     for (const harness of harnesses) {
       if (args.sub === "install") await installOne(harness, args.user, args.dryRun)

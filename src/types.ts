@@ -66,6 +66,8 @@ export interface OutboundDecision {
   exitCode: number
   /** stderr text for block-with-stderr dialect */
   stderr: string | null
+  /** raw stdout payload replacing the decision JSON when set — a harness whose context channel is hook stdout */
+  stdoutRaw?: string | null
 }
 
 /** Adapter between a harness's native hook format and the shared contract */

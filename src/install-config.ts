@@ -15,7 +15,8 @@ export type Json = Record<string, unknown>
 
 export interface HarnessSpec {
   readonly project: string
-  readonly user: string
+  /** user-scope path; absent when the harness has no documented user scope */
+  readonly user?: string
   /** false = standalone dejavu-owned file: overwrite, never merge */
   readonly merge: boolean
   readonly note?: string
@@ -169,6 +170,17 @@ export function mergeConfig(existing: Json, template: Json, harness: string): Js
   return merged
 }
 
+/** Root-hooks variant of mergeConfig: template.hooks entries are merged into the config root as event keys.
+ * Foreign root-level keys and custom fields survive. */
+export function mergeConfigRoot(existing: Json, template: Json, harness: string): Json {
+  const merged: Json = { ...existing }
+  for (const [event, entries] of Object.entries(asRecord(template.hooks))) {
+    const existingEntries = merged[event] ?? []
+    merged[event] = [...stripDejavu(existingEntries, harness), ...(Array.isArray(entries) ? entries : [])]
+  }
+  return merged
+}
+
 /** All hook command strings in a config matching the predicate, from both flat and nested entry shapes. */
 export function collectCommands(config: Json, match: (command: unknown) => boolean): string[] {
   const commands: string[] = []
@@ -181,6 +193,24 @@ export function collectCommands(config: Json, match: (command: unknown) => boole
     }
   }
   for (const entries of Object.values(asRecord(config.hooks))) walk(entries)
+  return commands
+}
+
+/** Collect commands from a root-hooks config where event keys sit at the config root. */
+export function collectCommandsRoot(config: Json, match: (command: unknown) => boolean): string[] {
+  const commands: string[] = []
+  const walk = (entries: unknown): void => {
+    if (!Array.isArray(entries)) return
+    for (const entry of entries) {
+      const record = asRecord(entry)
+      if (match(record.command)) commands.push(record.command as string)
+      if (Array.isArray(record.hooks)) walk(record.hooks)
+    }
+  }
+  for (const entries of Object.values(config)) {
+    if (entries === null || typeof entries !== "object") continue
+    if (Array.isArray(entries)) walk(entries)
+  }
   return commands
 }
 

@@ -88,17 +88,18 @@ export function denyDecision(reason: string): OutboundDecision {
 }
 
 /** Shared mapOutbound skeleton: post never blocks (annotation rides on allow);
- * pre AND session-event share the deny/allow path. Adapters supply their dialect. */
+ * pre AND session-event share the deny/allow path. Optional `allow` overrides default. */
 export function makeOutbound(dialect: {
   deny: (reason: string) => OutboundDecision
   annotate: ((annotation: string) => OutboundDecision) | null
+  allow?: () => OutboundDecision
 }): (phase: HookPhase, verdict: Verdict) => OutboundDecision {
   return (phase, verdict) => {
     if (phase === "post") {
       if (verdict.annotation !== null && dialect.annotate !== null) return dialect.annotate(verdict.annotation)
-      return allowDecision()
+      return dialect.allow?.() ?? allowDecision()
     }
     if (verdict.action === "deny") return dialect.deny(verdict.reason ?? "[dejavu] BLOCKED")
-    return allowDecision()
+    return dialect.allow?.() ?? allowDecision()
   }
 }

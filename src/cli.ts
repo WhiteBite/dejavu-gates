@@ -36,6 +36,14 @@ import type {
   Verdict,
 } from "./types"
 
+/** Format an OutboundDecision into the string written to harness stdout.
+ * When decision.stdoutRaw is set and non-empty, emit it verbatim (no JSON.stringify, no trailing newline addition).
+ * Otherwise emit JSON.stringify(decision.json) + "\n". */
+export function formatStdout(decision: OutboundDecision): string {
+  if (decision.stdoutRaw != null && decision.stdoutRaw !== "") return decision.stdoutRaw
+  return `${JSON.stringify(decision.json)}\n`
+}
+
 /** harnesses this CLI serves — opencode itself uses the plugin entry (index.ts) */
 type CliHarness = Exclude<HarnessName, "opencode">
 
@@ -139,7 +147,7 @@ export async function runHook(argv: string[]): Promise<number> {
   const adapter = ADAPTERS[args.harness]
   const event = adapter.mapInbound(args.phase, readHookPayload())
   if (event === null) {
-    process.stdout.write("{}\n")
+    process.stdout.write(formatStdout(allowDecision()))
     return 0
   }
   const projectDir = args.store ?? event.cwd ?? process.cwd()
@@ -181,7 +189,7 @@ export async function runHook(argv: string[]): Promise<number> {
   } catch {
     // losing a forensic line must not change the decision
   }
-  process.stdout.write(`${JSON.stringify(decision.json)}\n`)
+  process.stdout.write(formatStdout(decision))
   if (decision.stderr !== null) process.stderr.write(`${decision.stderr}\n`)
   return decision.exitCode
 }
