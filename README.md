@@ -26,7 +26,7 @@ Cross-session **memory prosthesis with teeth** for AI coding agents. Agents repe
 |---|---|---|---|---|
 | **OpenCode** | npm plugin / source | ✅ | ✅ | full integration: all channels, repeat guard, compaction context |
 | **Claude Code** | `install-hooks.ts` | ✅ | ✅ | `additionalContext` annotations; hooks carry no exit codes → text detection |
-| **Codex CLI** | `install-hooks.ts` | ✅ | ✅ | upstream hooks fire for **Bash only**; needs `[features] hooks = true` + `/hooks` trust |
+| **Codex CLI** | `install-hooks.ts` | ✅ | ✅ | hooks are stable and on by default; Pre/PostToolUse fire for every tool (matcher covers `Bash` + `apply_patch`); a first-run trust prompt may still apply to project hooks |
 | **Gemini CLI** | `install-hooks.ts` | ✅ | ✅ | BeforeTool/AfterTool |
 | **Cursor** | `install-hooks.ts` | ✅ | ✅ | shell events + CC-compatible events |
 | **Copilot CLI** | `install-hooks.ts` | ✅ | ✅ | camelCase + PascalCase payload families |
@@ -83,7 +83,7 @@ The installer merges idempotently into each harness's config (foreign hooks and 
 | Harness | Command |
 |---|---|
 | Claude Code | `claude plugin marketplace add WhiteBite/dejavu-gates` then `claude plugin install dejavu-gates@dejavu-marketplace` |
-| Codex CLI | `codex plugin add WhiteBite/dejavu-gates` (then `[features] hooks = true` + `/hooks` trust once) |
+| Codex CLI | `codex plugin add WhiteBite/dejavu-gates` (hooks are enabled by default; approve the first-run trust prompt if it appears) |
 | Copilot CLI | `copilot plugin install WhiteBite/dejavu-gates` |
 | Cursor | IDE: `/add-plugin` → browse marketplace → dejavu-gates (or copy the repo to `~/.cursor/plugins/local/dejavu-gates`) |
 | Gemini CLI | `gemini extensions install https://github.com/WhiteBite/dejavu-gates` |
@@ -152,7 +152,7 @@ The generator merges hook entries into the harness's config (`.claude/settings.j
 
 Harness specifics:
 
-- **Codex**: enable `[features] hooks = true` in `~/.codex/config.toml` and approve the hooks via `/hooks` once (trust prompt). Upstream fires Pre/PostToolUse for the Bash tool only.
+- **Codex**: hooks are a stable feature enabled by default; Pre/PostToolUse fire for every function tool with canonical hook names (`Bash` for shell, `apply_patch` for edits with `Write`/`Edit` matcher aliases, `spawn_agent`, MCP tools under flat names). dejavu's matcher covers `Bash` and `apply_patch`; a first-run trust prompt may still apply to project hooks.
 - **Crush**: PreToolUse only (no AfterTool upstream) — dejavu runs degraded: blocking works, reminders can't annotate; the shared store still teaches Crush from gates learned elsewhere.
 - **Devin CLI**: hooks live in `.devin/hooks.v1.json` where the file root IS the event map — the installer merges dejavu entries into it and strips them on uninstall, foreign events survive. Devin also auto-imports Claude-format hooks from `.claude/settings.json` (`read_config_from.claude`, on by default), so a Claude install already gates Devin sessions. No user-level hooks file is documented — project scope only.
 - **Kiro**: hooks are standalone files under `.kiro/hooks/`; dejavu owns `dejavu-gates.json` there. Kiro blocks on any non-zero hook exit and injects a successful hook's stdout into agent context, so the reminding NOTE rides raw on stdout and an allow writes nothing. Kiro documents no user-level hooks path — project scope only.

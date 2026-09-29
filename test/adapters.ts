@@ -92,6 +92,8 @@ check("claude pre deny → denyDecision exit 2 + stderr", fbPre.exitCode === 2 &
 const codexPreBash = { tool_name: "Bash", tool_input: { command: "npm run build" }, session_id: "xs-1", tool_use_id: "tu-x-1", cwd: "/proj" }
 const xe1 = codexAdapter.mapInbound("pre", codexPreBash)
 check("codex pre Bash → tool 'bash'", xe1?.tool === "bash")
+const xePatch = codexAdapter.mapInbound("pre", { tool_name: "apply_patch", tool_input: { patch: "*** Begin Patch\n*** End Patch" }, session_id: "xs-1b", cwd: "/proj" })
+check("codex pre apply_patch → tool 'edit' (alias)", xePatch?.tool === "edit")
 check("codex pre Bash → args.command", (xe1?.args as Record<string, unknown>)?.command === "npm run build")
 check("codex pre Bash → sessionId", xe1?.sessionId === "xs-1")
 check("codex pre Bash → callId", xe1?.callId === "tu-x-1")
@@ -104,7 +106,7 @@ check("codex pre shell → tool 'bash' (alias)", xe2?.tool === "bash")
 
 const codexPreApplyPatch = { tool_name: "apply_patch", tool_input: { file_path: "f.ts", patch: "diff" }, session_id: "xs-3" }
 const xe3 = codexAdapter.mapInbound("pre", codexPreApplyPatch)
-check("codex pre apply_patch → passes through unmapped tool", xe3?.tool === "apply_patch")
+check("codex pre apply_patch → tool 'edit' with filePath", xe3?.tool === "edit" && (xe3?.args as Record<string, unknown>)?.filePath === "f.ts")
 
 const codexPreNoToolName = { tool_input: {}, session_id: "xs-4" }
 check("codex pre missing tool_name → null", codexAdapter.mapInbound("pre", codexPreNoToolName) === null)

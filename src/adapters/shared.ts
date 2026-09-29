@@ -10,7 +10,7 @@ import type { HarnessName, HookPhase, OutboundDecision, Verdict } from "../types
 const TOOL_ALIASES: Record<HarnessName, Record<string, string>> = {
   opencode: {},
   claude: {},
-  codex: { shell: "bash" },
+  codex: { shell: "bash", apply_patch: "edit" },
   gemini: {
     run_shell_command: "bash",
     read_file: "read",

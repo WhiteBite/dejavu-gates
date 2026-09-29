@@ -164,6 +164,8 @@ const g = await world("g")
 const inst11 = run(["install", "--harness", "copilot", "--project", "--dry-run"], g.cwd, g.home)
 check("install copilot --dry-run exits 0", inst11.code === 0)
 check("install copilot --dry-run stdout contains postToolUseFailure", inst11.stdout.includes("postToolUseFailure"))
+const inst11b = run(["install", "--harness", "codex", "--project", "--dry-run"], g.cwd, g.home)
+check("install codex --dry-run matcher covers apply_patch", inst11b.code === 0 && inst11b.stdout.includes("apply_patch"))
 
 // --- rootHooks normalizers: config root IS the event map (no "hooks" wrapper) ---
 const rootEventEntries: unknown[] = [
