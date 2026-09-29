@@ -12,6 +12,9 @@
     ],
     "postToolUse": [
       { "command": "bun \"${CURSOR_PLUGIN_ROOT}/src/cli.ts\" post --harness cursor", "timeout": 30 }
+    ],
+    "postToolUseFailure": [
+      { "command": "bun \"${CURSOR_PLUGIN_ROOT}/src/cli.ts\" post --harness cursor", "timeout": 30 }
     ]
   }
 }

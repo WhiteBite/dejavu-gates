@@ -28,8 +28,8 @@ Cross-session **memory prosthesis with teeth** for AI coding agents. Agents repe
 | **Claude Code** | `install-hooks.ts` | ✅ | ✅ | `additionalContext` annotations; hooks carry no exit codes → text detection |
 | **Codex CLI** | `install-hooks.ts` | ✅ | ✅ | upstream hooks fire for **Bash only**; needs `[features] hooks = true` + `/hooks` trust |
 | **Gemini CLI** | `install-hooks.ts` | ✅ | ✅ | BeforeTool/AfterTool |
-| **Cursor** (experimental) | `install-hooks.ts` | ✅ | ✅ | shell events + CC-compatible events |
-| **Copilot CLI** (experimental) | `install-hooks.ts` | ✅ | ✅ | camelCase + PascalCase payload families |
+| **Cursor** | `install-hooks.ts` | ✅ | ✅ | shell events + CC-compatible events |
+| **Copilot CLI** | `install-hooks.ts` | ✅ | ✅ | camelCase + PascalCase payload families |
 | **Crush** | `install-hooks.ts` | ✅ | ❌ degraded | upstream has PreToolUse only — enforcement + shared store still protect; no post annotations |
 | Zed, Aider | — | ❌ | ❌ | no hook API to intercept tool calls — not portable |
 | Windsurf, Amp, Kiro | — | (planned) | ❌ | block-only / fire-and-forget surfaces; deferred until context injection exists |
@@ -82,10 +82,12 @@ The installer merges idempotently into each harness's config (foreign hooks and 
 |---|---|
 | Claude Code | `claude plugin marketplace add WhiteBite/dejavu-gates` then `claude plugin install dejavu-gates@dejavu-marketplace` |
 | Codex CLI | `codex plugin add WhiteBite/dejavu-gates` (then `[features] hooks = true` + `/hooks` trust once) |
-| Copilot CLI (experimental) | `copilot plugin install WhiteBite/dejavu-gates` |
-| Cursor (experimental) | IDE: `/add-plugin` → browse marketplace → dejavu-gates (or copy the repo to `~/.cursor/plugins/local/dejavu-gates`) |
+| Copilot CLI | `copilot plugin install WhiteBite/dejavu-gates` |
+| Cursor | IDE: `/add-plugin` → browse marketplace → dejavu-gates (or copy the repo to `~/.cursor/plugins/local/dejavu-gates`) |
 | Gemini CLI | `gemini extensions install https://github.com/WhiteBite/dejavu-gates` |
 | Crush | no plugin system — use the installer above or edit `crush.json` by hand |
+
+The companion reaction protocol (`skills/dejavu/`) ships inside the plugin bundle and is auto-discovered by the Claude Code, Cursor, and Gemini CLI plugin formats.
 
 ### GitHub Packages (authenticated mirror)
 

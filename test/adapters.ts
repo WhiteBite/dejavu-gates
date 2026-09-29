@@ -9,7 +9,7 @@ import { cursorAdapter } from "../src/adapters/cursor"
 import { copilotAdapter } from "../src/adapters/copilot"
 import { crushAdapter } from "../src/adapters/crush"
 import type { NormalizedEvent, Verdict, OutboundDecision } from "../src/types"
-import { UNKNOWN_SESSION } from "../src/adapters/shared"
+import { UNKNOWN_SESSION, makeOutbound } from "../src/adapters/shared"
 import { makeChecker } from "./helpers"
 
 const { check, report } = makeChecker()
@@ -306,10 +306,10 @@ const cpPostPascal = { tool_name: "Bash", tool_input: { command: "x" }, session_
 const co9 = copilotAdapter.mapInbound("post", cpPostPascal)
 check("copilot post PascalCase → output from tool_response", co9?.output === "pascal output")
 
-// --- copilot: mapInbound postToolUseFailure (adapter handles it despite HookPhase type) ---
-const cpPostFail = { tool_name: "Bash", tool_input: { command: "x" }, session_id: "cp-s-10", error: "failure text" }
-const co10 = copilotAdapter.mapInbound("postToolUseFailure" as "pre" | "post" | "session-event", cpPostFail)
-check("copilot postToolUseFailure → phase 'post', output = error text", co10?.phase === "post" && co10?.output === "failure text")
+// --- copilot: mapInbound post PascalCase with error field ---
+const cpPostPascalErr = { tool_name: "Bash", tool_input: { command: "x" }, session_id: "cp-s-10", tool_response: "resp", error: "failure text" }
+const co10 = copilotAdapter.mapInbound("post", cpPostPascalErr)
+check("copilot post PascalCase appends error to output", co10?.output === "resp\nfailure text")
 
 // --- copilot: unrecognized → null ---
 const cpUnknown = { randomField: true }
@@ -387,5 +387,34 @@ check("crush session-event → allowDecision (degraded no-op)", crdse.exitCode =
 
 // --- crush: non-object inbound → null ---
 check("crush non-object payload → null", crushAdapter.mapInbound("pre", 42) === null)
+
+// --- makeOutbound: optional allow override in the dialect ---
+const customAllow = (): OutboundDecision => ({ json: { custom: "allow" }, exitCode: 0, stderr: null })
+const customDialect = makeOutbound({
+  deny: (reason) => ({ json: { denied: reason }, exitCode: 2, stderr: reason }),
+  annotate: null,
+  allow: customAllow,
+})
+const preAllow = customDialect("pre", { action: "allow", reason: null, annotation: null, degraded: false })
+check("makeOutbound allow override: pre-allow uses custom allow", (preAllow.json as Record<string, unknown>)?.custom === "allow")
+check("makeOutbound allow override: pre-allow exitCode 0", preAllow.exitCode === 0)
+
+const postNoAnnot = customDialect("post", { action: "allow", reason: null, annotation: null, degraded: false })
+check("makeOutbound allow override: post-no-annotation uses custom allow", (postNoAnnot.json as Record<string, unknown>)?.custom === "allow")
+
+const annotatedDialect = makeOutbound({
+  deny: (reason) => ({ json: { denied: reason }, exitCode: 2, stderr: reason }),
+  annotate: (ann) => ({ json: { note: ann }, exitCode: 0, stderr: null }),
+  allow: customAllow,
+})
+const postAnnot = annotatedDialect("post", { action: "deny", reason: "block", annotation: "remember this", degraded: false })
+check("makeOutbound allow override: post-annotation still uses annotate path", (postAnnot.json as Record<string, unknown>)?.note === "remember this")
+
+const defaultDialect = makeOutbound({ deny: (reason) => ({ json: { denied: reason }, exitCode: 2, stderr: reason }), annotate: null })
+const defaultPreAllow = defaultDialect("pre", { action: "allow", reason: null, annotation: null, degraded: false })
+check("makeOutbound no override: pre-allow uses allowDecision", Object.keys(defaultPreAllow.json as object).length === 0 && defaultPreAllow.exitCode === 0)
+
+const defaultPostNoAnnot = defaultDialect("post", { action: "allow", reason: null, annotation: null, degraded: false })
+check("makeOutbound no override: post-no-annotation uses allowDecision", Object.keys(defaultPostNoAnnot.json as object).length === 0 && defaultPostNoAnnot.exitCode === 0)
 
 report()

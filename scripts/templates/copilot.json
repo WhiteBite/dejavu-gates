@@ -6,6 +6,9 @@
     ],
     "postToolUse": [
       { "type": "command", "command": "{{CLI}} post --harness copilot", "timeoutSec": 30 }
+    ],
+    "postToolUseFailure": [
+      { "type": "command", "command": "{{CLI}} post --harness copilot", "timeoutSec": 30 }
     ]
   }
 }

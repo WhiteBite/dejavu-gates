@@ -5,6 +5,16 @@ import { mkdir, mkdtemp, readFile, writeFile } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { fileURLToPath } from "node:url"
+import { targetPath } from "../src/install"
+import {
+  collectCommandsRoot,
+  HARNESSES,
+  mergeConfig,
+  mergeConfigRoot,
+  stripDejavu,
+  type Harness,
+  type Json,
+} from "../src/install-config"
 import { makeChecker } from "./helpers"
 
 const repoRoot = fileURLToPath(new URL("..", import.meta.url))
@@ -148,5 +158,60 @@ await writeFile(join(f.cwd, ".claude", "settings.json"), "{ not json", "utf8")
 const chk10 = run(["hooks", "--check"], f.cwd, f.home)
 check("hooks --check with an unparseable config exits 1", chk10.code === 1)
 check("hooks --check reports broken", chk10.stderr.includes("claude: broken"))
+
+// --- S11: install --harness copilot --project --dry-run includes postToolUseFailure ---
+const g = await world("g")
+const inst11 = run(["install", "--harness", "copilot", "--project", "--dry-run"], g.cwd, g.home)
+check("install copilot --dry-run exits 0", inst11.code === 0)
+check("install copilot --dry-run stdout contains postToolUseFailure", inst11.stdout.includes("postToolUseFailure"))
+
+// --- rootHooks normalizers: config root IS the event map (no "hooks" wrapper) ---
+const rootEventEntries: unknown[] = [
+  { matcher: "Bash", hooks: [{ type: "command", command: 'bun "x/src/cli.ts" --harness devin' }] },
+  { matcher: "Read", hooks: [{ type: "command", command: "echo foreign" }] },
+]
+const strippedRoot = stripDejavu(rootEventEntries, "devin")
+check("stripDejavu removes dejavu commands from root event array", strippedRoot.length === 1)
+check("stripDejavu keeps the foreign entry", JSON.stringify(strippedRoot[0]).includes("echo foreign"))
+
+const existingRoot: Json = { PreToolUse: [{ matcher: "Bash", hooks: [{ type: "command", command: "echo foreign" }] }], customField: true }
+const templateRoot: Json = {
+  hooks: {
+    PreToolUse: [{ matcher: "Bash", hooks: [{ type: "command", command: 'bun "cli.ts" --harness devin' }] }],
+    PostToolUse: [{ matcher: "Bash", hooks: [{ type: "command", command: 'bun "cli.ts" post --harness devin' }] }],
+  },
+}
+const mergedRoot = mergeConfigRoot(existingRoot, templateRoot, "devin")
+check("mergeConfigRoot preserves foreign events at root level", Array.isArray((mergedRoot as Json).PreToolUse))
+check("mergeConfigRoot foreign entry survives", JSON.stringify(mergedRoot).includes("echo foreign"))
+check("mergeConfigRoot dejavu entry added", JSON.stringify(mergedRoot).includes("--harness devin"))
+check("mergeConfigRoot customField preserved", (mergedRoot as Json).customField === true)
+check("mergeConfigRoot new event key added", Array.isArray((mergedRoot as Json).PostToolUse))
+
+const rootConfig: Json = {
+  PreToolUse: [
+    { matcher: "Bash", hooks: [{ type: "command", command: 'bun "cli.ts" pre --harness devin' }] },
+    { matcher: "Read", hooks: [{ type: "command", command: "echo other" }] },
+  ],
+}
+const rootCmds = collectCommandsRoot(rootConfig, (c) => typeof c === "string" && c.includes("--harness devin"))
+check("collectCommandsRoot finds dejavu commands in root event arrays", rootCmds.length === 1)
+check("collectCommandsRoot returns the correct command", rootCmds.at(0)?.includes("--harness devin") === true)
+
+check("stripDejavu on non-array returns []", JSON.stringify(stripDejavu("not-array", "devin")) === "[]")
+check("stripDejavu on null returns []", JSON.stringify(stripDejavu(null, "devin")) === "[]")
+
+const standardExisting: Json = { hooks: { PreToolUse: [{ matcher: "Bash", hooks: [{ type: "command", command: "echo foreign" }] }] } }
+const standardTemplate: Json = { hooks: { PreToolUse: [{ matcher: "Bash", hooks: [{ type: "command", command: 'bun "cli.ts" --harness claude' }] }] } }
+const stdMerged = mergeConfig(standardExisting, standardTemplate, "claude")
+check("mergeConfig standard: hooks key present", typeof (stdMerged as Json).hooks === "object")
+check("mergeConfig standard: foreign hook preserved", JSON.stringify(stdMerged).includes("echo foreign"))
+check("mergeConfig standard: dejavu hook added", JSON.stringify(stdMerged).includes("--harness claude"))
+
+// --- optional user scope: existing harnesses keep their user paths ---
+for (const [name, spec] of Object.entries(HARNESSES)) {
+  check(`existing harness ${name as Harness} has a user path`, typeof spec.user === "string" && spec.user !== "")
+}
+check("targetPath for claude user-scope resolves", typeof targetPath("claude", true) === "string")
 
 report()

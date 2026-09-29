@@ -133,6 +133,12 @@ export const copilotAdapter: HarnessAdapter = {
       }
 
       if (phase === "post") {
+        let output = extractOutput(r.tool_response)
+        // Append error string when present (failure event)
+        const errorText = str(r, "error")
+        if (errorText !== null) {
+          output = output ? `${output}\n${errorText}` : errorText
+        }
         return {
           harness: "copilot",
           phase,
@@ -141,24 +147,7 @@ export const copilotAdapter: HarnessAdapter = {
           sessionId,
           callId: null,
           cwd,
-          output: extractOutput(r.tool_response),
-          exitCode: null,
-          channel: "text",
-          raw,
-        }
-      }
-
-      if (phase === "postToolUseFailure") {
-        const errorText = str(r, "error")
-        return {
-          harness: "copilot",
-          phase: "post",
-          tool: toolMapped,
-          args: internalArgs(toolMapped, rec(r, "tool_input") ?? {}),
-          sessionId,
-          callId: null,
-          cwd,
-          output: errorText,
+          output,
           exitCode: null,
           channel: "text",
           raw,
