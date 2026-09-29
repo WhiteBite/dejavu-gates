@@ -4,6 +4,10 @@ description: dejavu status report — pathologies first, then active gates, recu
 
 First run the pathology report (it surfaces every known defect class in one pass):
 
+    dejavu report
+
+The `dejavu` / `dejavu-gates` bin ships with the npm package; inside a Claude Code or Cursor plugin session the package `bin/` is on PATH, and OpenCode users who installed from a clone can run the script directly instead:
+
     bun ~/.config/opencode/vendor/dejavu/scripts/doctor.ts
 
 No arguments needed: doctor discovers every project store from the global index.

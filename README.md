@@ -137,7 +137,7 @@ export { Dejavu } from "../vendor/dejavu/index.ts"
 ```
 
 Companion skill (agent behavior protocol): copy `skills/dejavu/` to `~/.config/opencode/skills/dejavu/`.
-Status command: copy `command/dejavu.md` to `~/.config/opencode/command/dejavu.md`.
+Status command: copy `commands/dejavu.md` to `~/.config/opencode/command/dejavu.md` (Claude Code, Cursor, and Gemini CLI pick the same command up from the plugin bundle automatically: `commands/dejavu.md` for the first two, `commands/dejavu.toml` for Gemini).
 
 Restart OpenCode. Gates appear automatically as failures recur — nothing to configure.
 

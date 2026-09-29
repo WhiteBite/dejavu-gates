@@ -2,6 +2,6 @@
   "name": "dejavu-gates",
   "displayName": "dejavu error gates",
   "description": "Cross-session error gates for AI coding agents: recurring tool-call failures are promoted into enforced remind-first, block-on-repeat gates across OpenCode, Claude Code, Codex CLI, Gemini CLI, Cursor, Copilot CLI, and Crush.",
-  "version": "2.42.0",
+  "version": "2.42.1",
   "hooks": "./hooks/cursor.json"
 }

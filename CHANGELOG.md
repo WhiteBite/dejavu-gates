@@ -1,5 +1,11 @@
 # Changelog
 
+## 2.42.1 - 2026-09-29
+
+### Changed
+- **The `/dejavu` status command now ships inside the plugin bundle.** The source moved from `command/` to `commands/`: Claude Code and Cursor plugins auto-discover `commands/dejavu.md`, Gemini extensions auto-discover `commands/dejavu.toml`, so installed users get the report command without copying anything; the OpenCode manual-copy instruction points at the new path. The command itself prefers the `dejavu report` bin added in 2.42.0.
+- Claude marketplace manifest gained a description (`claude plugin validate` warning); live-verified loading: `claude plugin validate` passes and `gemini extensions install` discovers the bundled `dejavu` skill from `skills/`.
+
 ## 2.42.0 - 2026-09-29
 
 ### Added

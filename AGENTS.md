@@ -31,7 +31,7 @@ dejavu-gates/
 │   └── cli.ts          # hook-handler CLI: stdin JSON → engine → stdout decision JSON, exit 0/2/1, fail-open
 ├── test/               # smoke (plugin), enforce (engine), adapters, cli (e2e spawn), language-gaps, property, fuzz — plain bun scripts
 ├── scripts/            # doctor.ts, analyze.ts, migrate.ts, install-hooks.ts (+ templates/*.json per harness)
-├── command/dejavu.md   # /dejavu slash-command definition (install → ~/.config/opencode/command/)
+├── commands/           # /dejavu slash-command: dejavu.md (OpenCode copy-in + Claude/Cursor plugin discovery) + dejavu.toml (Gemini extension discovery)
 ├── skills/dejavu/      # Companion agent-protocol skill (install → ~/.config/opencode/skills/)
 └── .omo/, .codegraph/  # Tooling artifacts — not project code
 ```

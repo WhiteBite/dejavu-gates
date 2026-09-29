@@ -1,0 +1,5 @@
+description = "dejavu gate health report: pathologies first, then active gates, recurrence metrics, review flags"
+prompt = """Run the dejavu gate health report for this workspace.
+In the shell, run `dejavu report` (the dejavu-gates npm bin). If that command is missing, run `npx -y dejavu-gates report`.
+Add `--repair` only if the user explicitly asks to heal the stores.
+Summarize: issue count per defect class, then active gates with their status (blocking/reminding/watching), the recurred-after-gate metric, and any review flags."""
