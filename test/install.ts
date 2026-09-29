@@ -289,4 +289,35 @@ for (const [name, spec] of Object.entries(HARNESSES)) {
 }
 check("targetPath for claude user-scope resolves", typeof targetPath("claude", true) === "string")
 
+// --- S18: report subcommand passes doctor's output and exit code through ---
+const h18 = await world("h18")
+const seed18 = (session: string): string =>
+  JSON.stringify({
+    hook_event_name: "PostToolUse",
+    session_id: session,
+    tool_name: "Bash",
+    tool_input: { command: "boom-tool --prod" },
+    tool_use_id: `tu-${session}`,
+    cwd: h18.cwd,
+    tool_response: { stdout: "", stderr: "boom-tool: command not found" },
+  })
+run(["post", "--harness", "claude", "--store", h18.cwd], h18.cwd, h18.home, seed18("sA"))
+run(["post", "--harness", "claude", "--store", h18.cwd], h18.cwd, h18.home, seed18("sA"))
+run(["post", "--harness", "claude", "--store", h18.cwd], h18.cwd, h18.home, seed18("sB"))
+check("seeding created the project gate store", existsSync(join(h18.cwd, ".opencode", "dejavu", "gates.json")))
+
+const viaReport = run(["report", h18.cwd], h18.cwd, h18.home)
+const doctorDirect = spawnSync("bun", [join(repoRoot, "scripts", "doctor.ts"), h18.cwd], {
+  cwd: h18.cwd,
+  env: { ...process.env, USERPROFILE: h18.home, HOME: h18.home },
+  encoding: "utf8",
+})
+const directGatesLine = (doctorDirect.stdout ?? "").split("\n").find((l) => l.includes("gates:"))
+check("report exits with doctor's exit code", viaReport.code === (doctorDirect.status ?? -1))
+check("report stdout carries doctor's gates summary line", directGatesLine !== undefined && viaReport.stdout.includes(directGatesLine))
+
+const reportAll = run(["report"], h18.cwd, h18.home)
+check("report with no dirs exits 0 or 1", reportAll.code === 0 || reportAll.code === 1)
+check("report with no dirs leaves stderr free of stack traces", !reportAll.stderr.includes("TypeError"))
+
 report()
