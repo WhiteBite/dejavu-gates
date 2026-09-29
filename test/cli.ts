@@ -8,6 +8,8 @@ import { mkdtemp, readFile } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { fileURLToPath } from "node:url"
+import { formatStdout } from "../src/cli"
+import type { OutboundDecision } from "../src/types"
 import { makeChecker } from "./helpers"
 
 const repoRoot = fileURLToPath(new URL("..", import.meta.url))
@@ -166,5 +168,27 @@ check("malformed stdin → exit 0 + {} (fail-open)", malformed.exitCode === 0 &&
 // --- usage error: missing --harness → exit 1 (distinct from allow/block) ---
 const noHarness = spawnSync("bun", [cliPath, "pre"], { input: "{}", env: { ...process.env, DEJAVU_HOME: block.globalDir }, cwd: repoRoot, encoding: "utf8" })
 check("missing --harness → exit 1 + usage on stderr", (noHarness.status ?? 0) === 1 && (noHarness.stderr ?? "").includes("usage"))
+
+// --- formatStdout: stdoutRaw replaces the decision JSON verbatim ---
+const defaultDecision: OutboundDecision = { json: {}, exitCode: 0, stderr: null }
+check("formatStdout default (no stdoutRaw) → \"{}\\n\"", formatStdout(defaultDecision) === "{}\n")
+
+const denyDecision: OutboundDecision = { json: { permission: "deny" }, exitCode: 2, stderr: "blocked" }
+check("formatStdout deny → JSON with trailing newline", formatStdout(denyDecision) === '{"permission":"deny"}\n')
+
+const rawEmpty: OutboundDecision = { json: {}, exitCode: 0, stderr: null, stdoutRaw: "" }
+check("formatStdout stdoutRaw=\"\" falls through to JSON path", formatStdout(rawEmpty) === "{}\n")
+
+const rawNull: OutboundDecision = { json: {}, exitCode: 0, stderr: null, stdoutRaw: null }
+check("formatStdout stdoutRaw=null falls through to JSON path", formatStdout(rawNull) === "{}\n")
+
+const rawValue: OutboundDecision = { json: {}, exitCode: 0, stderr: null, stdoutRaw: "CUSTOM_DECISION_PAYLOAD" }
+check("formatStdout stdoutRaw set → verbatim raw", formatStdout(rawValue) === "CUSTOM_DECISION_PAYLOAD")
+
+const rawWithNewline: OutboundDecision = { json: {}, exitCode: 0, stderr: null, stdoutRaw: "payload\n" }
+check("formatStdout stdoutRaw carries its own trailing newline verbatim", formatStdout(rawWithNewline) === "payload\n")
+
+const rawDeny: OutboundDecision = { json: {}, exitCode: 2, stderr: "denied", stdoutRaw: "RAW_DENY" }
+check("formatStdout stdoutRaw + deny → raw payload (exitCode/stderr unchanged)", formatStdout(rawDeny) === "RAW_DENY")
 
 report()
