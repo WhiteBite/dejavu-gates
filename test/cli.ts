@@ -132,13 +132,17 @@ function prePayload(harness: string, session: string, storeDir: string): unknown
       return { sessionId: session, toolName: "bash", toolArgs: JSON.stringify({ command: dCmd }), cwd: storeDir }
     case "crush":
       return { event: "PreToolUse", session_id: session, tool_name: "bash", tool_input: { command: dCmd }, cwd: storeDir }
+    case "devin":
+      return { hook_event_name: "PreToolUse", session_id: session, tool_name: "exec", tool_input: { command: dCmd }, cwd: storeDir }
+    case "kiro":
+      return { hook_event_name: "preToolUse", session_id: session, tool_name: "shell", tool_input: { command: dCmd }, cwd: storeDir }
     default:
       return {}
   }
 }
 
 // exit-2 dialect harnesses (block via stderr)
-for (const h of ["claude", "codex", "gemini"] as const) {
+for (const h of ["claude", "codex", "gemini", "devin", "kiro"] as const) {
   const w = await seedBlocking(`dialect-${h}`)
   const r = runCli("pre", h, prePayload(h, `fresh-${h}`, w.storeDir), w.storeDir, w.globalDir)
   check(`${h} pre deny → exit 2 + [dejavu] on stderr`, r.exitCode === 2 && r.stderr.includes("[dejavu]"))
@@ -160,6 +164,40 @@ check("crush pre deny → exit 0 + decision:deny JSON", crushDeny.exitCode === 0
 // --- crush degraded: post is a structural no-op ---
 const crushPost = runCli("post", "crush", { event: "PostToolUse", session_id: "s", tool_name: "bash", tool_input: { command: dCmd } }, crushW.storeDir, crushW.globalDir)
 check("crush post → exit 0 + {} (degraded, no post channel)", crushPost.exitCode === 0 && crushPost.stdout.trim() === "{}")
+
+// --- devin post annotate rides hookSpecificOutput.additionalContext (claude dialect) ---
+async function seedReminding(name: string): Promise<World> {
+  const w = await makeWorld(name)
+  claudePost("sA", diagCmd, diagOut, w)
+  claudePost("sA", diagCmd, diagOut, w)
+  claudePost("sB", diagCmd, diagOut, w)
+  return w
+}
+
+const devinRemind = await seedReminding("dialect-devin-post")
+const devinPost = runCli(
+  "post",
+  "devin",
+  { hook_event_name: "PostToolUse", session_id: "fresh-devin", tool_name: "exec", tool_input: { command: diagCmd }, cwd: devinRemind.storeDir, tool_response: { stdout: "", stderr: diagOut } },
+  devinRemind.storeDir,
+  devinRemind.globalDir,
+)
+check("devin post on a reminding gate → exit 0", devinPost.exitCode === 0)
+const devinPostJson = JSON.parse(devinPost.stdout) as { hookSpecificOutput?: { hookEventName?: string; additionalContext?: string } }
+check("devin post annotation → hookSpecificOutput.additionalContext carries the [dejavu] NOTE", (devinPostJson.hookSpecificOutput?.additionalContext ?? "").includes("[dejavu]"))
+check("devin post annotation → hookEventName PostToolUse", devinPostJson.hookSpecificOutput?.hookEventName === "PostToolUse")
+
+// --- kiro post annotate rides raw stdout (Kiro injects hook stdout into agent context) ---
+const kiroRemind = await seedReminding("dialect-kiro-post")
+const kiroPost = runCli(
+  "post",
+  "kiro",
+  { hook_event_name: "postToolUse", session_id: "fresh-kiro", tool_name: "shell", tool_input: { command: diagCmd }, cwd: kiroRemind.storeDir, tool_response: { stdout: "", stderr: diagOut } },
+  kiroRemind.storeDir,
+  kiroRemind.globalDir,
+)
+check("kiro post on a reminding gate → exit 0", kiroPost.exitCode === 0)
+check("kiro post annotation → stdout carries the raw [dejavu] NOTE (not JSON)", kiroPost.stdout.includes("[dejavu]") && !kiroPost.stdout.trimStart().startsWith("{"))
 
 // --- fail-open: malformed stdin never blocks the user's tool call ---
 const malformed = runCli("pre", "claude", "{not valid json", block.storeDir, block.globalDir)

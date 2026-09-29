@@ -1,0 +1,20 @@
+{
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "exec|read|write|edit|apply_patch|grep|glob",
+        "hooks": [
+          { "type": "command", "command": "{{CLI}} pre --harness devin", "timeout": 30 }
+        ]
+      }
+    ],
+    "PostToolUse": [
+      {
+        "matcher": "exec|read|write|edit|apply_patch|grep|glob",
+        "hooks": [
+          { "type": "command", "command": "{{CLI}} post --harness devin", "timeout": 30 }
+        ]
+      }
+    ]
+  }
+}

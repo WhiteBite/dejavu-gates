@@ -1,5 +1,5 @@
 /**
- * Characterization suite for the 6 harness adapters.
+ * Characterization suite for the 8 harness adapters.
  * Run: bun test/adapters.ts
  */
 import { claudeAdapter } from "../src/adapters/claude"
@@ -8,6 +8,8 @@ import { geminiAdapter } from "../src/adapters/gemini"
 import { cursorAdapter } from "../src/adapters/cursor"
 import { copilotAdapter } from "../src/adapters/copilot"
 import { crushAdapter } from "../src/adapters/crush"
+import { devinAdapter } from "../src/adapters/devin"
+import { kiroAdapter } from "../src/adapters/kiro"
 import type { NormalizedEvent, Verdict, OutboundDecision } from "../src/types"
 import { UNKNOWN_SESSION, makeOutbound } from "../src/adapters/shared"
 import { makeChecker } from "./helpers"
@@ -387,6 +389,111 @@ check("crush session-event → allowDecision (degraded no-op)", crdse.exitCode =
 
 // --- crush: non-object inbound → null ---
 check("crush non-object payload → null", crushAdapter.mapInbound("pre", 42) === null)
+
+// --- devin: mapInbound pre ---
+const dvPre = { hook_event_name: "PreToolUse", tool_name: "exec", tool_input: { command: "ls -la" }, session_id: "dv-1", prompt_id: "p-1", cwd: "/d" }
+const dv1 = devinAdapter.mapInbound("pre", dvPre)
+check("devin pre exec → tool 'bash' (alias)", dv1?.tool === "bash")
+check("devin pre → args.command", (dv1?.args as Record<string, unknown>)?.command === "ls -la")
+check("devin pre → sessionId", dv1?.sessionId === "dv-1")
+check("devin pre → callId null", dv1?.callId === null)
+check("devin pre → harness devin, channel text", dv1?.harness === "devin" && dv1?.channel === "text")
+
+const dvPatch = devinAdapter.mapInbound("pre", { hook_event_name: "PreToolUse", tool_name: "apply_patch", tool_input: { file_path: "a.ts" }, session_id: "dv-2" })
+check("devin pre apply_patch → tool 'edit' (alias)", dvPatch?.tool === "edit")
+
+const dvRead = devinAdapter.mapInbound("pre", { hook_event_name: "PreToolUse", tool_name: "read", tool_input: { file_path: "r.ts" }, session_id: "dv-3" })
+check("devin pre read → native read + args.filePath", dvRead?.tool === "read" && (dvRead?.args as Record<string, unknown>)?.filePath === "r.ts")
+
+const dvFallback = devinAdapter.mapInbound("pre", { tool_name: "exec", tool_input: { command: "x" }, session_id: "dv-4" })
+check("devin pre recognized via tool_name+tool_input+session_id (no hook_event_name)", dvFallback?.tool === "bash")
+
+check("devin tool_name alone → null", devinAdapter.mapInbound("pre", { tool_name: "exec" }) === null)
+check("devin unrecognized shape → null", devinAdapter.mapInbound("pre", { random: true }) === null)
+check("devin non-object payload → null", devinAdapter.mapInbound("pre", 42) === null)
+check("devin session-event → null", devinAdapter.mapInbound("session-event", dvPre) === null)
+
+// --- devin: mapInbound post ---
+const dvPostStr = devinAdapter.mapInbound("post", { hook_event_name: "PostToolUse", tool_name: "exec", tool_input: { command: "x" }, session_id: "dv-5", tool_response: "out text" })
+check("devin post tool_response string → output", dvPostStr?.output === "out text")
+
+const dvPostObj = devinAdapter.mapInbound("post", { hook_event_name: "PostToolUse", tool_name: "exec", tool_input: { command: "x" }, session_id: "dv-6", tool_response: { stdout: "so", stderr: "se" } })
+check("devin post tool_response {stdout,stderr} → joined", dvPostObj?.output === "so\nse")
+
+const dvPostErr = devinAdapter.mapInbound("post", { hook_event_name: "PostToolUse", tool_name: "exec", tool_input: { command: "x" }, session_id: "dv-7", tool_response: "resp", error: "boom" })
+check("devin post appends error after response text", dvPostErr?.output === "resp\nboom")
+
+// --- devin: mapOutbound (claude wire dialect) ---
+const dvAllow = devinAdapter.mapOutbound("pre", { action: "allow", reason: null, annotation: null, degraded: false })
+check("devin allow → json {} exit 0", dvAllow.exitCode === 0 && Object.keys(dvAllow.json as object).length === 0)
+
+const dvDeny = devinAdapter.mapOutbound("pre", { action: "deny", reason: "[dejavu] BLOCKED", annotation: null, degraded: false })
+check("devin deny → exit 2 + stderr reason + json {}", dvDeny.exitCode === 2 && dvDeny.stderr === "[dejavu] BLOCKED" && Object.keys(dvDeny.json as object).length === 0)
+
+const dvAnnote = devinAdapter.mapOutbound("post", { action: "allow", reason: null, annotation: "[dejavu] NOTE: x", degraded: false })
+const dvHso = (dvAnnote.json as Record<string, unknown>).hookSpecificOutput as Record<string, unknown>
+check("devin post annotate → hookSpecificOutput.additionalContext exit 0", dvAnnote.exitCode === 0 && dvHso.additionalContext === "[dejavu] NOTE: x")
+check("devin post annotate → hookEventName PostToolUse", dvHso.hookEventName === "PostToolUse")
+
+const dvTrunc = devinAdapter.mapOutbound("post", { action: "allow", reason: null, annotation: "z".repeat(11000), degraded: false })
+check("devin post annotation truncated to 10000", (((dvTrunc.json as Record<string, unknown>).hookSpecificOutput as Record<string, unknown>).additionalContext as string).length === 10000)
+
+const dvPostDeny = devinAdapter.mapOutbound("post", { action: "deny", reason: "block", annotation: "note wins", degraded: false })
+check("devin post annotation wins over deny (post never blocks)", dvPostDeny.exitCode === 0 && ((dvPostDeny.json as Record<string, unknown>).hookSpecificOutput as Record<string, unknown>).additionalContext === "note wins")
+
+const dvPostNone = devinAdapter.mapOutbound("post", { action: "allow", reason: null, annotation: null, degraded: false })
+check("devin post no annotation → allowDecision", dvPostNone.exitCode === 0 && Object.keys(dvPostNone.json as object).length === 0)
+
+// --- kiro: mapInbound pre ---
+const krPre = { hook_event_name: "preToolUse", tool_name: "shell", tool_input: { command: "npm test" }, session_id: "kr-1", cwd: "/k" }
+const kr1 = kiroAdapter.mapInbound("pre", krPre)
+check("kiro pre shell → tool 'bash' (alias)", kr1?.tool === "bash")
+check("kiro pre → args.command", (kr1?.args as Record<string, unknown>)?.command === "npm test")
+check("kiro pre → sessionId, callId null, harness kiro", kr1?.sessionId === "kr-1" && kr1?.callId === null && kr1?.harness === "kiro")
+
+const krPascal = kiroAdapter.mapInbound("pre", { hook_event_name: "PreToolUse", tool_name: "read", tool_input: { file_path: "k.ts" }, session_id: "kr-2" })
+check("kiro pre PascalCase hook_event_name accepted, read native", krPascal?.tool === "read" && (krPascal?.args as Record<string, unknown>)?.filePath === "k.ts")
+
+const krWrite = kiroAdapter.mapInbound("pre", { tool_name: "write", tool_input: { file_path: "w.ts" }, session_id: "kr-3" })
+check("kiro recognized without hook_event_name (tool+input+session)", krWrite?.tool === "write")
+
+check("kiro unrecognized shape → null", kiroAdapter.mapInbound("pre", { nope: 1 }) === null)
+check("kiro tool_name alone → null", kiroAdapter.mapInbound("pre", { tool_name: "shell" }) === null)
+check("kiro non-object payload → null", kiroAdapter.mapInbound("pre", 42) === null)
+check("kiro session-event → null", kiroAdapter.mapInbound("session-event", krPre) === null)
+
+// --- kiro: mapInbound post ---
+const krPost = kiroAdapter.mapInbound("post", { hook_event_name: "postToolUse", tool_name: "shell", tool_input: { command: "x" }, session_id: "kr-4", tool_response: "resp text" })
+check("kiro post tool_response → output", krPost?.output === "resp text")
+
+const krPostAlt = kiroAdapter.mapInbound("post", { hook_event_name: "postToolUse", tool_name: "shell", tool_input: { command: "x" }, session_id: "kr-5", tool_output: "alt out" })
+check("kiro post tool_output fallback → output", krPostAlt?.output === "alt out")
+
+const krPostOut = kiroAdapter.mapInbound("post", { hook_event_name: "postToolUse", tool_name: "shell", tool_input: { command: "x" }, session_id: "kr-6", output: "plain output field" })
+check("kiro post output field fallback → output", krPostOut?.output === "plain output field")
+
+const krPostErr = kiroAdapter.mapInbound("post", { hook_event_name: "postToolUse", tool_name: "shell", tool_input: { command: "x" }, session_id: "kr-7", tool_response: "resp", error: "err tail" })
+check("kiro post appends error after output", krPostErr?.output === "resp\nerr tail")
+
+// --- kiro: mapOutbound (stdout IS the context channel) ---
+const krAllow = kiroAdapter.mapOutbound("pre", { action: "allow", reason: null, annotation: null, degraded: false })
+check("kiro pre allow → stdoutRaw '' exit 0 (writes nothing)", krAllow.exitCode === 0 && krAllow.stdoutRaw === "")
+
+const krDeny = kiroAdapter.mapOutbound("pre", { action: "deny", reason: "[dejavu] BLOCKED", annotation: null, degraded: false })
+check("kiro pre deny → exit 2 + stderr reason", krDeny.exitCode === 2 && krDeny.stderr === "[dejavu] BLOCKED")
+
+const krAnnote = kiroAdapter.mapOutbound("post", { action: "allow", reason: null, annotation: "[dejavu] NOTE: raw", degraded: false })
+check("kiro post annotate → stdoutRaw IS the note, exit 0, stderr null", krAnnote.stdoutRaw === "[dejavu] NOTE: raw" && krAnnote.exitCode === 0 && krAnnote.stderr === null)
+check("kiro post annotate → json stays {}", Object.keys(krAnnote.json as object).length === 0)
+
+const krTrunc = kiroAdapter.mapOutbound("post", { action: "allow", reason: null, annotation: "z".repeat(11000), degraded: false })
+check("kiro post annotation truncated to 10000", (krTrunc.stdoutRaw ?? "").length === 10000)
+
+const krPostAllow = kiroAdapter.mapOutbound("post", { action: "allow", reason: null, annotation: null, degraded: false })
+check("kiro post no annotation → stdoutRaw '' exit 0", krPostAllow.stdoutRaw === "" && krPostAllow.exitCode === 0)
+
+const krPostDeny = kiroAdapter.mapOutbound("post", { action: "deny", reason: "block", annotation: "wins", degraded: false })
+check("kiro post annotation wins over deny (post never blocks)", krPostDeny.stdoutRaw === "wins" && krPostDeny.exitCode === 0)
 
 // --- makeOutbound: optional allow override in the dialect ---
 const customAllow = (): OutboundDecision => ({ json: { custom: "allow" }, exitCode: 0, stderr: null })

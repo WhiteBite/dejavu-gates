@@ -208,9 +208,82 @@ check("mergeConfig standard: hooks key present", typeof (stdMerged as Json).hook
 check("mergeConfig standard: foreign hook preserved", JSON.stringify(stdMerged).includes("echo foreign"))
 check("mergeConfig standard: dejavu hook added", JSON.stringify(stdMerged).includes("--harness claude"))
 
-// --- optional user scope: existing harnesses keep their user paths ---
+// --- S12: devin root-hooks merge - config root IS the event map, foreign keys survive ---
+const h12 = await world("h12")
+await mkdir(join(h12.cwd, ".devin"), { recursive: true })
+const devinTarget = join(h12.cwd, ".devin", "hooks.v1.json")
+const devinForeign = { matcher: "exec", hooks: [{ type: "command", command: "echo foreign" }] }
+await writeFile(devinTarget, JSON.stringify({ SessionStart: [devinForeign], customField: true }, null, 2), "utf8")
+const inst12 = run(["install", "--harness", "devin", "--project", "--yes"], h12.cwd, h12.home)
+check("install devin exits 0", inst12.code === 0)
+check("install wrote .devin/hooks.v1.json", existsSync(devinTarget))
+const dv12 = JSON.parse(await readFile(devinTarget, "utf8")) as Record<string, unknown>
+check("devin root has PreToolUse + PostToolUse arrays", Array.isArray(dv12.PreToolUse) && Array.isArray(dv12.PostToolUse))
+check("devin config has no hooks wrapper (root event map)", dv12.hooks === undefined)
+check("devin PreToolUse carries the dejavu command", JSON.stringify(dv12.PreToolUse).includes("--harness devin"))
+check("devin PostToolUse carries the dejavu command", JSON.stringify(dv12.PostToolUse).includes("--harness devin"))
+check("devin foreign root event survives install", JSON.stringify(dv12.SessionStart).includes("echo foreign"))
+check("devin custom root field survives install", dv12.customField === true)
+const inst12b = run(["install", "--harness", "devin", "--project", "--yes"], h12.cwd, h12.home)
+check("re-install devin exits 0", inst12b.code === 0)
+const dv12b = JSON.parse(await readFile(devinTarget, "utf8")) as Record<string, unknown>
+check("devin re-install idempotent (one dejavu PreToolUse entry)", (dv12b.PreToolUse as unknown[]).length === 1)
+check("devin foreign root event survives re-install", JSON.stringify(dv12b.SessionStart).includes("echo foreign"))
+
+// --- S13: devin uninstall strips dejavu entries, keeps the foreign root event ---
+const un13 = run(["uninstall", "--harness", "devin", "--project", "--yes"], h12.cwd, h12.home)
+check("uninstall devin exits 0", un13.code === 0)
+check("devin file survives uninstall (entry semantics, not file removal)", existsSync(devinTarget))
+const dv13 = JSON.parse(await readFile(devinTarget, "utf8")) as Record<string, unknown>
+check("devin uninstall stripped the dejavu commands", !JSON.stringify(dv13).includes("--harness devin"))
+check("devin uninstall kept the foreign root event", JSON.stringify(dv13.SessionStart).includes("echo foreign"))
+check("devin uninstall dropped the emptied event arrays", dv13.PreToolUse === undefined && dv13.PostToolUse === undefined)
+
+// --- S14: kiro standalone file - v1 schema with two hook entries ---
+const h14 = await world("h14")
+const inst14 = run(["install", "--harness", "kiro", "--project", "--yes"], h14.cwd, h14.home)
+check("install kiro exits 0", inst14.code === 0)
+const kiroTarget = join(h14.cwd, ".kiro", "hooks", "dejavu-gates.json")
+check("install wrote .kiro/hooks/dejavu-gates.json", existsSync(kiroTarget))
+const kiroCfg = JSON.parse(await readFile(kiroTarget, "utf8")) as { version?: string; hooks?: Array<{ trigger?: string; action?: { command?: string } }> }
+check("kiro config version is v1", kiroCfg.version === "v1")
+check("kiro hooks array has PreToolUse + PostToolUse entries", (kiroCfg.hooks ?? []).some((h) => h.trigger === "PreToolUse") && (kiroCfg.hooks ?? []).some((h) => h.trigger === "PostToolUse"))
+check("kiro hook commands nest under action.command", JSON.stringify(kiroCfg.hooks).includes("--harness kiro"))
+
+// --- S15: kiro uninstall removes the whole dejavu-owned file, foreign neighbor survives ---
+const kiroNeighbor = join(h14.cwd, ".kiro", "hooks", "lint-on-save.json")
+await writeFile(kiroNeighbor, JSON.stringify({ version: "v1", hooks: [] }, null, 2), "utf8")
+const un15 = run(["uninstall", "--harness", "kiro", "--project", "--yes"], h14.cwd, h14.home)
+check("uninstall kiro exits 0", un15.code === 0)
+check("uninstall removed the dejavu kiro file entirely", !existsSync(kiroTarget))
+check("uninstall kept the foreign kiro hook file", existsSync(kiroNeighbor))
+
+// --- S16: hooks --check reports devin + kiro ok on an installed world ---
+const h16 = await world("h16")
+run(["install", "--harness", "devin", "--project", "--yes"], h16.cwd, h16.home)
+run(["install", "--harness", "kiro", "--project", "--yes"], h16.cwd, h16.home)
+const chk16 = run(["hooks", "--check"], h16.cwd, h16.home)
+check("hooks --check on devin+kiro world exits 0", chk16.code === 0)
+check("hooks --check reports devin ok", chk16.stderr.includes("devin: ok"))
+check("hooks --check reports kiro ok", chk16.stderr.includes("kiro: ok"))
+
+// --- S17: user scope rejected explicitly for project-only harnesses ---
+const h17 = await world("h17")
+const noUserKiro = run(["install", "--harness", "kiro", "--user", "--yes"], h17.cwd, h17.home)
+check("install kiro --user exits 1", noUserKiro.code === 1)
+check("install kiro --user prints the no-user-scope message", noUserKiro.stderr.includes("no user-scope install documented"))
+const noUserDevin = run(["install", "--harness", "devin", "--user", "--yes"], h17.cwd, h17.home)
+check("install devin --user exits 1", noUserDevin.code === 1)
+check("install devin --user prints the no-user-scope message", noUserDevin.stderr.includes("no user-scope install documented"))
+
+// --- optional user scope: harnesses with a documented user scope keep their user paths ---
+const PROJECT_ONLY: readonly Harness[] = ["devin", "kiro"]
 for (const [name, spec] of Object.entries(HARNESSES)) {
-  check(`existing harness ${name as Harness} has a user path`, typeof spec.user === "string" && spec.user !== "")
+  if (PROJECT_ONLY.includes(name as Harness)) {
+    check(`${name} has no user-scope path (project-only)`, spec.user === undefined)
+  } else {
+    check(`existing harness ${name as Harness} has a user path`, typeof spec.user === "string" && spec.user !== "")
+  }
 }
 check("targetPath for claude user-scope resolves", typeof targetPath("claude", true) === "string")
 

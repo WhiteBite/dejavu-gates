@@ -9,7 +9,7 @@ import { readFile, rename, rm, writeFile } from "node:fs/promises"
 import { homedir } from "node:os"
 import { dirname, join } from "node:path"
 
-export type Harness = "claude" | "codex" | "gemini" | "cursor" | "copilot" | "crush"
+export type Harness = "claude" | "codex" | "gemini" | "cursor" | "copilot" | "crush" | "devin" | "kiro"
 
 export type Json = Record<string, unknown>
 
@@ -19,6 +19,8 @@ export interface HarnessSpec {
   readonly user?: string
   /** false = standalone dejavu-owned file: overwrite, never merge */
   readonly merge: boolean
+  /** true = the config root IS the hook event map (no "hooks" wrapper) */
+  readonly rootHooks?: boolean
   readonly note?: string
 }
 
@@ -37,8 +39,15 @@ export const HARNESSES: Record<Harness, HarnessSpec> = {
     project: ".crush/crush.json",
     user: ".config/crush/crush.json",
     merge: true,
-    note: "crush: no AfterTool hook exists — failure observation is degraded (pre-tool only)",
+    note: "crush: no AfterTool hook exists - failure observation is degraded (pre-tool only)",
   },
+  devin: {
+    project: ".devin/hooks.v1.json",
+    merge: true,
+    rootHooks: true,
+    note: "devin: hooks also auto-import from .claude/settings.json (read_config_from.claude) - a Claude install already gates Devin sessions",
+  },
+  kiro: { project: ".kiro/hooks/dejavu-gates.json", merge: false },
 }
 
 /** import.meta.dir is a Bun extension absent from @types/node. */
@@ -55,6 +64,8 @@ const USER_MARKERS: Record<Harness, readonly string[]> = {
   cursor: [".cursor"],
   copilot: [".copilot"],
   crush: [".crush", ".config/crush"],
+  devin: [".devin"],
+  kiro: [".kiro"],
 }
 
 const PROJECT_MARKERS: Record<Harness, readonly string[]> = {
@@ -64,6 +75,8 @@ const PROJECT_MARKERS: Record<Harness, readonly string[]> = {
   cursor: [".cursor"],
   copilot: [".github"],
   crush: [".crush", "crush.json"],
+  devin: [".devin"],
+  kiro: [".kiro"],
 }
 
 /** Harnesses whose config dirs/files exist at the chosen scope — intersection of present markers with supported harnesses. */
@@ -189,8 +202,16 @@ export function collectCommands(config: Json, match: (command: unknown) => boole
     for (const entry of entries) {
       const record = asRecord(entry)
       if (match(record.command)) commands.push(record.command as string)
+      // kiro shape: the command nests under the entry's action object
+      const actionCommand = asRecord(record.action).command
+      if (match(actionCommand)) commands.push(actionCommand as string)
       if (Array.isArray(record.hooks)) walk(record.hooks)
     }
+  }
+  // kiro shape: top-level hooks is an array of hook entries, not an event map
+  if (Array.isArray(config.hooks)) {
+    walk(config.hooks)
+    return commands
   }
   for (const entries of Object.values(asRecord(config.hooks))) walk(entries)
   return commands

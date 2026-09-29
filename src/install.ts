@@ -13,6 +13,7 @@ import {
   asRecord,
   atomicWrite,
   collectCommands,
+  collectCommandsRoot,
   ConfigParseError,
   detectHarnesses,
   extractCliPath,
@@ -21,6 +22,7 @@ import {
   isDejavuHookCommand,
   loadTemplate,
   mergeConfig,
+  mergeConfigRoot,
   probeBun,
   readExisting,
   stripDejavu,
@@ -130,7 +132,11 @@ async function installOne(harness: Harness, user: boolean, dryRun: boolean): Pro
   const spec = HARNESSES[harness]
   const template = await loadTemplate(harness)
   const target = targetPath(harness, user)
-  const output = spec.merge ? mergeConfig(await readExisting(target), template, harness) : template
+  const output = spec.merge
+    ? spec.rootHooks === true
+      ? mergeConfigRoot(await readExisting(target), template, harness)
+      : mergeConfig(await readExisting(target), template, harness)
+    : template
   const bytes = `${JSON.stringify(output, null, 2)}\n`
   if (dryRun) {
     process.stdout.write(bytes)
@@ -163,22 +169,37 @@ async function uninstallOne(harness: Harness, user: boolean, dryRun: boolean): P
     return
   }
   const existing = await readExisting(target)
-  const before = collectCommands(existing, (c) => isDejavuCommand(c, harness)).length
+  const collectHere = spec.rootHooks === true ? collectCommandsRoot : collectCommands
+  const before = collectHere(existing, (c) => isDejavuCommand(c, harness)).length
   if (before === 0) {
     process.stderr.write(`${harness}: no dejavu entries in ${target}\n`)
     return
   }
-  const cleanedHooks: Json = {}
-  for (const [event, entries] of Object.entries(asRecord(existing.hooks))) {
-    if (!Array.isArray(entries)) {
-      cleanedHooks[event] = entries
-      continue
+  let output: Json
+  if (spec.rootHooks === true) {
+    const cleanedRoot: Json = {}
+    for (const [event, entries] of Object.entries(existing)) {
+      if (!Array.isArray(entries)) {
+        cleanedRoot[event] = entries
+        continue
+      }
+      const kept = stripDejavu(entries, harness)
+      if (kept.length > 0) cleanedRoot[event] = kept
     }
-    const kept = stripDejavu(entries, harness)
-    if (kept.length > 0) cleanedHooks[event] = kept
+    output = cleanedRoot
+  } else {
+    const cleanedHooks: Json = {}
+    for (const [event, entries] of Object.entries(asRecord(existing.hooks))) {
+      if (!Array.isArray(entries)) {
+        cleanedHooks[event] = entries
+        continue
+      }
+      const kept = stripDejavu(entries, harness)
+      if (kept.length > 0) cleanedHooks[event] = kept
+    }
+    output = { ...existing, hooks: cleanedHooks }
   }
-  const output: Json = { ...existing, hooks: cleanedHooks }
-  const removed = before - collectCommands(output, (c) => isDejavuCommand(c, harness)).length
+  const removed = before - collectHere(output, (c) => isDejavuCommand(c, harness)).length
   const noun = removed === 1 ? "entry" : "entries"
   if (dryRun) {
     process.stdout.write(`${JSON.stringify(output, null, 2)}\n`)
@@ -201,7 +222,7 @@ async function checkOne(harness: Harness, user: boolean): Promise<{ status: Chec
     if (error instanceof ConfigParseError) return { status: "broken", line: `${harness}: broken — ${target} is not valid JSON` }
     throw error
   }
-  const commands = collectCommands(config, (c) => isDejavuHookCommand(c, harness))
+  const commands = (HARNESSES[harness].rootHooks === true ? collectCommandsRoot : collectCommands)(config, (c) => isDejavuHookCommand(c, harness))
   if (commands.length === 0) return { status: "missing", line: `${harness}: missing — no dejavu hooks in ${target}` }
   const gone = commands.map(extractCliPath).find((p) => p === null || !existsSync(p))
   if (gone !== undefined) return { status: "stale", line: `${harness}: stale — hook cli not on disk: ${gone ?? "(unparseable command)"} (${target})` }

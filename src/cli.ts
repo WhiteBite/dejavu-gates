@@ -16,7 +16,9 @@ import { codexAdapter } from "./adapters/codex"
 import { copilotAdapter } from "./adapters/copilot"
 import { crushAdapter } from "./adapters/crush"
 import { cursorAdapter } from "./adapters/cursor"
+import { devinAdapter } from "./adapters/devin"
 import { geminiAdapter } from "./adapters/gemini"
+import { kiroAdapter } from "./adapters/kiro"
 import { allowDecision, str } from "./adapters/shared"
 import {
   cleanupSession,
@@ -54,9 +56,11 @@ const ADAPTERS: Record<CliHarness, HarnessAdapter> = {
   cursor: cursorAdapter,
   copilot: copilotAdapter,
   crush: crushAdapter,
+  devin: devinAdapter,
+  kiro: kiroAdapter,
 }
 
-const USAGE = "usage: dejavu <pre|post|session-event> --harness <claude|codex|gemini|cursor|copilot|crush> [--store <dir>]"
+const USAGE = "usage: dejavu <pre|post|session-event> --harness <claude|codex|gemini|cursor|copilot|crush|devin|kiro> [--store <dir>]"
 
 interface CliArgs {
   phase: HookPhase

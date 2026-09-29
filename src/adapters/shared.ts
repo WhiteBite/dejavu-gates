@@ -21,6 +21,8 @@ const TOOL_ALIASES: Record<HarnessName, Record<string, string>> = {
   cursor: {},
   copilot: { powershell: "bash", view: "read" },
   crush: { multiedit: "edit" },
+  devin: { exec: "bash", apply_patch: "edit" },
+  kiro: { shell: "bash" },
 }
 
 /** Map a harness tool name to the internal vocabulary ("bash"/"read"/"edit"/"write"/"glob"/"grep"). */
@@ -75,6 +77,23 @@ export function num(obj: unknown, key: string): number | null {
 
 /** session id fallback — the engine keys session state on this string */
 export const UNKNOWN_SESSION = "unknown"
+
+/** Extract output text from a post-hook payload field: string, array of lines, or {stdout,stderr} object. */
+export function extractOutput(value: unknown): string | null {
+  if (typeof value === "string") return value === "" ? null : value
+  if (Array.isArray(value)) return value.map(String).join("\n") || null
+  if (typeof value === "object" && value !== null) {
+    const obj = value as Record<string, unknown>
+    const parts: string[] = []
+    const stdout = str(obj, "stdout")
+    const stderr = str(obj, "stderr")
+    if (stdout !== null) parts.push(stdout)
+    if (stderr !== null) parts.push(stderr)
+    if (parts.length > 0) return parts.join("\n")
+    return JSON.stringify(value)
+  }
+  return null
+}
 
 /** Universal allow: empty JSON on stdout, exit 0. */
 export function allowDecision(): OutboundDecision {
