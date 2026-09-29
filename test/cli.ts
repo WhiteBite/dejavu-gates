@@ -203,6 +203,9 @@ check("kiro post annotation → stdout carries the raw [dejavu] NOTE (not JSON)"
 const malformed = runCli("pre", "claude", "{not valid json", block.storeDir, block.globalDir)
 check("malformed stdin → exit 0 + {} (fail-open)", malformed.exitCode === 0 && malformed.stdout.trim() === "{}")
 
+const malformedKiro = runCli("pre", "kiro", "{not valid json", block.storeDir, block.globalDir)
+check("malformed stdin on kiro → exit 0 + silent stdout (fail-open, nothing injected)", malformedKiro.exitCode === 0 && malformedKiro.stdout === "")
+
 // --- usage error: missing --harness → exit 1 (distinct from allow/block) ---
 const noHarness = spawnSync("bun", [cliPath, "pre"], { input: "{}", env: { ...process.env, DEJAVU_HOME: block.globalDir }, cwd: repoRoot, encoding: "utf8" })
 check("missing --harness → exit 1 + usage on stderr", (noHarness.status ?? 0) === 1 && (noHarness.stderr ?? "").includes("usage"))
@@ -215,7 +218,7 @@ const denyDecision: OutboundDecision = { json: { permission: "deny" }, exitCode:
 check("formatStdout deny → JSON with trailing newline", formatStdout(denyDecision) === '{"permission":"deny"}\n')
 
 const rawEmpty: OutboundDecision = { json: {}, exitCode: 0, stderr: null, stdoutRaw: "" }
-check("formatStdout stdoutRaw=\"\" falls through to JSON path", formatStdout(rawEmpty) === "{}\n")
+check("formatStdout stdoutRaw=\"\" → empty string (Kiro allow writes nothing)", formatStdout(rawEmpty) === "")
 
 const rawNull: OutboundDecision = { json: {}, exitCode: 0, stderr: null, stdoutRaw: null }
 check("formatStdout stdoutRaw=null falls through to JSON path", formatStdout(rawNull) === "{}\n")

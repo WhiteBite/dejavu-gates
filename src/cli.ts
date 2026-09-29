@@ -38,11 +38,9 @@ import type {
   Verdict,
 } from "./types"
 
-/** Format an OutboundDecision into the string written to harness stdout.
- * When decision.stdoutRaw is set and non-empty, emit it verbatim (no JSON.stringify, no trailing newline addition).
- * Otherwise emit JSON.stringify(decision.json) + "\n". */
+/** Format an OutboundDecision into the harness stdout string: stdoutRaw verbatim when set (empty = silent, Kiro injects hook stdout), else the decision JSON. */
 export function formatStdout(decision: OutboundDecision): string {
-  if (decision.stdoutRaw != null && decision.stdoutRaw !== "") return decision.stdoutRaw
+  if (decision.stdoutRaw != null) return decision.stdoutRaw
   return `${JSON.stringify(decision.json)}\n`
 }
 
@@ -151,7 +149,8 @@ export async function runHook(argv: string[]): Promise<number> {
   const adapter = ADAPTERS[args.harness]
   const event = adapter.mapInbound(args.phase, readHookPayload())
   if (event === null) {
-    process.stdout.write(formatStdout(allowDecision()))
+    // fail-open speaks the harness's own allow dialect (Kiro's silence included)
+    process.stdout.write(formatStdout(adapter.mapOutbound(args.phase, { action: "allow", reason: null, annotation: null, degraded: false })))
     return 0
   }
   const projectDir = args.store ?? event.cwd ?? process.cwd()
@@ -185,7 +184,7 @@ export async function runHook(argv: string[]): Promise<number> {
     decision = await dispatch(adapter, event, ctx)
   } catch (error) {
     process.stderr.write(`[dejavu] dispatch error: ${formatError(error)}\n`)
-    decision = allowDecision()
+    decision = adapter.mapOutbound(event.phase, { action: "allow", reason: null, annotation: null, degraded: false })
   }
   try {
     // deferred repair/retire events must reach the log before this process exits
