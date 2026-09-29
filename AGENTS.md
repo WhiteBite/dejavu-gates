@@ -6,7 +6,7 @@
 
 ## OVERVIEW
 
-dejavu — error gates for AI coding agents ("memory prosthesis with teeth"): mechanically detects recurring tool-call failures and promotes them into enforced gates (3 failures across 2 distinct sessions). Remind first, hard-block on same-session repeat offense. One harness-agnostic engine, two host forms: the OpenCode plugin (`index.ts`, long-lived process) and a hook-handler CLI (`src/cli.ts`, short-lived process per event) with adapters for Claude Code, Codex CLI, Gemini CLI, Cursor, Copilot CLI, Crush. TypeScript ESM, runs under Bun, ships as raw `.ts` (no build step). Repo/npm name: `dejavu-gates` (formerly `opencode-dejavu`).
+dejavu — error gates for AI coding agents ("memory prosthesis with teeth"): mechanically detects recurring tool-call failures and promotes them into enforced gates (3 failures across 2 distinct sessions). Remind first, hard-block on same-session repeat offense. One harness-agnostic engine, two host forms: the OpenCode plugin (`index.ts`, long-lived process) and a hook-handler CLI (`src/cli.ts`, short-lived process per event) with adapters for Claude Code, Codex CLI, Gemini CLI, Cursor, Copilot CLI, Crush, Devin CLI, Kiro. TypeScript ESM, runs under Bun, ships as raw `.ts` (no build step). Repo/npm name: `dejavu-gates` (formerly `opencode-dejavu`).
 
 ## STRUCTURE
 
@@ -26,7 +26,7 @@ dejavu-gates/
 │   ├── guards.ts       # proactive guards (long-running/wait-loop/spawn/orphan-job) — messages verbatim
 │   ├── repeat.ts       # repeat-series before-block (override FALLS THROUGH to gate processing)
 │   ├── messages.ts     # remindMessage/remindNote/blockMessage — the teaching texts
-│   ├── adapters/       # per-harness payload↔contract mapping: shared.ts + claude/codex/gemini/cursor/copilot/crush.ts
+│   ├── adapters/       # per-harness payload↔contract mapping: shared.ts + claude/codex/gemini/cursor/copilot/crush/devin/kiro.ts
 │   ├── opencode-v2.ts  # OpenCode V2 host glue: v2Setup registers tool/event/compaction hooks on the V2 plugin Context
 │   └── cli.ts          # hook-handler CLI: stdin JSON → engine → stdout decision JSON, exit 0/2/1, fail-open
 ├── test/               # smoke (plugin), enforce (engine), adapters, cli (e2e spawn), language-gaps, property, fuzz — plain bun scripts
@@ -173,7 +173,7 @@ bun run lint:ast             # ast-grep structural gates (.ast-grep/rules/); nee
 bun scripts/doctor.ts [projectDirs...]
 bun scripts/analyze.ts [projectDirs...]
 bun scripts/migrate.ts <projectDirs...>
-bun scripts/install-hooks.ts --harness <claude|codex|gemini|cursor|copilot|crush> [--user|--project] [--dry-run]
+bun scripts/install-hooks.ts --harness <claude|codex|gemini|cursor|copilot|crush|devin|kiro> [--user|--project] [--dry-run]
 ```
 
 ## NOTES

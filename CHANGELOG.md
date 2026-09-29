@@ -1,5 +1,17 @@
 # Changelog
 
+## 2.41.0 - 2026-09-29
+
+### Added
+- **Devin CLI harness** (Windsurf's successor): adapter + installer for `.devin/hooks.v1.json`, whose file root IS the hook event map — the installer gained a `rootHooks` merge mode that preserves foreign root events on install and strips only dejavu entries on uninstall. Deny rides exit 2 + stderr; the reminding NOTE rides `hookSpecificOutput.additionalContext`. Devin also auto-imports Claude-format hooks from `.claude/settings.json`, so existing Claude installs gate Devin sessions without any new config. Project scope only (no user-level hooks file is documented).
+- **Kiro harness** (AWS; the Amazon Q Developer migration target): adapter + installer owning `.kiro/hooks/dejavu-gates.json`. Kiro blocks on any non-zero hook exit and injects a successful hook's stdout into agent context, so the NOTE rides raw on stdout and an allow writes nothing — a new optional `stdoutRaw` on the outbound decision carries per-harness raw payloads (the decision-JSON channel of every other harness is unchanged). Project scope only.
+- **Copilot `postToolUseFailure`** wired in the installer template and the Cursor plugin hooks: the PascalCase post branch now appends the payload's `error` field like its camelCase sibling, so failure events carry their evidence (the previously dead `postToolUseFailure` phase branch and its cast-based test are gone).
+
+### Changed
+- Cursor and Copilot CLI drop their `(experimental)` markers: both hook/plugin specs are confirmed against official docs (Cursor plugins + hooks reference, Copilot hooks reference), and the shipped manifests match them.
+- Installer contract: `HarnessSpec.user` is optional — `--user` on a harness with no documented user-level path exits 1 with an explicit message instead of writing an invented path; `makeOutbound` dialects may override the allow decision.
+- The companion reaction protocol (`skills/dejavu/`) is documented as shipping inside the plugin bundle (auto-discovered by the Claude Code, Cursor, and Gemini CLI plugin formats).
+
 ## 2.40.1 - 2026-09-28
 
 ### Changed

@@ -13,12 +13,12 @@
 
 <p align="center">
   <img src="https://img.shields.io/badge/license-MIT-blue.svg" alt="MIT License">
-  <img src="https://img.shields.io/badge/harnesses-7-green.svg" alt="OpenCode, Claude Code, Codex, Gemini CLI, Cursor, Copilot CLI, Crush">
+  <img src="https://img.shields.io/badge/harnesses-9-green.svg" alt="OpenCode, Claude Code, Codex, Gemini CLI, Cursor, Copilot CLI, Crush, Devin CLI, Kiro">
   <img src="https://img.shields.io/badge/TypeScript-Bun-black.svg" alt="TypeScript + Bun">
   <img src="https://github.com/WhiteBite/dejavu-gates/actions/workflows/ci.yml/badge.svg" alt="CI">
 </p>
 
-Cross-session **memory prosthesis with teeth** for AI coding agents. Agents repeat the same mistakes because they forget between sessions — and markdown rules don't fix that. dejavu mechanically detects recurring tool-call failures (bash, read, edit, write, glob, grep) and promotes them into enforced gates: a reminder on the next attempt, a hard block on same-session repeat offense. One engine, many hosts: OpenCode (plugin), Claude Code, Codex CLI, Gemini CLI, Cursor, Copilot CLI, Crush (hook-handler CLI). TypeScript + Bun, ships as source, no build step.
+Cross-session **memory prosthesis with teeth** for AI coding agents. Agents repeat the same mistakes because they forget between sessions — and markdown rules don't fix that. dejavu mechanically detects recurring tool-call failures (bash, read, edit, write, glob, grep) and promotes them into enforced gates: a reminder on the next attempt, a hard block on same-session repeat offense. One engine, many hosts: OpenCode (plugin), Claude Code, Codex CLI, Gemini CLI, Cursor, Copilot CLI, Crush, Devin CLI, Kiro (hook-handler CLI). TypeScript + Bun, ships as source, no build step.
 
 ## Supported harnesses
 
@@ -31,8 +31,10 @@ Cross-session **memory prosthesis with teeth** for AI coding agents. Agents repe
 | **Cursor** | `install-hooks.ts` | ✅ | ✅ | shell events + CC-compatible events |
 | **Copilot CLI** | `install-hooks.ts` | ✅ | ✅ | camelCase + PascalCase payload families |
 | **Crush** | `install-hooks.ts` | ✅ | ❌ degraded | upstream has PreToolUse only — enforcement + shared store still protect; no post annotations |
+| **Devin CLI** | `install-hooks.ts` | ✅ | ✅ | `.devin/hooks.v1.json` root-event merge; Claude-format hooks also auto-import from `.claude/settings.json` |
+| **Kiro** | `install-hooks.ts` | ✅ | ✅ | `.kiro/hooks/dejavu-gates.json`; the NOTE rides raw hook stdout (Kiro's context channel); project scope only |
 | Zed, Aider | — | ❌ | ❌ | no hook API to intercept tool calls — not portable |
-| Windsurf, Amp, Kiro | — | (planned) | ❌ | block-only / fire-and-forget surfaces; deferred until context injection exists |
+| Windsurf, Amp | — | (planned) | ❌ | block-only / fire-and-forget surfaces; deferred until context injection exists |
 
 **Unified store — gates travel across harnesses.** Every host reads/writes the same store (`<repo>/.opencode/dejavu/` + `~/.config/opencode/dejavu/`, `DEJAVU_HOME` overrides). Call signatures are harness-neutral (tool names and arg fields are normalized before signing), so a gate learned in Claude Code fires in OpenCode, Cursor, or anywhere else — and vice versa.
 
@@ -86,6 +88,8 @@ The installer merges idempotently into each harness's config (foreign hooks and 
 | Cursor | IDE: `/add-plugin` → browse marketplace → dejavu-gates (or copy the repo to `~/.cursor/plugins/local/dejavu-gates`) |
 | Gemini CLI | `gemini extensions install https://github.com/WhiteBite/dejavu-gates` |
 | Crush | no plugin system — use the installer above or edit `crush.json` by hand |
+| Devin CLI | no plugin marketplace — the installer writes `.devin/hooks.v1.json`; Devin also auto-imports Claude-format hooks from `.claude/settings.json` |
+| Kiro | no plugin marketplace — the installer writes `.kiro/hooks/dejavu-gates.json` (project scope; Kiro documents no user-level hooks path) |
 
 The companion reaction protocol (`skills/dejavu/`) ships inside the plugin bundle and is auto-discovered by the Claude Code, Cursor, and Gemini CLI plugin formats.
 
@@ -144,12 +148,14 @@ bun scripts/install-hooks.ts --harness claude --user     # user scope (~/.claude
 bun scripts/install-hooks.ts --harness codex --dry-run   # preview without writing
 ```
 
-The generator merges hook entries into the harness's config (`.claude/settings.json`, `.codex/hooks.json`, `.gemini/settings.json`, `.cursor/hooks.json`, `.github/hooks/dejavu.json`, `.crush/crush.json`) pointing at `bun "<clone>/src/cli.ts" <pre|post> --harness <name>`. It is idempotent, preserves other hooks/fields, and refuses to touch an unparseable config.
+The generator merges hook entries into the harness's config (`.claude/settings.json`, `.codex/hooks.json`, `.gemini/settings.json`, `.cursor/hooks.json`, `.github/hooks/dejavu.json`, `.crush/crush.json`, `.devin/hooks.v1.json`, `.kiro/hooks/dejavu-gates.json`) pointing at `bun "<clone>/src/cli.ts" <pre|post> --harness <name>`. It is idempotent, preserves other hooks/fields, and refuses to touch an unparseable config.
 
 Harness specifics:
 
 - **Codex**: enable `[features] hooks = true` in `~/.codex/config.toml` and approve the hooks via `/hooks` once (trust prompt). Upstream fires Pre/PostToolUse for the Bash tool only.
 - **Crush**: PreToolUse only (no AfterTool upstream) — dejavu runs degraded: blocking works, reminders can't annotate; the shared store still teaches Crush from gates learned elsewhere.
+- **Devin CLI**: hooks live in `.devin/hooks.v1.json` where the file root IS the event map — the installer merges dejavu entries into it and strips them on uninstall, foreign events survive. Devin also auto-imports Claude-format hooks from `.claude/settings.json` (`read_config_from.claude`, on by default), so a Claude install already gates Devin sessions. No user-level hooks file is documented — project scope only.
+- **Kiro**: hooks are standalone files under `.kiro/hooks/`; dejavu owns `dejavu-gates.json` there. Kiro blocks on any non-zero hook exit and injects a successful hook's stdout into agent context, so the reminding NOTE rides raw on stdout and an allow writes nothing. Kiro documents no user-level hooks path — project scope only.
 - **Claude Code**: `PostToolUseFailure` is wired to the same post handler; payloads carry no exit codes, so failure detection runs on output text (the engine's text channel).
 
 Manual invocation (any harness with command hooks):
