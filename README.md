@@ -251,43 +251,30 @@ Structural gates live in `.ast-grep/rules/` (run by `bun run lint:ast` and CI): 
 
 Landscape survey (Sep 2026, ~60 OSS projects + native features checked). The space splits into two camps that never intersect: **guardrail/hook engines** intercept and block tool calls, but only evaluate human-authored static policies per call — no failure memory, nothing learned; **memory/learning plugins** persist and extract across sessions, but only inject context into the prompt — none ever blocks a tool call. dejavu is currently the only shipped project closing the loop mechanically: observe failures → count recurrence (3× across 2 sessions) → promote an enforceable gate → remind/block → heal/demote from behavior.
 
-Three axes separate every product in the space:
+The three axes that separate every product in the space:
 
-| | Memory across sessions | Mechanical hot path (no LLM) | Enforces / blocks tool calls |
+| Product | Learns rules from observed failures | Enforces / blocks tool calls | Mechanical hot path (no LLM) |
 |---|---|---|---|
-| **dejavu** | ✅ failure-recurrence state | ✅ | ✅ remind→block escalation |
-| Guardrail engines (Cupcake, agentjail, cc-safety-net, probity, abide, permission hooks) | policy only, never learns | mostly ✅ (abide runs a decision model) | ✅ deny (abide: soft repair-demand) |
-| Memory plugins (claude-mem, claude-smart, mem0, supermemory, opencode-mem…) | ✅ conversational | ❌ LLM extraction | ❌ injection only |
+| **dejavu** | ✅ mechanical promotion | ✅ remind→block escalation | ✅ |
+| Cupcake · agentjail · cc-safety-net · probity · guardrails packs | ❌ human-authored policy | ✅ deny | ◐ |
+| claude-mem · claude-smart · supermemory · opencode-mem · harness-memory | ◐ LLM-extracted, injected only | ❌ | ❌ |
+| sinapsis (archived) · harness-forge · projectmem · open-bias | ◐ counted or classified | ❌ advisory only | ◐ |
+| NeMo Guardrails · Guardrails AI · LLM gateways | ❌ | ❌ proxy-level | ❌ |
+| Claude Code native permissions | ❌ static allow/deny | ◐ | ✅ |
 
-### Feature matrix
+### What nobody else has
 
-Legend: ✅ yes · ◐ partial · ❌ no.
-
-| Capability | dejavu | Cupcake · agentjail · cc-safety-net · probity · guardrails packs | claude-smart · claude-mem · supermemory · opencode-mem · harness-memory | sinapsis (archived) · harness-forge · projectmem · open-bias | NeMo/Guardrails AI · LLM gateways | Claude Code native |
-|---|---|---|---|---|---|---|
-| Blocks tool calls pre-execution | ✅ | ✅ | ❌ | ❌ (advisory) | ❌ (prompt/content layer) | ◐ static allow/deny permissions |
-| Policies learned from observed failures, not authored | ✅ mechanical promotion | ❌ human-written Rego/config | ◐ LLM-extracted rules, injected only | ◐ | ❌ | ❌ |
-| Cross-session recurrence counting (N fails × M sessions) | ✅ | ❌ | ❌ | ◐ | ❌ | ❌ |
-| Escalation ladder (remind → block, same-session repeat) | ✅ | ❌ binary verdicts | ❌ | ❌ | ❌ | ❌ |
-| Negative feedback — rules demote when ignored/fought | ✅ unique | ❌ | ❌ | ◐ downvote | ❌ | ❌ |
-| Healing — successes retire gates; taught-retirement | ✅ unique | ❌ | ❌ | ❌ | ❌ | ❌ |
-| No LLM in the enforcement hot path | ✅ | ◐ (abide runs a decision model) | ❌ | ◐ (harness-forge classifies via LLM) | ❌ | n/a |
-| Harness-neutral signatures, one store shared across hosts | ✅ 10 harnesses | ◐ per-harness configs | ◐ per-harness plugins | ◐ | ◐ proxy-level, model-agnostic | ❌ Claude only |
-| Project + global scopes with cross-project escalation | ✅ | ❌ | ◐ (opencode-mem dual scope) | ❌ | ❌ | ◐ user/project settings |
-| Escape hatch (`dejavu:proceed`) | ✅ | ◐ ask-the-human | n/a | n/a | ◐ | ✅ permission prompts |
-| Self-healing/quarantining store + doctor report | ✅ unique | ❌ | ❌ | ❌ | n/a | n/a |
-| Proactive hang/orphan guards (long-running, spawn leaks) | ✅ | ❌ | ❌ | ❌ | ❌ | ❌ |
-| Secret scrubbing before persistence | ✅ | ◐ secret-path deny rules | ❌ | ❌ | ◐ PII filters | ❌ |
-| Semantic matching of equivalent-but-different commands | ❌ (fuzzy Levenshtein ≤ 0.3 only) | ❌ | ✅ (LLM/embedding recall) | ◐ | ◐ | n/a |
-| Natural-language rule authoring | ❌ | ✅ | ✅ | ✅ | ✅ | ✅ |
-| Security boundary vs destructive commands | ◐ incidental | ✅ dedicated | ❌ | ❌ | ❌ | ◐ |
+- **Learning + enforcement in one loop.** Policy engines block but never learn; memory tools learn but never block. The closest mechanisms died on the way: sinapsis (occurrence counting, multi-session promotion, downvote demotion, TTL — advisory-only, archived Aug 2026), harness-forge (failure ledger with lesson weights, but LLM-classified), projectmem (warns before repeating a failed approach, no teeth).
+- **Rules with negative feedback.** A gate the agent keeps fighting (recurrences or explicit overrides) demotes itself; a command that starts succeeding heals to retirement. No analog's policy system adapts to being ignored.
+- **Harness-neutral identity.** Signatures are normalized before hashing, so one store shared across OpenCode/Claude/Codex/Gemini/Cursor/Copilot/Crush/Devin/Kiro/Cline means a gate learned anywhere fires everywhere. Analog configs are per-harness by construction.
+- **Operational hardening.** Self-healing/quarantining store, doctor report, secret scrubbing before persistence, proactive hang/orphan guards — nothing in the surveyed set ships this surface.
 
 ### Where dejavu is worse (honest gaps)
 
 - **Semantic identity.** Two syntactically different calls solving the same broken thing (`pnpm tsc --noEmit` vs `npm run typecheck`) land on different keys; fuzzy merge is Levenshtein ≤ 0.3 with a ≥ 3-edit floor by design. LLM-driven memory tools collapse such variants at extraction cost — dejavu pays precision for determinism.
 - **Rule expressiveness.** Gates key on tool-call signatures only. Human-authored policy engines (Rego in Cupcake/agentjail, rulebooks in cc-safety-net, `probity.config.ts`) can express arbitrary conditions — file paths, tenant isolation, PII, "never touch prod" — that dejavu cannot represent. dejavu deliberately does not try to be a security sandbox; those tools are complementary, not competitors.
 - **Conversational memory.** claude-mem/claude-smart/supermemory recall decisions, preferences, and project history; dejavu remembers exactly one thing: failing calls. Composable — they occupy orthogonal storage.
-- **Traction.** claude-mem (~95k★), claude-smart (~800★), abide (~400★) vs a young repo here. Near-misses exist, several died: sinapsis (occurrence counting, multi-session promotion, downvote demotion, TTL — advisory-only, archived Aug 2026), harness-forge (failure ledger + lesson weights, LLM-classified), projectmem (warns before repeating a failed approach, no enforcement), open-bias (reliability harness, rules still authored). None reached the enforcement half of the loop and survived.
+- **Traction.** claude-mem (~95k★), claude-smart (~800★), abide (~400★) vs a young repo here.
 
 ### Adjacent-by-name, not competitors
 
@@ -297,7 +284,6 @@ Legend: ✅ yes · ◐ partial · ❌ no.
 - **post_compact_reminder** — a static "re-read AGENTS.md" hook after compaction; dejavu's compaction hooks carry real gate state instead.
 - **Hook SDKs (cchooks, cc-hooks-ts, claude_hooks, beyondcode SDK)** — authoring frameworks for writing your own hooks; dejavu is a shipped policy, and its CLI speaks the dialects they target.
 - **Native platform features** — Claude Code permissions/checkpoints and OpenCode plugins cover the static halves; neither has cross-session failure learning or recurrence-driven enforcement (the anthropics/claude-code#34556 persistent-memory request was closed unimplemented). If a platform ships this natively, it absorbs the niche — watch, don't assume.
-
 ## Roadmap
 
 - Windsurf / Amp adapters — blocked on usable context-injection surfaces (block-only today); the adapter slots exist
