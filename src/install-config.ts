@@ -30,7 +30,7 @@ export const HARNESSES: Record<Harness, HarnessSpec> = {
     project: ".codex/hooks.json",
     user: ".codex/hooks.json",
     merge: true,
-    note: "codex: enable hooks via [features] hooks = true in config.toml; the first run requires /hooks trust",
+    note: "codex: hooks are enabled by default; the first run may require a trust prompt for project hooks",
   },
   gemini: { project: ".gemini/settings.json", user: ".gemini/settings.json", merge: true },
   cursor: { project: ".cursor/hooks.json", user: ".cursor/hooks.json", merge: true },

@@ -93,7 +93,7 @@ const codexPreBash = { tool_name: "Bash", tool_input: { command: "npm run build"
 const xe1 = codexAdapter.mapInbound("pre", codexPreBash)
 check("codex pre Bash → tool 'bash'", xe1?.tool === "bash")
 const xePatch = codexAdapter.mapInbound("pre", { tool_name: "apply_patch", tool_input: { patch: "*** Begin Patch\n*** End Patch" }, session_id: "xs-1b", cwd: "/proj" })
-check("codex pre apply_patch → tool 'edit' (alias)", xePatch?.tool === "edit")
+check("codex pre apply_patch patch-blob (no path) → edit with empty args (fail-safe pass-through)", xePatch?.tool === "edit" && Object.keys(xePatch?.args ?? {}).length === 0)
 check("codex pre Bash → args.command", (xe1?.args as Record<string, unknown>)?.command === "npm run build")
 check("codex pre Bash → sessionId", xe1?.sessionId === "xs-1")
 check("codex pre Bash → callId", xe1?.callId === "tu-x-1")
