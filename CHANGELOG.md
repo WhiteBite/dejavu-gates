@@ -1,5 +1,15 @@
 # Changelog
 
+## 2.42.0 - 2026-09-29
+
+### Added
+- **Cline plugin host in-package** (`src/cline-plugin.ts`): `beforeTool` denies via `{skip, reason}` and `afterTool` rides the reminding NOTE on `appendContext`, over the same engine with structural hook types and no `@cline/sdk` dependency. The `cline.plugins` manifest in package.json makes `cline plugin install --npm dejavu-gates` work; Cline's plugin system covers the SDK, CLI, and Kanban hosts only — the VS Code and JetBrains extensions have no plugin surface. Cline carries no exit codes, so failure detection is text-channel like the other external harnesses.
+- **`dejavu report [dirs...]`** on the npm bin: the doctor gate-health report (and `--repair`) for every harness without OpenCode, spawning `scripts/doctor.ts` in-process with stdio inherited and its exit code passed through.
+- **Codex hook coverage widened**: upstream lifecycle hooks are now stable and enabled by default, dispatching every function tool with canonical names (`Bash`, `apply_patch` with `Write`/`Edit` matcher aliases, `spawn_agent`, flat MCP names); the template matcher and alias map gain `apply_patch` (edit class), and PostToolUse result-blocking plus model-visible feedback are available to the engine unchanged.
+
+### Changed
+- Docs de-staled for Codex (hooks no longer Bash-only nor behind `[features] hooks = true`; a first-run trust prompt may still apply to project hooks) and the harness matrix/README gained the Cline host.
+
 ## 2.41.0 - 2026-09-29
 
 ### Added

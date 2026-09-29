@@ -6,7 +6,7 @@
 
 ## OVERVIEW
 
-dejavu — error gates for AI coding agents ("memory prosthesis with teeth"): mechanically detects recurring tool-call failures and promotes them into enforced gates (3 failures across 2 distinct sessions). Remind first, hard-block on same-session repeat offense. One harness-agnostic engine, two host forms: the OpenCode plugin (`index.ts`, long-lived process) and a hook-handler CLI (`src/cli.ts`, short-lived process per event) with adapters for Claude Code, Codex CLI, Gemini CLI, Cursor, Copilot CLI, Crush, Devin CLI, Kiro. TypeScript ESM, runs under Bun, ships as raw `.ts` (no build step). Repo/npm name: `dejavu-gates` (formerly `opencode-dejavu`).
+dejavu — error gates for AI coding agents ("memory prosthesis with teeth"): mechanically detects recurring tool-call failures and promotes them into enforced gates (3 failures across 2 distinct sessions). Remind first, hard-block on same-session repeat offense. One harness-agnostic engine, two host forms: the OpenCode plugin (`index.ts`, long-lived process), a hook-handler CLI (`src/cli.ts`, short-lived process per event) with adapters for Claude Code, Codex CLI, Gemini CLI, Cursor, Copilot CLI, Crush, Devin CLI, Kiro, and an in-package Cline plugin host (`src/cline-plugin.ts`, long-lived sandbox subprocess). TypeScript ESM, runs under Bun, ships as raw `.ts` (no build step). Repo/npm name: `dejavu-gates` (formerly `opencode-dejavu`).
 
 ## STRUCTURE
 

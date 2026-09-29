@@ -13,12 +13,12 @@
 
 <p align="center">
   <img src="https://img.shields.io/badge/license-MIT-blue.svg" alt="MIT License">
-  <img src="https://img.shields.io/badge/harnesses-9-green.svg" alt="OpenCode, Claude Code, Codex, Gemini CLI, Cursor, Copilot CLI, Crush, Devin CLI, Kiro">
+  <img src="https://img.shields.io/badge/harnesses-10-green.svg" alt="OpenCode, Claude Code, Codex, Gemini CLI, Cursor, Copilot CLI, Crush, Devin CLI, Kiro, Cline">
   <img src="https://img.shields.io/badge/TypeScript-Bun-black.svg" alt="TypeScript + Bun">
   <img src="https://github.com/WhiteBite/dejavu-gates/actions/workflows/ci.yml/badge.svg" alt="CI">
 </p>
 
-Cross-session **memory prosthesis with teeth** for AI coding agents. Agents repeat the same mistakes because they forget between sessions — and markdown rules don't fix that. dejavu mechanically detects recurring tool-call failures (bash, read, edit, write, glob, grep) and promotes them into enforced gates: a reminder on the next attempt, a hard block on same-session repeat offense. One engine, many hosts: OpenCode (plugin), Claude Code, Codex CLI, Gemini CLI, Cursor, Copilot CLI, Crush, Devin CLI, Kiro (hook-handler CLI). TypeScript + Bun, ships as source, no build step.
+Cross-session **memory prosthesis with teeth** for AI coding agents. Agents repeat the same mistakes because they forget between sessions — and markdown rules don't fix that. dejavu mechanically detects recurring tool-call failures (bash, read, edit, write, glob, grep) and promotes them into enforced gates: a reminder on the next attempt, a hard block on same-session repeat offense. One engine, many hosts: OpenCode (plugin), Claude Code, Codex CLI, Gemini CLI, Cursor, Copilot CLI, Crush, Devin CLI, Kiro (hook-handler CLI), Cline (in-package plugin). TypeScript + Bun, ships as source, no build step.
 
 ## Supported harnesses
 
@@ -33,6 +33,7 @@ Cross-session **memory prosthesis with teeth** for AI coding agents. Agents repe
 | **Crush** | `install-hooks.ts` | ✅ | ❌ degraded | upstream has PreToolUse only — enforcement + shared store still protect; no post annotations |
 | **Devin CLI** | `install-hooks.ts` | ✅ | ✅ | `.devin/hooks.v1.json` root-event merge; Claude-format hooks also auto-import from `.claude/settings.json` |
 | **Kiro** | `install-hooks.ts` | ✅ | ✅ | `.kiro/hooks/dejavu-gates.json`; the NOTE rides raw hook stdout (Kiro's context channel); project scope only |
+| **Cline** | `cline plugin install --npm dejavu-gates` | ✅ | ✅ | in-package plugin host (`src/cline-plugin.ts`); SDK/CLI/Kanban only — the VS Code and JetBrains extensions have no plugin system; no exit codes → text detection |
 | Zed, Aider | — | ❌ | ❌ | no hook API to intercept tool calls — not portable |
 | Windsurf, Amp | — | (planned) | ❌ | block-only / fire-and-forget surfaces; deferred until context injection exists |
 
@@ -90,6 +91,7 @@ The installer merges idempotently into each harness's config (foreign hooks and 
 | Crush | no plugin system — use the installer above or edit `crush.json` by hand |
 | Devin CLI | no plugin marketplace — the installer writes `.devin/hooks.v1.json`; Devin also auto-imports Claude-format hooks from `.claude/settings.json` |
 | Kiro | no plugin marketplace — the installer writes `.kiro/hooks/dejavu-gates.json` (project scope; Kiro documents no user-level hooks path) |
+| Cline | `cline plugin install --npm dejavu-gates` (or drop `src/cline-plugin.ts` into `.cline/plugins/`); SDK/CLI/Kanban hosts only |
 
 The companion reaction protocol (`skills/dejavu/`) ships inside the plugin bundle and is auto-discovered by the Claude Code, Cursor, and Gemini CLI plugin formats.
 
@@ -193,7 +195,7 @@ echo '{"hook_event_name":"PreToolUse","session_id":"s","tool_name":"Bash","tool_
 ## Observability (debugging aids)
 
 - Every `log.jsonl` gets an `init` event with `PLUGIN_VERSION`; `detected` events carry `channel` (`exit`/`text`/`event`) and the raw exit code; `reminded`/`blocked` carry `via` (`exact`/`fuzzy`/`segment`). Stale plugin sessions are therefore visible in the data.
-- `bun scripts/doctor.ts [--repair] [projectDirs...]` — one-command report over every invariant the data model implies: gate shape, duplicate keys, temporal order, nested-token corruption, blocking without evidence, policy violations, index↔gates consistency, stale project copies, missed escalation, log integrity, secrets, version drift. `--repair` heals first (idempotent), then reports.
+- `bun scripts/doctor.ts [--repair] [projectDirs...]` — one-command report over every invariant the data model implies: gate shape, duplicate keys, temporal order, nested-token corruption, blocking without evidence, policy violations, index↔gates consistency, stale project copies, missed escalation, log integrity, secrets, version drift. `--repair` heals first (idempotent), then reports. `dejavu report [dirs...]` (the npm bin) runs the same report for any harness, no OpenCode needed.
 - `bun scripts/analyze.ts [projectDirs...]` — store summary: statuses, tools, top patterns.
 - `/dejavu` command (OpenCode, installed globally) runs doctor first, then reports.
 - Hook CLI diagnostics: set `DEJAVU_DEBUG=1` to see engine log lines on stderr (stdout always stays pure JSON).
