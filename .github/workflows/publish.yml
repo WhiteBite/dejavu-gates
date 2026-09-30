@@ -14,8 +14,8 @@ jobs:
       contents: write
       id-token: write
     steps:
-      - uses: actions/checkout@v4
-      - uses: oven-sh/setup-bun@v2
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2
       - run: bun install --frozen-lockfile
       - run: bun run typecheck
       - run: bun test/smoke.ts
@@ -31,7 +31,7 @@ jobs:
       - run: bun test/v2-host.ts
       - run: bun test/cline-plugin.ts
       - run: bun test/cline-plugin.ts
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
       - run: npx --yes npm@^11.5.1 publish --provenance
       - name: Extract release notes from CHANGELOG
         run: awk -v h="## ${GITHUB_REF_NAME#v} " 'index($0, h) == 1 { on = 1; next } on && /^## / { exit } on { print }' CHANGELOG.md > /tmp/release-notes.md
@@ -48,7 +48,7 @@ jobs:
       contents: read
       packages: write
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
       - name: Scope the package for GitHub Packages
         run: |
           node -e 'const fs = require("node:fs"); const p = JSON.parse(fs.readFileSync("package.json", "utf8")); p.name = "@whitebite/dejavu-gates"; fs.writeFileSync("package.json", JSON.stringify(p, null, 2) + "\n")'
