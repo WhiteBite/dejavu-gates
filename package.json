@@ -78,7 +78,7 @@
     "@opencode-ai/plugin": "^1.18.0",
     "@opencode/plugin": "^2.0.18",
     "@types/node": "^24.0.0",
-    "@whitebite/rdk-cli": "^0.2.0",
+    "repo-aeo": "^0.2.0",
     "typescript": "^5.5.0"
   }
 }
