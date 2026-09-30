@@ -1,7 +1,3 @@
-# .discoverability/project.yml
-# Single source of truth for this repository's discoverability metadata.
-# Consumed by: rdk audit / rdk fix / rdk github-sync / rdk npm-surface,
-# the repo-discoverability skill, and the rdk-audit GitHub Action.
 # Docs: https://github.com/WhiteBite/repo-aeo/blob/main/docs/configuration.md
 
 schema_version: 1   # config schema revision; rdk warns on any other value
