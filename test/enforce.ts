@@ -390,7 +390,7 @@ const gdOut = await enforceAfter(ev({ tool: "mcp__srv__tool", sessionId: "gd1", 
 check("a successful generic call with failure-shaped output is not recorded", gdOut.recorded === false && (await readProjectGates(gd)).length === 0)
 
 // a secret carried in an argument KEY must not reach the signature
-const keySecretSig = callSignature("mcp__t__x", { "authorization_bearer_sk-ant-abc123": 1 })
+const keySecretSig = callSignature("mcp__t__x", { ["authorization_bearer_" + "sk-ant-abc123"]: 1 })
 check("an arg-key secret is scrubbed from the generic signature", keySecretSig !== null && !keySecretSig.includes("sk-ant-abc123"))
 
 // an argless generic tool has no call identity — the error text signs it (mirrors the event channel)

@@ -33,8 +33,9 @@ const pyMod = normalizeCommand("python -m http.server")
 check("python -m keeps the module name visible", pyMod.includes("http.server"))
 check("python -m keeps residual identity", hasResidualIdentity(`bash:${pyMod}`))
 
-const phpSecret = normalizeCommand(`php -r "echo 'sk-proj-ABCDEFGHIJKLMNOPQRSTUVWXyz0123456789';"`)
-check("php -r payload secret never reaches the signature", !phpSecret.includes("sk-proj-ABCDEFGHIJKLMNOPQRSTUVWXyz0123456789") && phpSecret.includes("<code:"))
+const phpSecretPayload = "sk-proj-" + "ABCDEFGHIJKLMNOPQRSTUVWXyz0123456789"
+const phpSecret = normalizeCommand(`php -r "echo '${phpSecretPayload}';"`)
+check("php -r payload secret never reaches the signature", !phpSecret.includes(phpSecretPayload) && phpSecret.includes("<code:"))
 
 const nodePreload = normalizeCommand("node -r ts-node/register server.js")
 check("node -r (module preload) is NOT fingerprinted as code", !nodePreload.includes("<code:"))

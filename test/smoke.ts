@@ -98,7 +98,7 @@ const ctx = {
 // the 7-day noise TTL the seeded gates expired during init and the migration
 // checks failed on a date, not on behavior.
 await mkdir(join(tmp, "project", ".opencode", "dejavu"), { recursive: true })
-const SECRET = "sk-proj-ABCDEFGHIJKLMNOPQRSTUVWXyz0123456789"
+const SECRET = "sk-proj-" + "ABCDEFGHIJKLMNOPQRSTUVWXyz0123456789"
 const seedFirstSeen = new Date(Date.now() - 20 * 24 * 60 * 60 * 1000).toISOString()
 const seedLastSeen = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString()
 await writeFile(

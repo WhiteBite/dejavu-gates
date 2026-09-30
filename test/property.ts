@@ -75,7 +75,7 @@ const PATHS = ["C:\\Users\\dev\\project\\file.ts", "/usr/local/bin/tool", "./rel
 const HEXES = ["abc123def456", "7f3a9b2c", "deadbeefcafe0123", "1234567"]
 const NUMS = ["0", "1", "42", "3.14", "8080", "192.168.1.100"]
 const COMMENTS = ["# probe", "# dejavu:proceed", "# comment with 'quotes'"]
-const SECRETS = ["sk-proj-ABCDEFGHIJKLMNOPQRSTuv012345", "ghp_ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefgh1234"]
+const SECRETS = ["sk-proj-" + "ABCDEFGHIJKLMNOPQRSTuv012345", "ghp_" + "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefgh1234"]
 
 function genCommand(): string {
   const parts: string[] = []
