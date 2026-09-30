@@ -6,6 +6,26 @@ Positioning line (consistent with README): cross-session error gates for AI codi
 
 All facts below verified against upstream repos via the GitHub API on 2026-09-30. No PRs/forks/issues were created from this repo.
 
+## Submission status (executed 2026-09-30)
+
+| List | Channel | Result |
+|---|---|---|
+| awesome-opencode/awesome-opencode | PR | [#637](https://github.com/awesome-opencode/awesome-opencode/pull/637) fixed in place (new `data/plugins/dejavu-gates.yaml`, canonical URL, locally schema-validated), maintainer pinged for workflow approval |
+| ccplugins/awesome-claude-code-plugins | PR | [#582](https://github.com/ccplugins/awesome-claude-code-plugins/pull/582) |
+| hashgraph-online/awesome-codex-plugins | PR | [#462](https://github.com/hashgraph-online/awesome-codex-plugins/pull/462) — prep landed: `.codex-plugin/plugin.json`, `assets/icon.svg`, dependabot, SHA-pinned Actions; local scanner on a clean clone: 0 critical / 0 high, 96/100 |
+| Piebald-AI/awesome-gemini-cli-extensions | PR | [#49](https://github.com/Piebald-AI/awesome-gemini-cli-extensions/pull/49) |
+| Piebald-AI/awesome-gemini-cli | PR | [#159](https://github.com/Piebald-AI/awesome-gemini-cli/pull/159) |
+| hao-ji-xing/awesome-cursor | PR | [#68](https://github.com/hao-ji-xing/awesome-cursor/pull/68) |
+| kirodotdev-labs/awesome-kiro | PR | [#24](https://github.com/kirodotdev-labs/awesome-kiro/pull/24) |
+| RoggeOhta/awesome-codex-cli | issue | [#344](https://github.com/RoggeOhta/awesome-codex-cli/issues/344) |
+| github/awesome-copilot | issue form | [#4196](https://github.com/github/awesome-copilot/issues/4196) (ref `v2.45.1`, sha `9f248b5a891787dcabddca1d7ee1dc5e9fed696b`) |
+| cline/marketplace | issue (precedent question) | [#147](https://github.com/cline/marketplace/issues/147) — every registry entry is first-party monorepo; asked whether third-party npm entries are accepted before opening a PR |
+| Official Gemini gallery | repo topic | done — `gemini-cli-extension` topic added, auto-crawl |
+| hesreallyhim/awesome-claude-code | web form only | NOT submitted — their rules forbid gh-CLI submission and require a human-authored web-form entry; form payload below is ready for manual paste |
+| anthropics/claude-plugins-official | external form | NOT submitted — clau.de/plugin-directory-submission is a browser form; fill from README install section |
+
+Fork inventory created during execution (delete after merge): `WhiteBite/awesome-claude-code-plugins`, `WhiteBite/awesome-gemini-cli-extensions`, `WhiteBite/awesome-gemini-cli`, `WhiteBite/awesome-cursor`, `WhiteBite/awesome-kiro`, `WhiteBite/awesome-codex-plugins`. `WhiteBite/awesome-opencode` pre-existed (PR #637).
+
 ## Coverage matrix
 
 | List | Harness | Mode | Status (verified) | Entry ready |
