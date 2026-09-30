@@ -321,14 +321,15 @@ export const Dejavu: Plugin = async ({ directory, client }) => {
           // the block counter survives a transform rewrite only while the same
           // series owns the tail — a new series means a new loop, fresh count
           const newTailKey = tailKey ?? ""
-          repeatSeries.set(sessionID, { key: newTailKey, length: tailLen, logged: Math.max(watermark, maxLen), blocked: prevEntry?.key === newTailKey ? (prevEntry?.blocked ?? 0) : 0 })
-          // user-role turn is the only stimulus that reliably ends a retry loop
+          repeatSeries.set(sessionID, { key: newTailKey, length: tailLen, logged: Math.max(watermark, maxLen), blocked: prevEntry?.key === newTailKey ? (prevEntry?.blocked ?? 0) : 0, lastBlockAt: prevEntry?.key === newTailKey ? (prevEntry?.lastBlockAt ?? 0) : 0 })
           const entry = repeatSeries.get(sessionID)
           const lastIsAssistant = output.messages[output.messages.length - 1]?.info.role === "assistant"
-          if (tailKey !== null && tailLen > 0 && lastIsAssistant && entry !== undefined && entry.blocked >= REPEAT_STOP_AFTER) {
+          // compaction also triggers this hook on a cloned head — lastBlockAt proves a live prompt-path block
+          const blockIsLive = entry !== undefined && Date.now() - entry.lastBlockAt < 120_000
+          if (tailKey !== null && tailLen > 0 && lastIsAssistant && blockIsLive && entry !== undefined && entry.blocked >= REPEAT_STOP_AFTER) {
             const tailSeries = scan.series.find((s) => s.reachesTail && s.key === tailKey)
             const lastOcc = tailSeries?.occurrences[tailSeries.occurrences.length - 1]
-            const sourceInfo = (lastOcc === undefined ? undefined : output.messages[lastOcc.messageIndex]?.info) as { agent?: string; model?: { providerID: string; modelID: string } } | undefined
+            const sourceInfo = (lastOcc === undefined ? undefined : output.messages[lastOcc.messageIndex]?.info) as { mode?: string; agent?: string; providerID?: string; modelID?: string } | undefined
             const now = Date.now()
             const messageId = `dejavu-loopbreak-${now}`
             const text = `[dejavu loop protection — automated message, not the user] The tool call you keep retrying has been blocked ${entry.blocked} times and will never run in this session. Do not re-issue it, rename it, or work around it. Reply in plain text ONLY — no tool calls: (1) what you finished, (2) what is blocked and why, (3) what remains. If you are a subagent, this text reply IS your final report to whoever launched you.`
@@ -337,8 +338,8 @@ export const Dejavu: Plugin = async ({ directory, client }) => {
               sessionID,
               role: "user",
               time: { created: now },
-              agent: sourceInfo?.agent ?? "user",
-              model: sourceInfo?.model ?? { providerID: "unknown", modelID: "unknown" },
+              agent: sourceInfo?.agent ?? sourceInfo?.mode ?? "user",
+              model: sourceInfo?.providerID !== undefined && sourceInfo?.modelID !== undefined ? { providerID: sourceInfo.providerID, modelID: sourceInfo.modelID } : { providerID: "unknown", modelID: "unknown" },
             }
             const part: TextPart = { id: `${messageId}-p1`, sessionID, messageID: messageId, type: "text", text, synthetic: true }
             output.messages.push({ info, parts: [part] })
@@ -353,6 +354,9 @@ export const Dejavu: Plugin = async ({ directory, client }) => {
             const oldest = repeatSeries.keys().next()
             if (oldest.done) break
             repeatSeries.delete(oldest.value)
+            for (const key of ephemeral.loopBreakInjected) {
+              if (key.startsWith(`${oldest.value}:`)) ephemeral.loopBreakInjected.delete(key)
+            }
           }
         }
       } catch (error) {

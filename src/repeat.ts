@@ -36,6 +36,7 @@ export async function repeatSeriesDecision(event: NormalizedEvent, ctx: EnforceC
     return { kind: "override" }
   }
   entry.blocked += 1
+  entry.lastBlockAt = Date.now()
   await ctx.stores.logAll({ type: "repeat-blocked", key: entry.key.slice(0, 80), tool: event.tool, session: event.sessionId, project: ctx.projectDir, repeatCount: entry.length })
   if (entry.blocked >= REPEAT_STOP_AFTER) {
     return {

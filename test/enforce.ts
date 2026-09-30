@@ -217,7 +217,7 @@ await enforceBefore(ev({ tool: "bash", sessionId: "l-live", args: { command: lCm
 await enforceAfter(ev({ tool: "bash", sessionId: "l-live", args: { command: lCmd }, phase: "post", output: "Error: boom", exitCode: 1, channel: "exit" }), l.ctx)
 const lGate0 = (await readProjectGates(l)).find((g) => g.key === lKey)
 check("setup: the session carries remind and failure state on the gate", lGate0?.remindedSessions?.["l-live"] !== undefined && lGate0?.failedSessions?.["l-live"] !== undefined)
-l.ctx.ephemeral.repeatSeries.set("l-live", { key: "x", length: 3, logged: 0, blocked: 0 })
+l.ctx.ephemeral.repeatSeries.set("l-live", { key: "x", length: 3, logged: 0, blocked: 0, lastBlockAt: 0 })
 l.ctx.ephemeral.repeatWindowLogged.set("l-live", 1)
 await cleanupSession("l-live", l.ctx)
 const lGate1 = (await readProjectGates(l)).find((g) => g.key === lKey)

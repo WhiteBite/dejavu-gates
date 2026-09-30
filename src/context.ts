@@ -29,6 +29,7 @@ export interface RepeatEntry {
   length: number
   logged: number
   blocked: number
+  lastBlockAt: number
 }
 
 /** In-process (non-persisted) engine state. See createEphemeralState for the
