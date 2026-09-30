@@ -6,7 +6,7 @@ import { canBlock, canRemind, fuzzySimilar, FUZZY_MAX_LEN, hasGenericResidualIde
 import { coerceGateShape, failedAtMs, repairGate } from "./validate"
 
 /** Bumped on behavior changes; stamped into init log events so stale sessions are visible. */
-export const PLUGIN_VERSION = "2.44.0"
+export const PLUGIN_VERSION = "2.45.0"
 
 /** Global store root — DEJAVU_HOME overrides it (testing, custom setups). */
 export function resolveGlobalDir(): string {
@@ -153,6 +153,7 @@ export type LogEventType =
   | "repeat-blocked"
   | "repeat-sanitized"
   | "repeat-windowed"
+  | "loop-break"
 
 /** Events that change what the machine remembers — the only ones worth the
  * global log lock (the most-contended lock, shared by every window of every

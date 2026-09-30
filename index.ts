@@ -1,4 +1,5 @@
 import type { Plugin } from "@opencode-ai/plugin"
+import type { TextPart, UserMessage } from "@opencode-ai/sdk"
 import { detectRepeatSeries, detectRepeatWindows, looksLikeFailure, parameterizeError, REPEAT_MARKER } from "./src/patterns"
 import {
   cleanupSession,
@@ -9,6 +10,7 @@ import {
   type EnforceContext,
 } from "./src/enforce"
 import { genericToolOutput } from "./src/adapters/shared"
+import { REPEAT_STOP_AFTER } from "./src/repeat"
 import { createStores, GLOBAL_PROJECTS, NOISE_TTL_DAYS, PLUGIN_VERSION, TTL_DAYS } from "./src/store"
 import type { NormalizedEvent } from "./src/types"
 import { v2Setup } from "./src/opencode-v2"
@@ -320,6 +322,33 @@ export const Dejavu: Plugin = async ({ directory, client }) => {
           // series owns the tail — a new series means a new loop, fresh count
           const newTailKey = tailKey ?? ""
           repeatSeries.set(sessionID, { key: newTailKey, length: tailLen, logged: Math.max(watermark, maxLen), blocked: prevEntry?.key === newTailKey ? (prevEntry?.blocked ?? 0) : 0 })
+          // user-role turn is the only stimulus that reliably ends a retry loop
+          const entry = repeatSeries.get(sessionID)
+          const lastIsAssistant = output.messages[output.messages.length - 1]?.info.role === "assistant"
+          if (tailKey !== null && tailLen > 0 && lastIsAssistant && entry !== undefined && entry.blocked >= REPEAT_STOP_AFTER) {
+            const tailSeries = scan.series.find((s) => s.reachesTail && s.key === tailKey)
+            const lastOcc = tailSeries?.occurrences[tailSeries.occurrences.length - 1]
+            const sourceInfo = (lastOcc === undefined ? undefined : output.messages[lastOcc.messageIndex]?.info) as { agent?: string; model?: { providerID: string; modelID: string } } | undefined
+            const now = Date.now()
+            const messageId = `dejavu-loopbreak-${now}`
+            const text = `[dejavu loop protection — automated message, not the user] The tool call you keep retrying has been blocked ${entry.blocked} times and will never run in this session. Do not re-issue it, rename it, or work around it. Reply in plain text ONLY — no tool calls: (1) what you finished, (2) what is blocked and why, (3) what remains. If you are a subagent, this text reply IS your final report to whoever launched you.`
+            const info: UserMessage = {
+              id: messageId,
+              sessionID,
+              role: "user",
+              time: { created: now },
+              agent: sourceInfo?.agent ?? "user",
+              model: sourceInfo?.model ?? { providerID: "unknown", modelID: "unknown" },
+            }
+            const part: TextPart = { id: `${messageId}-p1`, sessionID, messageID: messageId, type: "text", text, synthetic: true }
+            output.messages.push({ info, parts: [part] })
+            const loopKey = `${sessionID}:${tailKey}`
+            if (!ephemeral.loopBreakInjected.has(loopKey)) {
+              ephemeral.loopBreakInjected.add(loopKey)
+              const tailTool = tailSeries?.tool ?? "unknown"
+              await stores.logAll({ type: "loop-break", key: tailKey.slice(0, 80), tool: tailTool, session: sessionID, project: directory, repeatCount: entry.blocked })
+            }
+          }
           while (repeatSeries.size > REPEAT_SESSIONS_CAP) {
             const oldest = repeatSeries.keys().next()
             if (oldest.done) break

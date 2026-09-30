@@ -2468,6 +2468,7 @@ check("wait-loop: bounded for + -Milliseconds stays unflagged", !shouldWarnWaitL
 interface R99Part {
   type: string
   tool?: string
+  text?: string
   state?: { status?: string; input?: Record<string, unknown>; output?: string; error?: string }
 }
 interface R99Msg {
@@ -2853,6 +2854,41 @@ try {
   r103BlockErr = e as Error
 }
 check("windowed: interleaved repeats never block", r103BlockErr === null)
+
+// --- 105. loop break: stop-blocked series injects an automated user message ---
+const r105Dir = join(tmp, "r105-loopbreak-project")
+const r105Hooks = await Dejavu({ directory: r105Dir, client: { app: { log: async () => ({}) } } } as unknown as Ctx)
+const r105Transform = r105Hooks["experimental.chat.messages.transform"]
+const r105Before = r105Hooks["tool.execute.before"] as BeforeHook
+const r105LoopText = (m: R99Msg): string => String((m.parts[0] as { text?: string } | undefined)?.text ?? "")
+const r105HasBreak = (msgs: R99Msg[]): boolean => msgs.some((m) => m.info.role === "user" && r105LoopText(m).includes("loop protection"))
+const r105Populate = async (): Promise<R99Msg[]> => {
+  const msgs: R99Msg[] = [r99User("r105s"), r99Asst({ task_id: "t1" }, {}, "r105s"), r99Asst({ task_id: "t1" }, {}, "r105s")]
+  await r105Transform?.({} as never, { messages: msgs } as never)
+  return msgs
+}
+const r105Block = async (callID: string): Promise<void> => {
+  await r105Before({ tool: "background_output", sessionID: "r105s", callID } as unknown as BeforeInput, { args: { task_id: "t1" } } as unknown as BeforeOutput).catch(() => {})
+}
+const r105Early = await r105Populate()
+check("loop break: no injection below the stop threshold", !r105HasBreak(r105Early))
+await r105Block("r105c1")
+await r105Block("r105c2")
+const r105Two = await r105Populate()
+check("loop break: still no injection after two blocks", !r105HasBreak(r105Two))
+await r105Block("r105c3")
+const r105Stop = await r105Populate()
+check("loop break: a stop-blocked loop injects an automated user message", r105HasBreak(r105Stop))
+const r105BreakMsg = r105Stop.find((m) => m.info.role === "user" && r105LoopText(m).includes("loop protection"))
+check("loop break: the injected message is marked synthetic", (r105BreakMsg?.parts[0] as { synthetic?: boolean } | undefined)?.synthetic === true)
+// a real user turn at the tail breaks the series — no injection over it
+const r105UserTail: R99Msg[] = [r99User("r105s"), r99Asst({ task_id: "t1" }, {}, "r105s"), r99Asst({ task_id: "t1" }, {}, "r105s"), r99User("r105s")]
+await r105Transform?.({} as never, { messages: r105UserTail } as never)
+check("loop break: a real user message at the tail disables injection", !r105HasBreak(r105UserTail))
+// the model complied (text reply ends the series) — injection stops
+const r105TextTail: R99Msg[] = [r99User("r105s"), r99Asst({ task_id: "t1" }, {}, "r105s"), r99Asst({ task_id: "t1" }, {}, "r105s"), { info: { role: "assistant", sessionID: "r105s" }, parts: [{ type: "text", text: "stopping" }] }]
+await r105Transform?.({} as never, { messages: r105TextTail } as never)
+check("loop break: a text reply at the tail ends the injection", !r105HasBreak(r105TextTail))
 
 // --- 104. timeout-kill correction names both leak shapes ---
 const r104Corr = suggestCorrection("bash:npx vitest run <n> >& <n>", "shell tool terminated command after exceeding timeout 300000ms")

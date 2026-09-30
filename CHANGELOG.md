@@ -1,5 +1,10 @@
 # Changelog
 
+## 2.45.0 - 2026-09-30
+
+### Added
+- **Loop break (OpenCode repeat channel)** — a model that keeps re-issuing a call past REPEAT STOP now gets an automated user-role message appended to the outgoing payload (payload-only, never persisted, marked `synthetic`). Tool-error blocks are an in-loop stimulus that weak models pattern-match as "retry"; a user turn is the one stimulus that reliably forces a text reply and ends the loop — this replicates the manual intervention that broke production loops. Self-limiting: the injection fires only while the same series owns the tail (a real user message or a text reply ends it), and logs `loop-break` once per series.
+
 ## 2.44.0 - 2026-09-30
 
 ### Added

@@ -41,6 +41,8 @@ export interface EphemeralState {
   repeatSeries: Map<string, RepeatEntry>
   /** repeat channel: per-session watermark for windowed-repeat NOTE logging */
   repeatWindowLogged: Map<string, number>
+  /** loop-break: session:seriesKey pairs that already logged an injection */
+  loopBreakInjected: Set<string>
   /** iteration discriminator: projectDir → count of landed edit/write calls;
    *  a failure with a moved version is debugging, not a blind retry */
   workspaceVersions: Map<string, number>
@@ -66,6 +68,7 @@ export function createEphemeralState(): EphemeralState {
     pendingCalls: new Map(),
     repeatSeries: new Map(),
     repeatWindowLogged: new Map(),
+    loopBreakInjected: new Set(),
     workspaceVersions: new Map(),
     handledParts: new Set(),
     recentRecords: new Map(),
