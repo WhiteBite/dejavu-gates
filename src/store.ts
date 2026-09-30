@@ -13,6 +13,15 @@ export function resolveGlobalDir(): string {
   return process.env.DEJAVU_HOME ?? join(homedir(), ".config", "opencode", "dejavu")
 }
 
+/** Resolve a DEJAVU_* integer override once at module load; invalid or out-of-range values fall back. */
+function envInt(name: string, fallback: number, min: number, max: number): number {
+  const raw = process.env[name]
+  if (raw === undefined) return fallback
+  const value = Number(raw)
+  if (!Number.isInteger(value) || value < min || value > max) return fallback
+  return value
+}
+
 /** Shared two-scope construction ("" = global only); the init sequence (reconcile/migrate/expire) stays at each call site. */
 export function createStores(projectDir: string): Stores {
   const projectStore = projectDir !== "" ? new GateStore(join(projectDir, ".opencode", "dejavu")) : null
@@ -192,30 +201,30 @@ const LOAD_CACHE_TTL_MS = 1000
  * the global store (agent-level habit, not a repo quirk) */
 export const GLOBAL_PROJECTS = 2
 /** gates expire when the pattern has not recurred for this many days */
-export const TTL_DAYS = 60
+export const TTL_DAYS = envInt("DEJAVU_TTL_DAYS", 60, 1, 3650)
 /** one-off patterns that NEVER recurred (watching, count ≤ 1) rot this fast; a
  * twice-seen pattern has proven recurrence and gets the full TTL_DAYS instead,
  * so slow recurrences can still accumulate to the promotion bar */
-export const NOISE_TTL_DAYS = 7
+export const NOISE_TTL_DAYS = envInt("DEJAVU_NOISE_TTL_DAYS", 7, 1, 365)
 /** failures required before a pattern becomes an enforced gate */
-export const PROMOTE_COUNT = 3
+export const PROMOTE_COUNT = envInt("DEJAVU_PROMOTE_COUNT", 3, 1, 100)
 /** file-probe tools fail routinely during normal probing — higher bar, never block */
-export const PROMOTE_COUNT_PROBE = 5
+export const PROMOTE_COUNT_PROBE = envInt("DEJAVU_PROMOTE_COUNT_PROBE", 5, 1, 100)
 /** distinct sessions required — same-session loops never promote */
-export const PROMOTE_SESSIONS = 2
+export const PROMOTE_SESSIONS = envInt("DEJAVU_PROMOTE_SESSIONS", 2, 1, 100)
 /** consecutive successes after a gate that retire it — the command is fixed,
  * so the gate must stop reminding (the ruff-check-false-positive case) */
-export const HEAL_SUCCESSES = 3
+export const HEAL_SUCCESSES = envInt("DEJAVU_HEAL_SUCCESSES", 3, 1, 100)
 /** store size bound: flooding with unique failures must not bloat gates.json
  * or slow the fuzzy scan — the weakest watching gate is evicted past this */
 export const MAX_GATES = 2000
 /** enforcement feedback: an enforced gate whose pattern fails this many times
  * AFTER promotion is not teaching (iteration or a useless correction) —
  * demote it instead of nagging/blocking forever */
-export const DEMOTE_RECURRENCES = 3
+export const DEMOTE_RECURRENCES = envInt("DEJAVU_DEMOTE_RECURRENCES", 3, 1, 100)
 /** enforcement feedback: this many explicit bypasses mean the agent considers
  * the gate friction — demote it regardless of recurrence */
-export const DEMOTE_OVERRIDES = 3
+export const DEMOTE_OVERRIDES = envInt("DEJAVU_DEMOTE_OVERRIDES", 3, 1, 100)
 /** override demotion additionally requires this many DISTINCT bypassing
  * sessions — mirror of DEMOTE_REOFFENSE_SESSIONS: one stubborn/injected
  * session must not disarm a gate for everyone */
