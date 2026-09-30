@@ -46,10 +46,11 @@ const gates: Gate[] = [
   gate({ key: "aaaa00000002", signature: "bash:some-tool --work-thing", status: "blocking", recurredAfterGate: 1 }),
   gate({ key: "aaaa00000003", signature: "bash:some-tool --friction-thing", status: "blocking", recurredAfterGate: 4 }),
   gate({ key: "aaaa00000004", signature: "bash:some-tool --override-thing", status: "blocking", overrideCount: 3, overrideSessions: ["o1", "o2"] }),
-  gate({ key: "aaaa00000005", signature: "bash:some-tool --retired-thing", status: "watching", recurredAfterGate: 5, feedbackDemoted: true, feedbackBaseline: { recurred: 5, overrides: 0 } }),
+  gate({ key: "aaaa00000005", signature: "bash:some-tool --demoted-thing", status: "watching", recurredAfterGate: 5, feedbackDemoted: true, feedbackBaseline: { recurred: 5, overrides: 0 } }),
   gate({ key: "aaaa00000006", signature: "bash:some-tool --fresh-thing", status: "watching", count: 1, promotionCount: undefined }),
   gate({ key: "aaaa00000007", signature: `bash:some-tool --${"z".repeat(100)}`, status: "blocking", recurredAfterGate: 1 }),
   gate({ key: "aaaa00000008", signature: "bash:grep needle src/haystack.ts", status: "reminding", recurredAfterGate: 1 }),
+  gate({ key: "aaaa00000009", signature: "bash:some-tool --retired-thing", status: "watching", count: 8, retireBaseline: { count: 5 } }),
 ]
 
 const gatesPath = join(storeDir, "gates.json")
@@ -80,13 +81,15 @@ check("remindedSessions chain count is shown", /\bchain\s+1\b/.test(lineFor(recu
 check("below-bar recurrence renders WORKING", lineFor(recurrenceOut, "some-tool --work-thing").includes("WORKING"))
 check("recurrence at the bar renders FRICTION", lineFor(recurrenceOut, "some-tool --friction-thing").includes("FRICTION"))
 check("frequent overrides render FRICTION", lineFor(recurrenceOut, "some-tool --override-thing").includes("FRICTION"))
-check("feedback-demoted gate renders RETIRED", lineFor(recurrenceOut, "some-tool --retired-thing").includes("RETIRED"))
-check("retired gate shows the demoted state", lineFor(recurrenceOut, "some-tool --retired-thing").includes("demoted"))
+check("feedback-demoted gate renders FRICTION", lineFor(recurrenceOut, "some-tool --demoted-thing").includes("FRICTION"))
+check("feedback-demoted gate shows the demoted state", lineFor(recurrenceOut, "some-tool --demoted-thing").includes("demoted"))
+check("a retireBaseline watching gate renders RETIRED", lineFor(recurrenceOut, "some-tool --retired-thing").includes("RETIRED"))
+check("a retireBaseline gate shows the retired state", lineFor(recurrenceOut, "some-tool --retired-thing").includes("retired"))
 check("reminding-tier enforced gate renders", lineFor(recurrenceOut, "grep needle").includes("WORKING"))
 check("a watching gate that never promoted is excluded", !recurrenceOut.includes("some-tool --fresh-thing"))
 check("long signatures are truncated to 80", lineFor(recurrenceOut, "some-tool --zzzz").includes("...") && !recurrenceOut.includes("z".repeat(90)))
-check("aggregate counts every shown gate", recurrenceOut.includes("7 gates | teaching 1 | working 3 | friction 2 | retired 1"))
-check("aggregate reports the teaching ratio", recurrenceOut.includes("teaching-ratio 14%"))
+check("aggregate counts every shown gate", recurrenceOut.includes("8 gates | teaching 1 | working 3 | friction 3 | retired 1"))
+check("aggregate reports the teaching ratio", recurrenceOut.includes("teaching-ratio 13%"))
 check("--recurrence omits the default summary", !recurrenceOut.includes("top by count:") && !recurrenceOut.includes("| tools:"))
 
 const fullOut = run([projectDir])

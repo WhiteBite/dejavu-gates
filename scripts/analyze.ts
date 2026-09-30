@@ -35,7 +35,7 @@ function wasOrIsEnforced(gate: Gate): boolean {
 }
 
 function recurrenceVerdict(gate: Gate): RecurrenceVerdict {
-  if (gate.status === "watching") return "RETIRED"
+  if (gate.status === "watching") return gate.feedbackDemoted === true ? "FRICTION" : "RETIRED"
   // a human re-enforcement gets a fresh grace window: only recurrences/overrides since the baseline vote
   const base = gate.feedbackBaseline
   const recurred = gate.recurredAfterGate - (base?.recurred ?? 0)
