@@ -34,7 +34,10 @@
     "skills",
     "LICENSE",
     "README.md",
-    "CHANGELOG.md"
+    "CHANGELOG.md",
+    "llms.txt",
+    "llms-full.txt",
+    "AGENTS.md"
   ],
   "keywords": [
     "opencode",
@@ -66,7 +69,8 @@
   },
   "license": "MIT",
   "engines": {
-    "opencode": ">=1.18.29"
+    "opencode": ">=1.18.29",
+    "node": ">=18"
   },
   "devDependencies": {
     "@opencode-ai/plugin": "^1.18.0",

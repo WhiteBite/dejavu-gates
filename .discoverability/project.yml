@@ -1,0 +1,73 @@
+# .discoverability/project.yml
+# Single source of truth for this repository's discoverability metadata.
+# Consumed by: rdk audit / rdk fix / rdk github-sync / rdk npm-surface,
+# the repo-discoverability skill, and the rdk-audit GitHub Action.
+# Docs: https://github.com/WhiteBite/repo-aeo/blob/main/docs/configuration.md
+
+schema_version: 1   # config schema revision; rdk warns on any other value
+
+project:
+  name: "dejavu-gates"
+  one_liner: "Cross-session error gates for AI coding agents: detects recurring tool-call failures and promotes them into enforced gates. Remind first, block on same-session repeat offense. Works with OpenCode, Claude Code, Codex CLI, Gemini CLI, Cursor, Copilot CLI, and Crush."   # 1 sentence, shown as the GitHub description
+  description: "Cross-session error gates for AI coding agents: detects recurring tool-call failures and promotes them into enforced gates. Remind first, block on same-session repeat offense. Works with OpenCode, Claude Code, Codex CLI, Gemini CLI, Cursor, Copilot CLI, and Crush."
+  category: "tool"   # library | app | template | research | tool | dataset | mcp-server
+  copyright_holder: "WhiteBite"   # name on the LICENSE copyright line; seeded from the git owner
+
+audiences: []
+
+use_cases: []   # 3-7 concrete jobs this project does
+
+keywords:
+  github_topics:
+    - "open-source"
+    - "developer-tools"
+    - "tool"
+    - "dejavu"
+    - "gates"
+    - "opencode"
+    - "opencode-plugin"
+    - "claude-code"
+    - "codex"
+    - "gemini-cli"
+    - "cursor"
+    - "copilot-cli"   # 8-20 terms, lowercase with hyphens
+  npm_keywords:
+    - "opencode"
+    - "opencode-plugin"
+    - "claude-code"
+    - "codex"
+    - "gemini-cli"
+    - "cursor"
+    - "copilot-cli"
+    - "crush"
+    - "ai-agents"
+    - "coding-agent"
+    - "error-gates"
+    - "hooks"
+    - "memory"
+    - "reliability"
+    - "bun"   # 5-15 terms for package.json keywords
+
+links:
+  homepage: "https://github.com/WhiteBite/dejavu-gates"
+  docs:
+  demo:
+  issues: "https://github.com/WhiteBite/dejavu-gates/issues"
+
+quickstart:
+  prerequisites:
+    - "Node.js >= 18"
+  install: "npm install dejavu-gates"
+  run:
+  test: "npm run test"
+
+artifacts:
+  has_npm_package: true
+  has_docs_site: false
+
+differentiators: []   # "why this repo, not the alternatives"
+
+safety:
+  allow_autofix: false          # lets the Action open autofix PRs
+  require_ack_for_publish: true
+  ack:   # optional override of the github-sync ACK string; empty keeps the default

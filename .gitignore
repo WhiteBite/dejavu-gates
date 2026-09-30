@@ -6,3 +6,6 @@ dist/
 .codegraph/
 .playwright-mcp/
 .opencode/dejavu/
+build/
+.DS_Store
+.env

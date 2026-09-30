@@ -1,0 +1,18 @@
+{
+  "@context": "https://schema.org",
+  "@type": "SoftwareSourceCode",
+  "name": "dejavu-gates",
+  "description": "Cross-session error gates for AI coding agents: detects recurring tool-call failures and promotes them into enforced gates. Remind first, block on same-session repeat offense. Works with OpenCode, Claude Code, Codex CLI, Gemini CLI, Cursor, Copilot CLI, and Crush.",
+  "programmingLanguage": "JavaScript",
+  "runtimePlatform": "Node.js",
+  "license": "https://opensource.org/licenses/MIT",
+  "keywords": "opencode, opencode-plugin, claude-code, codex, gemini-cli, cursor, copilot-cli, crush, ai-agents, coding-agent, error-gates, hooks, memory, reliability, bun",
+  "url": "https://github.com/WhiteBite/dejavu-gates",
+  "softwareVersion": "2.43.0",
+  "codeRepository": "https://github.com/WhiteBite/dejavu-gates",
+  "author": "WhiteBite",
+  "sameAs": [
+    "https://github.com/WhiteBite/dejavu-gates",
+    "https://www.npmjs.com/package/dejavu-gates"
+  ]
+}

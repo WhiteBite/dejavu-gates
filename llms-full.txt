@@ -1,3 +1,14 @@
+<!-- rdk:generated:start -->
+# dejavu-gates — full documentation
+
+> Cross-session error gates for AI coding agents: detects recurring tool-call failures and promotes them into enforced gates. Remind first, block on same-session repeat offense. Works with OpenCode, Claude Code, Codex CLI, Gemini CLI, Cursor, Copilot CLI, and Crush.
+
+This is the concatenated documentation intended for LLM grounding. Regenerate with `rdk fix`.
+
+---
+
+# README
+
 > [!IMPORTANT]
 > **[`opencode-dejavu`](https://github.com/WhiteBite/opencode-dejavu) has been RENAMED to [`dejavu-gates`](https://github.com/WhiteBite/dejavu-gates) — you are on the new home.**
 > The old URL [github.com/WhiteBite/opencode-dejavu](https://github.com/WhiteBite/opencode-dejavu) redirects here permanently.
@@ -226,21 +237,6 @@ Language ecosystems covered by failure detection: JS/TS, Python, Go, Rust, Java/
 
 The store paths are historical (`.opencode/`) but the store is harness-neutral — ALL harnesses share it. Both files are human-editable. Removing a gate object disables it. Editing `correction` improves what the agent is told. Clearing `feedbackDemoted` (and setting `status` back to `blocking`/`reminding`) re-enforces a gate the agent's behavior retired — it gets a fresh grace window via `feedbackBaseline`.
 
-### Environment overrides
-
-`DEJAVU_HOME` moves both store dirs; `DEJAVU_DEBUG=1` prints hook-CLI diagnostics to stderr. The enforcement tunables below can be overridden per process without editing source — each is read once at startup and falls back to its default when the value is not an integer within bounds:
-
-| Variable | Default | Bounds | Effect |
-|---|---|---|---|
-| `DEJAVU_TTL_DAYS` | 60 | 1–3650 | days without recurrence before a gate expires |
-| `DEJAVU_NOISE_TTL_DAYS` | 7 | 1–365 | TTL for one-off patterns (`watching`, count ≤ 1) |
-| `DEJAVU_PROMOTE_COUNT` | 3 | 1–100 | failures before a bash pattern becomes a gate |
-| `DEJAVU_PROMOTE_COUNT_PROBE` | 5 | 1–100 | failures before a probe tool becomes a gate |
-| `DEJAVU_PROMOTE_SESSIONS` | 2 | 1–100 | distinct sessions required to promote |
-| `DEJAVU_HEAL_SUCCESSES` | 3 | 1–100 | consecutive successes that retire a gate |
-| `DEJAVU_DEMOTE_RECURRENCES` | 3 | 1–100 | post-gate recurrences that demote a gate |
-| `DEJAVU_DEMOTE_OVERRIDES` | 3 | 1–100 | explicit bypasses that demote a blocking gate |
-
 ## Development
 
 ```bash
@@ -255,7 +251,6 @@ bun test/guards.ts         # proactive guards characterization (fire shapes, pre
 bun test/messages.ts       # teaching-text framing (tier-truthful, data-label, correction bound)
 bun test/property.ts       # seeded generator: normalization/fuzzy invariants
 bun test/fuzz.ts           # mutation fuzz: no crash, no invariant break
-bun test/env.ts            # DEJAVU_* env overrides: resolved tunables + promotion effect
 bun run lint:ast           # ast-grep structural gates (needs ast-grep on PATH)
 ```
 
@@ -414,10 +409,8 @@ npm start
 ## Why choose this
 
 <!-- TODO: 2-4 differentiators, with numbers -->
+<!-- rdk:generated:end -->
 
-## Examples
-### Example (replace with a real one)
+## Hand-written notes
 
-```bash
-npm start
-```
+<!-- Everything below the end marker is preserved by `rdk fix`. Put hand-written context here; the block above is regenerated from .discoverability/project.yml. -->
