@@ -23,6 +23,10 @@ function formatError(error: unknown): string {
 }
 
 function runReport(args: readonly string[]): number {
+  if (args.includes("--recurrence") && args.includes("--repair")) {
+    process.stderr.write(`error: --recurrence is read-only and cannot be combined with --repair\n${USAGE}\n`)
+    return 1
+  }
   const srcDir = (import.meta as ImportMeta & { dir: string }).dir
   const script = args.includes("--recurrence") ? "analyze.ts" : "doctor.ts"
   const scriptPath = join(srcDir, "..", "scripts", script)
