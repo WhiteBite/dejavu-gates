@@ -99,7 +99,7 @@ export function extractOutput(value: unknown): string | null {
 
 /** True when the payload explicitly marks a failed call (failure event, `error`, `is_error`/`status`). */
 export function errorSignalled(r: Record<string, unknown>, response: unknown = undefined): boolean {
-  const hookEvent = str(r, "hook_event_name")
+  const hookEvent = str(r, "hook_event_name") ?? str(r, "hookEventName")
   if (hookEvent !== null && /fail/i.test(hookEvent)) return true
   if (str(r, "error") !== null) return true
   if (typeof response === "object" && response !== null) {

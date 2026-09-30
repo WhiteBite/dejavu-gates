@@ -385,6 +385,22 @@ await after(
 gates = await readGates()
 check("file content containing 'TypeError' is NOT a failure", !gates.some((g) => g.signature === "read:src/other.py"))
 
+// generic tool output is CONTENT: the V1 host drops it, real failures ride the event channel
+await after(
+  { tool: "mcp__srv__success_tool", sessionID: "s12b", callID: "g12b", args: { action: "status", id: 7 } } as unknown as AfterInput,
+  { title: "mcp__srv__success_tool", output: "TypeError: boom", metadata: {} } as unknown as AfterOutput,
+)
+await after(
+  { tool: "mcp__srv__argless_tool", sessionID: "s12c", callID: "g12c" } as unknown as AfterInput,
+  { title: "mcp__srv__argless_tool", output: "TypeError: boom", metadata: {} } as unknown as AfterOutput,
+)
+gates = await readGates()
+check("generic tool success with failure-shaped content is not recorded (V1 host)", !gates.some((g) => g.tool === "mcp__srv__success_tool"))
+check("argless generic tool success fabricates no tool-error gate (V1 host)", !gates.some((g) => g.tool === "mcp__srv__argless_tool"))
+await emitToolError("g12d", "mcp__srv__fail_tool", "s12d", "TypeError: boom")
+gates = await readGates()
+check("a real generic-tool failure still records via the event channel", gates.some((g) => g.tool === "mcp__srv__fail_tool" && g.count === 1))
+
 // --- 13. intended non-zero exits: grep exit 1 is normal, exit 2 is a failure ---
 await after(
   { tool: "bash", sessionID: "s11", callID: "g1", args: { command: "grep -n foo bar.txt" } } as unknown as AfterInput,

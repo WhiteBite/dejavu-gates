@@ -8,6 +8,7 @@ import {
   type EnforceContext,
 } from "./enforce"
 import { createStores, GLOBAL_PROJECTS, NOISE_TTL_DAYS, PLUGIN_VERSION, TTL_DAYS } from "./store"
+import { genericToolOutput } from "./adapters/shared"
 import type { NormalizedEvent } from "./types"
 
 /** how often a long-lived process re-runs expiry */
@@ -162,7 +163,7 @@ export async function v2Setup(ctx: Plugin.Context): Promise<() => void> {
         sessionId: typeof event.sessionID === "string" ? event.sessionID : "unknown",
         callId: typeof event.id === "string" ? event.id : null,
         cwd: projectDir,
-        output: text,
+        output: genericToolOutput(engineTool(event.tool), text, false),
         exitCode,
         channel: exitCode !== null ? "exit" : "text",
         raw: event,

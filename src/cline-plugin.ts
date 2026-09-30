@@ -1,4 +1,4 @@
-import { extractOutput, internalArgs, internalTool, rec, str, UNKNOWN_SESSION } from "./adapters/shared"
+import { errorSignalled, extractOutput, genericToolOutput, internalArgs, internalTool, rec, str, UNKNOWN_SESSION } from "./adapters/shared"
 import { createEphemeralState, enforceAfter, enforceBefore, type EnforceContext } from "./enforce"
 import { createStores, GLOBAL_PROJECTS, NOISE_TTL_DAYS, PLUGIN_VERSION, TTL_DAYS } from "./store"
 import type { NormalizedEvent } from "./types"
@@ -139,7 +139,7 @@ const afterTool = async (context: ClineAfterContext): Promise<ClineAfterResult |
       sessionId: str(context.snapshot, "conversationId") ?? UNKNOWN_SESSION,
       callId: str(context.toolCall, "toolCallId"),
       cwd: projectDir,
-      output: result === null ? null : extractOutput(result.output),
+      output: result === null ? null : genericToolOutput(tool, extractOutput(result.output), errorSignalled(result, result)),
       exitCode: null,
       channel: "text",
       raw: context,

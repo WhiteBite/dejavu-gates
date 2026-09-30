@@ -8,6 +8,7 @@ import {
   recordEventFailure,
   type EnforceContext,
 } from "./src/enforce"
+import { genericToolOutput } from "./src/adapters/shared"
 import { createStores, GLOBAL_PROJECTS, NOISE_TTL_DAYS, PLUGIN_VERSION, TTL_DAYS } from "./src/store"
 import type { NormalizedEvent } from "./src/types"
 import { v2Setup } from "./src/opencode-v2"
@@ -140,7 +141,7 @@ export const Dejavu: Plugin = async ({ directory, client }) => {
           sessionId: typeof input.sessionID === "string" ? input.sessionID : "unknown",
           callId: typeof input.callID === "string" ? input.callID : null,
           cwd,
-          output: typeof output?.output === "string" ? output.output : "",
+          output: genericToolOutput(input.tool, typeof output?.output === "string" ? output.output : "", false),
           exitCode,
           channel: exitCode !== null ? "exit" : "text",
           raw: input,
