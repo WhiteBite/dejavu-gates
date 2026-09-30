@@ -102,7 +102,7 @@ Hard gate — the HOL AI Plugin Scanner. The catalog clones OUR source repo (`gi
 - Icon ≤50KB referenced from the manifest.
 - Points also scored (not pass/fail alone): SHA-pinned Actions, Dependabot config, lockfiles, no secrets, no `eval`/shell-injection patterns. Total 130, threshold ≥80 normalized.
 
-Local reproduction: `pipx install --force "plugin-scanner==3.12.2"` then `plugin-scanner scan . --format text`. Known false-positive classes documented in their issue #390 (prose SQL keywords, documented prohibitions naming sensitive paths) — if the score looks unearned, cite that issue rather than contorting code. Remediation loop closes on source-repo commits + centralized re-sweep (cron or maintainer rerun); example: PR #457 went 75→83 after source fixes.
+Local reproduction: `pipx install --force "plugin-scanner==3.12.3"` then `plugin-scanner scan . --format text`. Known false-positive classes documented in their issue #390 (prose SQL keywords, documented prohibitions naming sensitive paths) — if the score looks unearned, cite that issue rather than contorting code. Remediation loop closes on source-repo commits + centralized re-sweep (cron or maintainer rerun); example: PR #457 went 75→83 after source fixes.
 
 Prep work in dejavu-gates before submitting (out of scope for this doc, tracked here as prerequisite): add `.codex-plugin/plugin.json` + `assets/icon.svg`, commit SECURITY.md, pin Actions SHAs, add dependabot.yml. Root `plugin.json` (Codex-style, currently version-stale at 2.42.1) suggests the packaging intent already exists; the scanner wants the `.codex-plugin/` path specifically.
 
