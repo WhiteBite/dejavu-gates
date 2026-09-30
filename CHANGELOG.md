@@ -1,5 +1,17 @@
 # Changelog
 
+## 2.44.0 - 2026-09-30
+
+### Added
+- **`dejavu report --recurrence`** — per-gate recurrence verdicts (TEACHING / WORKING / FRICTION / RETIRED) with an aggregate teaching ratio, via analyze.ts. `report --recurrence --repair` is rejected (read-only vs doctor's heal).
+- **`DEJAVU_*` env overrides** for eight enforcement tunables (TTLs, promote/heal/demote thresholds), resolved once at module load with fallback on invalid values. Documented in README.
+- **Package-runner canonicalization** — `npm run X` / `pnpm run X` / `yarn run X` / `bun run X` converge to `run X`; `npx`/`bunx`/`pnpm dlx`/`pnpm exec`/`yarn dlx` converge to `npx`. Bare `pnpm X`/`yarn X` stay as-is (builtin ambiguity). Same script now shares one gate across runners.
+- **Generic-tool evidence hardening**: arg keys pass `sanitizeForStore` (new `sk-ant-` pattern); argless generic failures record under a `tool-error` signature; generic-tool post-hook output is gated on an explicit error signal in every host (7 adapters + OpenCode V1/V2 + Cline) — a successful MCP result containing failure-shaped text no longer records.
+
+### Changed
+- Recurrence report: feedback-demoted gates bucket as FRICTION (not RETIRED).
+- npm publishing switches to OIDC trusted publishing (`--provenance`), no long-lived token.
+
 ## 2.43.0 - 2026-09-29
 
 ### Added
