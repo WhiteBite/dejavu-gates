@@ -284,12 +284,43 @@ The three axes that separate every product in the space:
 - **post_compact_reminder** — a static "re-read AGENTS.md" hook after compaction; dejavu's compaction hooks carry real gate state instead.
 - **Hook SDKs (cchooks, cc-hooks-ts, claude_hooks, beyondcode SDK)** — authoring frameworks for writing your own hooks; dejavu is a shipped policy, and its CLI speaks the dialects they target.
 - **Native platform features** — Claude Code permissions/checkpoints and OpenCode plugins cover the static halves; neither has cross-session failure learning or recurrence-driven enforcement (the anthropics/claude-code#34556 persistent-memory request was closed unimplemented). If a platform ships this natively, it absorbs the niche — watch, don't assume.
+
+## Stats
+
+The honest answer: dejavu does not ship benchmark numbers, and this section will not invent any. What exists is your own store — every host writes `log.jsonl`, so the evidence is local, per-agent, and auditable.
+
+All-time contents of one developer's global store (`~/.config/opencode/dejavu/log.jsonl`) as of Sep 29, 2026 — 6574 events on 40 active days (Aug 21 – Sep 29), across 11 project dirs and every harness sharing that store:
+
+| Event | Count |
+|---|---|
+| `detected` failures | 3931 (2431 distinct pattern keys) |
+| gates `promoted` | 237 events, 211 distinct keys |
+| `recurred-after-gate` | 163 events, 76 distinct keys |
+| `blocked` | 56 |
+| `override` (`dejavu:proceed`) | 383 |
+| healed / retired-taught / demoted | 11 / 46 / 30 |
+
+Reading it carefully: 62 of the 211 promoted keys recurred after their gate existed. That is not a reduction rate — recurrence-after-gate is the per-gate health signal (`recurredAfterGate`), and demotions (30) plus heal/teach retirements (57) are the loop closing in both directions. One person's agent habits over six weeks is a sample size of one; treat it as an example of what the data looks like, not as proof.
+
+**Measure it yourself.** After N sessions of real use:
+
+```bash
+dejavu report            # doctor over project + global stores
+bun scripts/analyze.ts   # statuses, tools, top patterns
+```
+
+or run `/dejavu` inside OpenCode. The metrics that matter are in `gates.json` and `log.jsonl`: `recurredAfterGate` per gate (did the error survive the reminder?), and the `healed` / `retired-taught` / `demoted` events (did the gate retire because you fixed the command, or because it was fighting you?). If your numbers say the approach is wrong, the data will show it — that is the point of the metric.
+
 ## Roadmap
 
 - Windsurf / Amp adapters — blocked on usable context-injection surfaces (block-only today); the adapter slots exist
 - recurrence-after-gate reporting command; `tool.execute.error` (opencode issue #27900) closed upstream as not planned — event-channel detection remains the supported path
 - auto-proposal of ast-grep rules for statically detectable patterns (repo-level CI gates)
 - embedding-assisted candidate merging for semantic near-duplicates (advisory only — the enforcement decision stays mechanical; addresses the semantic-identity gap above)
+- `dejavu share` — export/merge portable gate bundles between machines and teams (opt-in; gates are already harness-neutral JSON, the command makes moving them explicit)
+- docs-as-code — generate the gate/correction reference from the store schema instead of hand-maintaining prose that drifts from `validate.ts`
+- env-var overrides — expose the enforcement tunables (promotion thresholds, TTLs, caps) via `DEJAVU_*` env vars alongside the named constants, without a config file
+- semantic mapping table — a maintained synonym table (`pnpm tsc` ↔ `npm run typecheck`) feeding the existing mechanical fuzzy merge; advisory only, same as embeddings
 
 ## Disclaimer
 
