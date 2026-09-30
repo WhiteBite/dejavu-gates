@@ -16,7 +16,7 @@ const REPORT_SUBS = new Set(["report"])
 const USAGE = `usage: dejavu <command> [args]
   install | uninstall | hooks --check   manage harness hook configs (--harness <csv> --user --yes --dry-run)
   pre | post | session-event            hook handler (--harness <name> [--store <dir>])
-  report [dirs...]                      gate health report (doctor) over the given project dirs or all discovered stores; pass --repair to heal first`
+  report [dirs...] [--recurrence]       gate health report (doctor) over the given project dirs or all discovered stores; --recurrence prints the per-gate recurrence verdicts (analyze), --repair heals first`
 
 function formatError(error: unknown): string {
   return error instanceof Error ? error.message : String(error)
@@ -24,8 +24,9 @@ function formatError(error: unknown): string {
 
 function runReport(args: readonly string[]): number {
   const srcDir = (import.meta as ImportMeta & { dir: string }).dir
-  const doctorPath = join(srcDir, "..", "scripts", "doctor.ts")
-  const result = spawnSync(process.execPath, [doctorPath, ...args], { stdio: "inherit" })
+  const script = args.includes("--recurrence") ? "analyze.ts" : "doctor.ts"
+  const scriptPath = join(srcDir, "..", "scripts", script)
+  const result = spawnSync(process.execPath, [scriptPath, ...args], { stdio: "inherit" })
   return result.status ?? 1
 }
 
