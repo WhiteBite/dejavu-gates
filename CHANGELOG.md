@@ -1,5 +1,18 @@
 # Changelog
 
+## 2.43.0 - 2026-09-29
+
+### Added
+- **Generic tool signatures** — unknown tools (MCP, spawn_agent, custom) now produce deterministic signatures instead of returning null. Normalization: sorted keys, lowercased names, values through the parameterization vocabulary (numbers/hashes/uuid/urls → placeholders, strings bounded). Tier: watching → reminding (never blocking) at the probe bar (5 failures × 2 sessions). Over-generic shapes (all values parameterized away) stay watching via `hasGenericResidualIdentity`.
+- **Repo-relative file signatures** — `normalizeFilePath` now resolves against `projectDir` when available, so `src/foo.ts` and `C:\proj\src\foo.ts` converge to one gate. Out-of-repo and projectDir-less paths fall back to basename. Windows separators normalize.
+
+### Fixed
+- **`isRepoLocal` scope** — the repo-local-verb heuristic (npm/git/...) was applied to ALL signatures, so a file path containing "git" (`read:src/git/x.ts`) was wrongly suppressed from global escalation. Now bash-only.
+
+### Changed
+- `PROBE_TOOLS` moved from `src/store.ts` to `src/patterns.ts` (single source of truth alongside `canBlock`/`canRemind`).
+- `promotionThreshold(tool)` — bash pays the base bar (3), every non-bash tool (probes and generic) pays the probe bar (5).
+
 ## 2.42.1 - 2026-09-29
 
 ### Changed
