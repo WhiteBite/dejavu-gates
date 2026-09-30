@@ -165,6 +165,12 @@ function unwrapCmdWrapper(command: string): string {
   return payload === null ? command : normalizeCommand(payload)
 }
 
+/** Package-runner `run` forms collapse to `run X` — one script, one key across npm/pnpm/yarn/bun. */
+const PACKAGE_RUN = /(^|[|;&(\n]\s*)(?:npm|pnpm|yarn|bun)\s+run\s+/gi
+
+/** Binary-exec runners collapse onto `npx`; bare `pnpm X`/`yarn X` stay — X may be a builtin. */
+const PACKAGE_EXEC = /(^|[|;&(\n]\s*)(?:npx|bunx|pnpm\s+dlx|pnpm\s+exec|yarn\s+dlx)\s+/gi
+
 /**
  * Normalize a bash command into a stable signature.
  * Paths, numbers, quoted strings, hashes and agent comments are abstracted
@@ -185,6 +191,9 @@ export function normalizeCommand(command: string): string {
   // spaces that would otherwise expose an adjacent "/" to the path rule only
   // on a second pass.
   s = s.replace(QUOTED_SPAN, " <str> ")
+  // canonicalize after quote stripping: a runner token inside string data must stay data
+  s = s.replace(PACKAGE_RUN, "$1run ")
+  s = s.replace(PACKAGE_EXEC, "$1npx ")
   s = s.replace(/[a-z]:[\\/][^\s"']+/gi, " <path> ")
   s = s.replace(/(^|\s)\/[^\s"']+/g, "$1<path> ")
   // lookbehind: never re-parameterize the <code:...> fingerprint hex
@@ -318,6 +327,8 @@ const DIAGNOSTIC_VERBS: RegExp[] = [
   // `npm run check:*` / `verify:*` scripts are iteration work like test/lint —
   // their exit 1 is "found issues", not an infrastructure error.
   /\b(npm|pnpm|yarn|bun) (run )?(check|verify)\b/i,
+  // canonical runner form: npm run test -> run test keeps the iteration tier
+  /(^|[|;&(:\n])\s*run (test|typecheck|lint|check|verify)\b/i,
   /\bplaywright test\b/i,
   /\bflutter (test|analyze)\b/i,
   /\bdart (analyze|format|fix)\b/i,
@@ -654,6 +665,8 @@ function segmentHasIdentity(segment: string): boolean {
   if (headBase === "npx" && NPX_RUNNERS.has(baseName(tokens[headIdx + 1] ?? ""))) {
     return hasIdentityAfter(tokens, headIdx + 2)
   }
+  // canonical `run <script>`: identity comes from the script argument, not the bare verb
+  if (headBase === "run") return hasIdentityAfter(tokens, headIdx + 1)
   if (!WRAPPER_BASENAMES.has(headBase)) return true
   // Wrapper/interpreter head: identity must come from a surviving argument
   // (a literal path/script, or a <code:...> fingerprint). Flags are switches,
@@ -745,6 +758,8 @@ export function canRemind(tool: string, signature: string): boolean {
  */
 const REPO_LOCAL_VERBS: RegExp[] = [
   /\b(npm|yarn|pnpm|bun|npx)\b/i,
+  // canonical `run <script>` keeps the package-script repo-local scope
+  /(^|[|;&(:\n])\s*run\b/i,
   /\bgit\b/i,
   /\b(gradlew|gradle|mvn|maven)\b/i,
   /\b(cargo|go|pip3?|poetry|uv)\b/i,
@@ -1533,7 +1548,7 @@ export function suggestCorrection(signature: string, snippet: string): string {
   if (/(^|\s)(--check|--dry-run|verify|check)\b/i.test(signature) && /dart run|generate|sync/i.test(signature)) {
     return "Generated artifacts are stale — run the same script WITHOUT the check flag to regenerate, then commit the result."
   }
-  if (/\b(pytest|jest|vitest|mocha|cucumbertest|flutter test|npm test|gradlew\b[^\n]*test|dart test)\b/i.test(signature)) {
+  if (/\b(pytest|jest|vitest|mocha|cucumbertest|flutter test|npm test|gradlew\b[^\n]*test|dart test)\b/i.test(signature) || /(^|[|;&(:\n])\s*run test\b/i.test(signature)) {
     return "A test is failing — read the failing assertion in the output and fix the code or the expectation; do not re-run the suite blindly."
   }
   if (/\b(tsc|typecheck|type-check)\b/i.test(signature)) {

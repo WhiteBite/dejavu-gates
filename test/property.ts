@@ -162,6 +162,25 @@ if (!/<code:[0-9a-f]{8}>/.test(callSignature("bash", { command: oneLinerA }) ?? 
   fail("one-liner fingerprint shape", callSignature("bash", { command: oneLinerA }) ?? "(null)")
 }
 
+// package-runner canonicalization is idempotent — a second pass must not rewrite it again
+const PACKAGE_RUNNER_FORMS = [
+  "npm run build",
+  "pnpm run build",
+  "yarn run build",
+  "bun run build",
+  "npx tsc --noEmit",
+  "pnpm dlx tsc --noEmit",
+  "pnpm exec tsc --noEmit",
+  "yarn dlx tsc --noEmit",
+  "bunx tsc --noEmit",
+]
+for (const cmd of PACKAGE_RUNNER_FORMS) {
+  const once = normalizeCommand(cmd)
+  if (normalizeCommand(once) !== once) {
+    fail("package-runner canonicalization not idempotent", `${JSON.stringify(cmd)} -> ${JSON.stringify(once)}`)
+  }
+}
+
 // override marker neutrality: appending the marker never changes the signature
 for (let i = 0; i < 200; i++) {
   const cmd = genCommand()

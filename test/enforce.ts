@@ -14,7 +14,7 @@ import {
   recordEventFailure,
   type EnforceContext,
 } from "../src/enforce"
-import { callSignature, canBlock, canRemind, hasGenericResidualIdentity, isRepoLocal, normalizeFilePath, patternKey } from "../src/patterns"
+import { callSignature, canBlock, canRemind, hasGenericResidualIdentity, isRepoLocal, normalizeCommand, normalizeFilePath, patternKey } from "../src/patterns"
 import { claudeAdapter } from "../src/adapters/claude"
 import { GateStore, GLOBAL_PROJECTS, PROMOTE_COUNT_PROBE, Stores, type Gate } from "../src/store"
 import { repairGate } from "../src/validate"
@@ -284,6 +284,31 @@ check("missing projectDir falls back to basename", normalizeFilePath("src/missin
 check("no absolute path reaches a signature", callSignature("read", { filePath: ws2Abs }, ws2.projectDir) === "read:src/missing.ts")
 
 check("isRepoLocal is bash-only", isRepoLocal("read:src/git/x.ts") === false && isRepoLocal("bash:git status") === true)
+
+// --- wl. package-runner canonicalization: one script, one key across runners ---
+check(
+  "explicit run forms converge across npm/pnpm/yarn/bun",
+  normalizeCommand("npm run build") === "run build" &&
+    normalizeCommand("pnpm run build") === "run build" &&
+    normalizeCommand("yarn run build") === "run build" &&
+    normalizeCommand("bun run build") === "run build",
+)
+check(
+  "binary-exec runners converge on npx",
+  normalizeCommand("npx tsc --noEmit") === "npx tsc --noemit" &&
+    normalizeCommand("pnpm dlx tsc --noEmit") === "npx tsc --noemit" &&
+    normalizeCommand("pnpm exec tsc --noEmit") === "npx tsc --noemit" &&
+    normalizeCommand("yarn dlx tsc --noEmit") === "npx tsc --noemit" &&
+    normalizeCommand("bunx tsc --noEmit") === "npx tsc --noemit",
+)
+check("a bare builtin stays distinct from its explicit run form", normalizeCommand("pnpm install") !== normalizeCommand("pnpm run install"))
+check("bare `pnpm test` is not canonicalized (ambiguous builtin)", normalizeCommand("pnpm test") === "pnpm test")
+check("`run build` stays distinct from `npm test`", normalizeCommand("npm run build") !== normalizeCommand("npm test"))
+check("canonical run typecheck stays remind-only, never blocking", canRemind("bash", "bash:run typecheck") && !canBlock("bash", "bash:run typecheck"))
+check("canonical run build keeps blocking teeth", canBlock("bash", "bash:run build"))
+check("canonical run test still reminds (script arg is identity)", canRemind("bash", "bash:run test"))
+check("canonical run <str> stays a family (no identity)", !canBlock("bash", "bash:run <str>") && !canRemind("bash", "bash:run <str>"))
+check("canonical package scripts stay repo-local", isRepoLocal("bash:run build") && isRepoLocal("bash:npx tsc --noemit"))
 
 // --- ws1. generic (unknown) tool signatures: deterministic, remind-only ---
 const gcA = callSignature("mcp__srv__tool", { z: 2, a: 1 })

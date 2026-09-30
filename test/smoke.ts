@@ -205,7 +205,7 @@ await fail(CMD, "s1", "c1")
 await fail(CMD, "s1", "c2")
 await fail(CMD, "s2", "c3")
 let gates = await readGates()
-const gate1 = gates.find((g) => g.signature === `bash:${CMD}`)
+const gate1 = gates.find((g) => g.signature === (callSignature("bash", { command: CMD }) ?? ""))
 check("gate promoted after 3 failures in 2 sessions", gate1?.status === "blocking" && gate1.count === 3 && gate1.sessions.length === 2)
 
 // --- 2. first attempt in a fresh session is aborted with a REMINDER ---
