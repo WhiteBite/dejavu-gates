@@ -15,6 +15,7 @@ import {
   type EnforceContext,
 } from "../src/enforce"
 import { callSignature, canBlock, canRemind, hasGenericResidualIdentity, isRepoLocal, normalizeFilePath, patternKey } from "../src/patterns"
+import { claudeAdapter } from "../src/adapters/claude"
 import { GateStore, GLOBAL_PROJECTS, PROMOTE_COUNT_PROBE, Stores, type Gate } from "../src/store"
 import { repairGate } from "../src/validate"
 import type { NormalizedEvent } from "../src/types"
@@ -362,6 +363,29 @@ check("a wide object argument collapses to <obj> and bounds the signature", wide
 const gd = await makeWorld("gd")
 const gdOut = await enforceAfter(ev({ tool: "mcp__srv__tool", sessionId: "gd1", args: { action: "delete", id: 7 }, phase: "post", output: "Error: previous run failed", exitCode: 0, channel: "exit" }), gd.ctx)
 check("a successful generic call with failure-shaped output is not recorded", gdOut.recorded === false && (await readProjectGates(gd)).length === 0)
+
+// a secret carried in an argument KEY must not reach the signature
+const keySecretSig = callSignature("mcp__t__x", { "authorization_bearer_sk-ant-abc123": 1 })
+check("an arg-key secret is scrubbed from the generic signature", keySecretSig !== null && !keySecretSig.includes("sk-ant-abc123"))
+
+// an argless generic tool has no call identity — the error text signs it (mirrors the event channel)
+const ge = await makeWorld("ge")
+const geOut = await enforceAfter(ev({ tool: "mcp__srv__reboot", sessionId: "ge1", phase: "post", output: "Error: reboot failed", exitCode: null, channel: "text" }), ge.ctx)
+const geGate = (await readProjectGates(ge)).find((g) => g.tool === "mcp__srv__reboot")
+check("an argless generic failure is recorded under a tool-error signature", geOut.recorded === true && geGate !== undefined && geGate.signature.startsWith("mcp__srv__reboot:tool-error:"))
+check("the tool-error fallback gate stays watch-only (no residual identity)", geGate?.status === "watching")
+
+// a successful generic result is CONTENT, not failure evidence — the adapter must not feed it
+const ge2 = await makeWorld("ge2")
+const claudeGenericOk = claudeAdapter.mapInbound("post", { hook_event_name: "PostToolUse", tool_name: "mcp__srv__reboot", tool_input: { action: "status" }, session_id: "ge2-1", tool_response: "TypeError: cannot read properties of undefined" })
+if (claudeGenericOk === null) throw new Error("claude generic post unexpectedly null")
+const ge2Out = await enforceAfter(claudeGenericOk, ge2.ctx)
+check("a successful generic result with failure-shaped content is not recorded", ge2Out.recorded === false && (await readProjectGates(ge2)).length === 0)
+check("the adapter drops successful generic content (output null)", claudeGenericOk.output === null)
+const claudeGenericErr = claudeAdapter.mapInbound("post", { hook_event_name: "PostToolUseFailure", tool_name: "mcp__srv__reboot", tool_input: { action: "status" }, session_id: "ge2-1", error: "Error: reboot failed" })
+if (claudeGenericErr === null) throw new Error("claude generic failure post unexpectedly null")
+const ge2ErrOut = await enforceAfter(claudeGenericErr, ge2.ctx)
+check("an error-signalled generic result is still recorded", ge2ErrOut.recorded === true)
 
 // file probes keep their dedicated signatures and stay non-enforcing
 check("file probes are not generic (dedicated signature shape)", callSignature("read", { filePath: "src/x.ts" }, gc.projectDir) === "read:src/x.ts" && !canRemind("read", "read:src/x.ts") && !canBlock("read", "read:src/x.ts"))

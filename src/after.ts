@@ -7,6 +7,7 @@ import {
   isIntendedNonzero,
   isNoiseError,
   nonTransparentProducers,
+  parameterizeError,
   patternKey,
   PROBE_TOOLS,
   sanitizeForStore,
@@ -56,6 +57,10 @@ export async function enforceAfter(event: NormalizedEvent, ctx: EnforceContext):
   if (event.callId !== null) {
     if (!signature) signature = ctx.ephemeral.pendingCalls.get(event.callId) ?? null
     ctx.ephemeral.pendingCalls.delete(event.callId)
+  }
+  // argless generic tools have no call identity; error text is the only key (mirrors the event channel)
+  if (!signature && failed && !isBash && !PROBE_TOOLS.has(event.tool)) {
+    signature = `${event.tool}:tool-error:${parameterizeError(sanitizeForStore(text === "" ? "unknown error" : text)).slice(0, 120)}`
   }
   if (!signature) return noneOutcome()
 

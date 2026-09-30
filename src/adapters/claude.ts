@@ -5,7 +5,7 @@
  * hookSpecificOutput for annotation).
  */
 import type { HarnessAdapter, NormalizedEvent } from "../types"
-import { internalTool, internalArgs, str, rec, UNKNOWN_SESSION, denyDecision, makeOutbound } from "./shared"
+import { internalTool, internalArgs, str, rec, UNKNOWN_SESSION, denyDecision, makeOutbound, errorSignalled, genericToolOutput } from "./shared"
 
 /** Extract tool output text from a PostToolUse response payload. */
 function extractToolText(response: unknown): string | null {
@@ -77,7 +77,7 @@ export const claudeAdapter: HarnessAdapter = {
         sessionId,
         callId,
         cwd,
-        output,
+        output: genericToolOutput(toolMapped, output, errorSignalled(r, toolResponse)),
         exitCode: null,
         channel: "text",
         raw,

@@ -60,6 +60,14 @@ const claudePostFailure = { tool_name: "Bash", tool_input: { command: "x" }, ses
 const ce7 = claudeAdapter.mapInbound("post", claudePostFailure)
 check("claude post PostToolUseFailure appends error after response text", ce7?.output === "resp\nboom")
 
+const claudePostGenericOk = { hook_event_name: "PostToolUse", tool_name: "mcp__srv__reboot", tool_input: { action: "status" }, session_id: "cs-8", tool_use_id: "tu-cla-8", tool_response: "TypeError: boom" }
+const ce8 = claudeAdapter.mapInbound("post", claudePostGenericOk)
+check("claude post successful generic result → output null (content is not failure evidence)", ce8?.output === null)
+
+const claudePostGenericErr = { hook_event_name: "PostToolUseFailure", tool_name: "mcp__srv__reboot", tool_input: {}, session_id: "cs-9", tool_use_id: "tu-cla-9", error: "Error: boom" }
+const ce9 = claudeAdapter.mapInbound("post", claudePostGenericErr)
+check("claude post failed generic result → error text is the output", ce9?.output === "Error: boom")
+
 // --- claude: mapOutbound allow ---
 const ao1 = claudeAdapter.mapOutbound("pre", { action: "allow", reason: null, annotation: null, degraded: false })
 check("claude mapOutbound allow → json={}, exitCode 0, stderr null", Object.keys(ao1.json as object).length === 0 && ao1.exitCode === 0 && ao1.stderr === null)

@@ -28,6 +28,7 @@ export function stripQuotedSpans(text: string): string {
 const SECRET_PATTERNS: RegExp[] = [
   /sk-proj-\S*/gi, // OpenAI keys incl. fragmented PowerShell continuations ("sk-proj-\")
   /sk-[a-zA-Z0-9_-]{20,}/g, // OpenAI / Anthropic style keys
+  /sk-ant-[a-zA-Z0-9_-]{6,}/g, // fixed Anthropic prefix — a short label still redacts where {20,} frames
   /gh[pousr]_[A-Za-z0-9_]{36,}/g, // GitHub PATs
   /github_pat_[A-Za-z0-9_]{22,}[A-Za-z0-9_]{59}/g, // GitHub fine-grained
   /AKIA[A-Z0-9]{16}/g, // AWS access keys
@@ -239,7 +240,7 @@ const GENERIC_PLACEHOLDER = /^<(?:n|bool|null|str|path|hash|uuid|sha|md5|ip|url|
 /** Field names lowercase and lose whitespace so the `key=value` pairs stay
  * whitespace-delimited (the residual-identity scan splits on whitespace). */
 function normalizeGenericKey(key: string): string {
-  return key.toLowerCase().replace(/\s+/g, "_")
+  return sanitizeForStore(key).toLowerCase().replace(/\s+/g, "_")
 }
 
 /**

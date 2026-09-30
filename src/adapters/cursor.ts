@@ -9,7 +9,7 @@
  * Unknown shape or session-event phase → null.
  */
 import type { HarnessAdapter, NormalizedEvent } from "../types"
-import { internalTool, internalArgs, str, rec, UNKNOWN_SESSION, makeOutbound } from "./shared"
+import { internalTool, internalArgs, str, rec, UNKNOWN_SESSION, makeOutbound, errorSignalled, genericToolOutput } from "./shared"
 
 /** Extract text from a tool_output value (string | object | null). */
 function extractOutput(value: unknown): string | null {
@@ -120,7 +120,7 @@ export const cursorAdapter: HarnessAdapter = {
           sessionId,
           callId,
           cwd,
-          output,
+          output: genericToolOutput(toolMapped, output, errorSignalled(r, r.tool_output)),
           exitCode: null,
           channel: "text",
           raw,

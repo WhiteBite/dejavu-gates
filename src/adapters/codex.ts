@@ -7,7 +7,7 @@
  *   annotation → `{json: {hookSpecificOutput: {additionalContext: annotation}}, exitCode: 0, stderr: null}`.
  */
 import type { HarnessAdapter, HookPhase, NormalizedEvent } from "../types"
-import { internalTool, internalArgs, str, rec, UNKNOWN_SESSION, denyDecision, makeOutbound } from "./shared"
+import { internalTool, internalArgs, str, rec, UNKNOWN_SESSION, denyDecision, makeOutbound, errorSignalled, genericToolOutput } from "./shared"
 
 /** Build a string output from a generic tool_response value. */
 function buildOutput(response: unknown): string | null {
@@ -72,7 +72,7 @@ export const codexAdapter: HarnessAdapter = {
       sessionId,
       callId,
       cwd,
-      output: buildOutput(toolResponse),
+      output: genericToolOutput(tool, buildOutput(toolResponse), errorSignalled(r, toolResponse)),
       exitCode: null,
       channel: "text",
       raw,

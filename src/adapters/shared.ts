@@ -5,6 +5,7 @@
  * unmapped passes through and yields a null signature (the engine then allows).
  */
 import type { HarnessName, HookPhase, OutboundDecision, Verdict } from "../types"
+import { PROBE_TOOLS } from "../patterns"
 
 /** per-harness tool-name aliases, keyed by the LOWERCASED harness tool name */
 const TOOL_ALIASES: Record<HarnessName, Record<string, string>> = {
@@ -94,6 +95,26 @@ export function extractOutput(value: unknown): string | null {
     return JSON.stringify(value)
   }
   return null
+}
+
+/** True when the payload explicitly marks a failed call (failure event, `error`, `is_error`/`status`). */
+export function errorSignalled(r: Record<string, unknown>, response: unknown = undefined): boolean {
+  const hookEvent = str(r, "hook_event_name")
+  if (hookEvent !== null && /fail/i.test(hookEvent)) return true
+  if (str(r, "error") !== null) return true
+  if (typeof response === "object" && response !== null) {
+    const obj = response as Record<string, unknown>
+    if (obj.is_error === true || obj.isError === true) return true
+    if (typeof obj.status === "string" && /error|fail/i.test(obj.status)) return true
+    if (str(obj, "error") !== null) return true
+  }
+  return false
+}
+
+/** A successful generic result is CONTENT, not command output — only error-signalled calls feed the scan. */
+export function genericToolOutput(tool: string, output: string | null, errored: boolean): string | null {
+  if (tool === "bash" || PROBE_TOOLS.has(tool)) return output
+  return errored ? output : null
 }
 
 /** Universal allow: empty JSON on stdout, exit 0. */

@@ -13,7 +13,7 @@
  * callId always null (Copilot exposes no per-call id); exitCode null, channel "text".
  */
 import type { HarnessAdapter, NormalizedEvent } from "../types"
-import { internalTool, internalArgs, str, rec, UNKNOWN_SESSION, makeOutbound } from "./shared"
+import { internalTool, internalArgs, str, rec, UNKNOWN_SESSION, makeOutbound, errorSignalled, genericToolOutput } from "./shared"
 
 /** Parse toolArgs JSON string → object; returns {} on any parse failure. */
 function parseToolArgs(raw: unknown): Record<string, unknown> {
@@ -99,7 +99,7 @@ export const copilotAdapter: HarnessAdapter = {
           sessionId,
           callId: null,
           cwd,
-          output,
+          output: genericToolOutput(toolMapped, output, errorSignalled(r, toolResult)),
           exitCode: null,
           channel: "text",
           raw,
@@ -147,7 +147,7 @@ export const copilotAdapter: HarnessAdapter = {
           sessionId,
           callId: null,
           cwd,
-          output,
+          output: genericToolOutput(toolMapped, output, errorSignalled(r, r.tool_response)),
           exitCode: null,
           channel: "text",
           raw,

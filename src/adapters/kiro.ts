@@ -1,5 +1,5 @@
 import type { HarnessAdapter, NormalizedEvent } from "../types"
-import { denyDecision, extractOutput, internalArgs, internalTool, makeOutbound, rec, str, UNKNOWN_SESSION } from "./shared"
+import { denyDecision, extractOutput, internalArgs, internalTool, makeOutbound, rec, str, UNKNOWN_SESSION, errorSignalled, genericToolOutput } from "./shared"
 
 const KIRO_EVENTS = new Set(["pretooluse", "posttooluse"])
 
@@ -48,7 +48,7 @@ export const kiroAdapter: HarnessAdapter = {
       sessionId,
       callId: null,
       cwd,
-      output,
+      output: genericToolOutput(toolMapped, output, errorSignalled(r, r.tool_response)),
       exitCode: null,
       channel: "text",
       raw,
