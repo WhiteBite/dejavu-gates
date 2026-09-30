@@ -32,8 +32,7 @@ jobs:
       - run: bun test/cline-plugin.ts
       - run: bun test/cline-plugin.ts
       - uses: actions/setup-node@v4
-      - run: npm install -g npm@^11.5.1
-      - run: npm publish --provenance
+      - run: npx --yes npm@^11.5.1 publish --provenance
       - name: Extract release notes from CHANGELOG
         run: awk -v h="## ${GITHUB_REF_NAME#v} " 'index($0, h) == 1 { on = 1; next } on && /^## / { exit } on { print }' CHANGELOG.md > /tmp/release-notes.md
       - name: GitHub Release
