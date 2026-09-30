@@ -12,6 +12,7 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: write
+      id-token: write
     steps:
       - uses: actions/checkout@v4
       - uses: oven-sh/setup-bun@v2
@@ -30,11 +31,9 @@ jobs:
       - run: bun test/v2-host.ts
       - run: bun test/cline-plugin.ts
       - run: bun test/cline-plugin.ts
-      - run: |
-          echo "//registry.npmjs.org/:_authToken=$NODE_AUTH_TOKEN" > .npmrc
-          npm publish
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+      - uses: actions/setup-node@v4
+      - run: npm install -g npm@^11.5.1
+      - run: npm publish --provenance
       - name: Extract release notes from CHANGELOG
         run: awk -v h="## ${GITHUB_REF_NAME#v} " 'index($0, h) == 1 { on = 1; next } on && /^## / { exit } on { print }' CHANGELOG.md > /tmp/release-notes.md
       - name: GitHub Release
