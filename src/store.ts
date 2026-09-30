@@ -2,11 +2,11 @@ import { existsSync } from "node:fs"
 import { appendFile, mkdir, readFile, rename, stat, unlink, writeFile } from "node:fs/promises"
 import { homedir } from "node:os"
 import { dirname, join } from "node:path"
-import { canBlock, canRemind, fuzzySimilar, FUZZY_MAX_LEN, hasResidualIdentity, isNoiseError, isRepoLocal, looksLikeFailure, parameterizeError, sanitizeForStore, scrubSecrets, suggestCorrection } from "./patterns"
+import { canBlock, canRemind, fuzzySimilar, FUZZY_MAX_LEN, hasGenericResidualIdentity, hasResidualIdentity, isGenericSignature, isNoiseError, isRepoLocal, looksLikeFailure, parameterizeError, sanitizeForStore, scrubSecrets, suggestCorrection } from "./patterns"
 import { coerceGateShape, failedAtMs, repairGate } from "./validate"
 
 /** Bumped on behavior changes; stamped into init log events so stale sessions are visible. */
-export const PLUGIN_VERSION = "2.42.1"
+export const PLUGIN_VERSION = "2.43.0"
 
 /** Global store root — DEJAVU_HOME overrides it (testing, custom setups). */
 export function resolveGlobalDir(): string {
@@ -201,7 +201,6 @@ export const NOISE_TTL_DAYS = 7
 export const PROMOTE_COUNT = 3
 /** file-probe tools fail routinely during normal probing — higher bar, never block */
 export const PROMOTE_COUNT_PROBE = 5
-export const PROBE_TOOLS = new Set(["read", "glob", "grep", "write", "edit"])
 /** distinct sessions required — same-session loops never promote */
 export const PROMOTE_SESSIONS = 2
 /** consecutive successes after a gate that retire it — the command is fixed,
@@ -227,6 +226,11 @@ export const DEMOTE_OVERRIDE_SESSIONS = 2
 export const DEMOTE_REOFFENSE_SESSIONS = 2
 /** prune an index key absent from every scope visible to the sweeper after this many days (a live gate in an unopened project clears its own candidacy) */
 export const ORPHAN_CANDIDATE_DAYS = 7
+
+/** bash pays the base bar; every non-bash tool (probes and generic) pays the probe bar. */
+function promotionThreshold(tool: string): number {
+  return tool === "bash" ? PROMOTE_COUNT : PROMOTE_COUNT_PROBE
+}
 
 // --- Windows-safe fs helpers -------------------------------------------------
 
@@ -1092,6 +1096,7 @@ export class Stores {
     // Over-generic bash shapes match exactly only: fuzzy-matching them onto
     // concrete gates would enforce/pollute unrelated calls (family noise).
     if (signature.startsWith("bash:") && !hasResidualIdentity(signature)) return null
+    if (isGenericSignature(signature) && !hasGenericResidualIdentity(signature)) return null
     let best: { gate: Gate; store: GateStore; score: number } | null = null
     for (const store of this.scopes()) {
       for (const gate of store.enforcedOnly()) {
@@ -1257,7 +1262,7 @@ export class Stores {
             gate.feedbackDemoted !== true &&
             gate.retireBaseline === undefined &&
             canRemind(gate.tool, gate.signature) &&
-            gate.count >= PROMOTE_COUNT &&
+            gate.count >= promotionThreshold(gate.tool) &&
             gate.sessions.length >= PROMOTE_SESSIONS
           ) {
             // Recurring diagnostics already proven under the old policy start
@@ -1501,7 +1506,7 @@ export class Stores {
         // otherwise the remind→block chain desyncs between the hooks.
         // Over-generic bash shapes never consolidate into concrete gates:
         // family noise must not inflate a specific call's evidence.
-        const fuzzyAllowed = input.tool !== "bash" || hasResidualIdentity(input.signature)
+        const fuzzyAllowed = input.tool === "bash" ? hasResidualIdentity(input.signature) : !isGenericSignature(input.signature) || hasGenericResidualIdentity(input.signature)
         const fuzzyMatches = fuzzyAllowed ? gates.filter((g) => g.tool === input.tool && fuzzySimilar(input.signature, g.signature)) : []
         gate = fuzzyMatches.find((g) => g.remindedSessions?.[input.sessionID] !== undefined) ?? fuzzyMatches[0]
         if (gate !== undefined) fuzzyConsolidated = true
@@ -1630,7 +1635,7 @@ export class Stores {
       // A failure breaks any heal streak — the command is still broken.
       gate.succeededAfterGate = 0
 
-      const threshold = PROBE_TOOLS.has(input.tool) ? PROMOTE_COUNT_PROBE : PROMOTE_COUNT
+      const threshold = promotionThreshold(input.tool)
       // Oscillation damping: a retired gate (healed/taught) keeps its lifetime
       // count/sessions, which already clear the promotion bar — so it would
       // re-promote on the VERY NEXT single failure (promote→heal→promote).
@@ -1640,10 +1645,7 @@ export class Stores {
       // changing error form) — the call is being debugged, not blindly retried.
       // One stuck failure keeps promotion alive.
       const stuckEvidence = effectiveCount - ((gate.movedOn ?? 0) - (gate.retireBaseline?.movedOn ?? 0))
-      // Policy: non-diagnostic bash may hard-block; diagnostics promote to
-      // remind-only (they never block — see canRemind). Everything else stays
-      // watching. feedbackDemoted gates never re-promote mechanically: the
-      // agent's behavior already voted against enforcement once.
+      // only bash blocks; diagnostics + identity-bearing generic tools remind; the rest watch
       if (gate.status === "watching" && gate.feedbackDemoted !== true && effectiveCount >= threshold && gate.sessions.length >= PROMOTE_SESSIONS && stuckEvidence > 1) {
         if (canBlock(gate.tool, gate.signature)) {
           gate.status = "blocking"

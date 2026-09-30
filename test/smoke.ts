@@ -312,15 +312,25 @@ check(
   todoGates.length === 1 && todoGates[0]?.count === 2 && todoGates[0]?.sessions.length === 2,
 )
 
-// --- 11. file-probe tools never promote to blocking (policy) ---
+// --- 11. file probes never enforce; generic tools remind, never block (policy) ---
 for (const [sess, call] of [["r1", "q1"], ["r2", "q2"], ["r3", "q3"], ["r4", "q4"]] as const) {
   await emitToolError(`rp-${sess}`, "read", sess, "File not found", { filePath: "src/missing_probe_target.py" })
 }
 gates = await readGates()
-check("read failure stays watching at 4 occurrences", gates.find((g) => g.signature === "read:missing_probe_target.py")?.status === "watching")
+check("read failure stays watching at 4 occurrences", gates.find((g) => g.signature === "read:src/missing_probe_target.py")?.status === "watching")
 await emitToolError("rp-r5", "read", "r5", "File not found", { filePath: "src/missing_probe_target.py" })
 gates = await readGates()
-check("read failure NEVER promotes (policy: probes cannot block)", gates.find((g) => g.signature === "read:missing_probe_target.py")?.status === "watching")
+check("read failure NEVER enforces (probes leave watching at no tier)", gates.find((g) => g.signature === "read:src/missing_probe_target.py")?.status === "watching")
+
+// generic (unknown) tool: promotes to reminding at the probe bar, never blocking
+const GEN_TOOL = "mcp__srv__probe"
+const GEN_INPUT = { action: "run", id: 7 }
+for (const [sess, call] of [["gp1", "gq1"], ["gp1", "gq2"], ["gp1", "gq3"], ["gp2", "gq4"], ["gp2", "gq5"]] as const) {
+  await emitToolError(`gp-${call}`, GEN_TOOL, sess, "Error: mcp probe exploded", GEN_INPUT)
+}
+gates = await readGates()
+const genGate = gates.find((g) => g.tool === GEN_TOOL)
+check("a generic tool promotes to reminding, never blocking", genGate?.status === "reminding")
 
 // --- 11b. diagnostics promote to REMIND-ONLY: signal without punishment ---
 const TSC = "npx tsc --noEmit"
@@ -373,7 +383,7 @@ await after(
   { title: "src/other.py", output: "def f():\n    raise TypeError('boom')", metadata: {} } as unknown as AfterOutput,
 )
 gates = await readGates()
-check("file content containing 'TypeError' is NOT a failure", !gates.some((g) => g.signature === "read:other.py"))
+check("file content containing 'TypeError' is NOT a failure", !gates.some((g) => g.signature === "read:src/other.py"))
 
 // --- 13. intended non-zero exits: grep exit 1 is normal, exit 2 is a failure ---
 await after(

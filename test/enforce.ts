@@ -14,8 +14,9 @@ import {
   recordEventFailure,
   type EnforceContext,
 } from "../src/enforce"
-import { callSignature, patternKey } from "../src/patterns"
-import { GateStore, GLOBAL_PROJECTS, Stores, type Gate } from "../src/store"
+import { callSignature, canBlock, canRemind, hasGenericResidualIdentity, isRepoLocal, normalizeFilePath, patternKey } from "../src/patterns"
+import { GateStore, GLOBAL_PROJECTS, PROMOTE_COUNT_PROBE, Stores, type Gate } from "../src/store"
+import { repairGate } from "../src/validate"
 import type { NormalizedEvent } from "../src/types"
 import { makeChecker } from "./helpers"
 
@@ -240,6 +241,140 @@ const nFail = await enforceAfter(ev({ tool: "bash", sessionId: "n-live", args: {
 check("a second process with fresh ephemeral state records the failed retry", nFail.recorded === true)
 const nBlock = await enforceBefore(ev({ tool: "bash", sessionId: "n-live", args: { command: nCmd } }), respawn(n))
 check("a third process hard-blocks the repeat — the chain survives fresh ephemeral state", nBlock.verdict.action === "deny" && nBlock.signalKind === "block")
+
+// --- ws2. file signatures are repo-relative: one file, one key ---
+const ws2 = await makeWorld("ws2")
+const ws2Abs = join(ws2.projectDir, "src", "missing.ts")
+await enforceAfter(
+  ev({ tool: "read", sessionId: "ws2-1", args: { filePath: ws2Abs }, phase: "post", output: "ENOENT: no such file or directory", exitCode: 1, channel: "exit" }),
+  ws2.ctx,
+)
+check("enforceAfter signs an in-repo read repo-relatively", (await readProjectGates(ws2)).some((g) => g.signature === "read:src/missing.ts"))
+
+const ws2Evt = await makeWorld("ws2-evt")
+await recordEventFailure(
+  ev({ tool: "read", sessionId: "ws2-2", args: { filePath: join(ws2Evt.projectDir, "src", "missing.ts") }, phase: "post", output: "ENOENT: no such file or directory", channel: "event", callId: "ws2-part" }),
+  ws2Evt.ctx,
+)
+check("recordEventFailure signs an in-repo read repo-relatively", (await readProjectGates(ws2Evt)).some((g) => g.signature === "read:src/missing.ts"))
+
+const ws2Dirs = await makeWorld("ws2-dirs")
+const ws2SrcPath = join(ws2Dirs.projectDir, "src", "missing.ts")
+const ws2LibPath = join(ws2Dirs.projectDir, "lib", "missing.ts")
+await recordEventFailure(
+  ev({ tool: "read", sessionId: "ws2-3", args: { filePath: ws2SrcPath }, phase: "post", output: "ENOENT", channel: "event", callId: "ws2-src" }),
+  ws2Dirs.ctx,
+)
+check("the event channel records an in-repo read under its repo-relative key", (await readProjectGates(ws2Dirs)).some((g) => g.key === patternKey("read:src/missing.ts")))
+check(
+  "same basename in different dirs yields distinct signatures",
+  callSignature("read", { filePath: ws2SrcPath }, ws2Dirs.projectDir) === "read:src/missing.ts" &&
+    callSignature("read", { filePath: ws2LibPath }, ws2Dirs.projectDir) === "read:lib/missing.ts",
+)
+
+check("windows separators normalize to one repo-relative signature", normalizeFilePath("src\\missing.ts", ws2.projectDir) === "src/missing.ts")
+check(
+  "relative and absolute spellings of one file converge",
+  normalizeFilePath("src/missing.ts", ws2.projectDir) === normalizeFilePath(ws2Abs, ws2.projectDir) &&
+    normalizeFilePath(ws2Abs, ws2.projectDir) === "src/missing.ts",
+)
+check("absolute path outside the repo falls back to basename", normalizeFilePath(join(tmp, "elsewhere", "leak.ts"), ws2.projectDir) === "leak.ts")
+check("missing projectDir falls back to basename", normalizeFilePath("src/missing.ts") === "missing.ts")
+check("no absolute path reaches a signature", callSignature("read", { filePath: ws2Abs }, ws2.projectDir) === "read:src/missing.ts")
+
+check("isRepoLocal is bash-only", isRepoLocal("read:src/git/x.ts") === false && isRepoLocal("bash:git status") === true)
+
+// --- ws1. generic (unknown) tool signatures: deterministic, remind-only ---
+const gcA = callSignature("mcp__srv__tool", { z: 2, a: 1 })
+const gcB = callSignature("mcp__srv__tool", { a: 1, z: 2 })
+check("an unknown tool produces a non-null signature", gcA !== null && gcA !== "")
+check("key order does not change the generic signature", gcA === gcB)
+check("an all-numeric generic shape has no residual identity", hasGenericResidualIdentity(gcA ?? "") === false)
+check("an over-generic generic shape never reminds", !canRemind("mcp__srv__tool", gcA ?? ""))
+
+const gcParam = callSignature("mcp__srv__tool", { u: "https://x.example/a", id: "550e8400-e29b-41d4-a716-446655440000", n: 42 })
+check("urls, uuids and numbers are parameterized in generic values", (gcParam ?? "").includes("<url>") && (gcParam ?? "").includes("<uuid>") && (gcParam ?? "").includes("<n>"))
+check("a fully parameterized generic shape has no residual identity", !hasGenericResidualIdentity(gcParam ?? ""))
+
+const shapeDel = callSignature("mcp__srv__tool", { action: "delete", id: 7 })
+const shapeDelReordered = callSignature("mcp__srv__tool", { id: 9, action: "delete" })
+const shapeCreate = callSignature("mcp__srv__tool", { action: "create", id: 7 })
+check("distinct literal values yield distinct generic keys", shapeDel !== shapeCreate)
+check("identical shapes converge regardless of key order and id value", shapeDel === shapeDelReordered)
+check("a surviving literal grants generic residual identity", hasGenericResidualIdentity(shapeDel ?? ""))
+check("generic tools can remind but never block", canRemind("mcp__srv__tool", shapeDel ?? "") && !canBlock("mcp__srv__tool", shapeDel ?? ""))
+
+// promotion: PROMOTE_COUNT_PROBE failures across 2 sessions -> reminding, never blocking
+const gen = await makeWorld("gen")
+const genSig = callSignature("mcp__srv__tool", { action: "delete", id: 7 })
+if (genSig === null) throw new Error("generic signature unexpectedly null")
+const genKey = patternKey(genSig)
+const genPlan: [string, number][] = [["gen-seed-1", PROMOTE_COUNT_PROBE - 2], ["gen-seed-2", 2]]
+for (const [sessionID, times] of genPlan) {
+  for (let i = 0; i < times; i++) {
+    await gen.stores.recordFailure({ key: genKey, signature: genSig, tool: "mcp__srv__tool", sessionID, projectDir: gen.projectDir, snippet: "Error: mcp tool exploded", globalProjects: GLOBAL_PROJECTS })
+  }
+}
+const genGate = (await readProjectGates(gen)).find((g) => g.key === genKey)
+check("a generic tool promotes to reminding at the probe bar across 2 sessions", genGate?.status === "reminding")
+check("a generic tool never promotes to blocking", genGate?.status !== "blocking")
+
+// over-generic shape (all values parameterized away) stays watching past the bar
+const og = await makeWorld("og")
+const ogSig = callSignature("spawn_agent", { n: 1, m: 2 })
+if (ogSig === null) throw new Error("generic signature unexpectedly null")
+const ogKey = patternKey(ogSig)
+for (const [sessionID, times] of [["og-seed-1", PROMOTE_COUNT_PROBE - 2], ["og-seed-2", 2]] as [string, number][]) {
+  for (let i = 0; i < times; i++) {
+    await og.stores.recordFailure({ key: ogKey, signature: ogSig, tool: "spawn_agent", sessionID, projectDir: og.projectDir, snippet: "Error: spawn failed", globalProjects: GLOBAL_PROJECTS })
+  }
+}
+const ogGate = (await readProjectGates(og)).find((g) => g.key === ogKey)
+check("an over-generic generic shape stays watching past the probe bar", ogGate?.status === "watching")
+
+// recordable through enforceAfter (exit and text channels) and recordEventFailure
+const ga = await makeWorld("ga")
+const gaExit = await enforceAfter(ev({ tool: "mcp__srv__tool", sessionId: "ga1", args: { action: "delete", id: 7 }, phase: "post", output: "starting\nError: mcp tool exploded", exitCode: 1, channel: "exit" }), ga.ctx)
+check("enforceAfter records a generic failure via the exit channel", gaExit.recorded === true && (await readProjectGates(ga)).some((g) => g.tool === "mcp__srv__tool" && g.count === 1))
+
+const gb = await makeWorld("gb")
+const gbText = await enforceAfter(ev({ tool: "mcp__srv__tool", sessionId: "gb1", args: { action: "delete", id: 7 }, phase: "post", output: "Error: mcp tool exploded", exitCode: null, channel: "text" }), gb.ctx)
+check("enforceAfter records a generic failure via the text channel (no exit code)", gbText.recorded === true && (await readProjectGates(gb)).some((g) => g.tool === "mcp__srv__tool" && g.count === 1))
+
+const gc = await makeWorld("gc")
+await recordEventFailure(ev({ tool: "mcp__srv__tool", sessionId: "gc1", args: { action: "delete", id: 7 }, phase: "post", output: "Error: mcp tool exploded", channel: "event", callId: "gc-part" }), gc.ctx)
+check("recordEventFailure records a generic tool failure", (await readProjectGates(gc)).some((g) => g.tool === "mcp__srv__tool" && g.count === 1))
+
+const circular: unknown[] = []
+circular.push(circular)
+const circularSig = callSignature("mcp__srv__tool", { action: "delete", item: circular })
+check("a circular array argument collapses instead of overflowing the stack", circularSig !== null && circularSig.includes("item=<list>"))
+
+const wideList = Array.from({ length: 5000 }, (_, i) => `value-${i}`)
+const wideListSig = callSignature("mcp__srv__tool", { action: "delete", items: wideList })
+check("a wide array argument collapses to <list> and bounds the signature", wideListSig !== null && wideListSig.includes("items=<list>") && wideListSig.length < 500)
+
+const wideObject: Record<string, unknown> = {}
+for (let i = 0; i < 200; i++) wideObject[`key${i}`] = `value-${i}`
+const wideObjectSig = callSignature("mcp__srv__tool", { action: "delete", payload: wideObject })
+check("a wide object argument collapses to <obj> and bounds the signature", wideObjectSig !== null && wideObjectSig.includes("payload=<obj>") && wideObjectSig.length < 500)
+
+const gd = await makeWorld("gd")
+const gdOut = await enforceAfter(ev({ tool: "mcp__srv__tool", sessionId: "gd1", args: { action: "delete", id: 7 }, phase: "post", output: "Error: previous run failed", exitCode: 0, channel: "exit" }), gd.ctx)
+check("a successful generic call with failure-shaped output is not recorded", gdOut.recorded === false && (await readProjectGates(gd)).length === 0)
+
+// file probes keep their dedicated signatures and stay non-enforcing
+check("file probes are not generic (dedicated signature shape)", callSignature("read", { filePath: "src/x.ts" }, gc.projectDir) === "read:src/x.ts" && !canRemind("read", "read:src/x.ts") && !canBlock("read", "read:src/x.ts"))
+
+// policy repair inherits the generic tiers: blocking generic -> reminding, identity-less -> watching
+const repairSeed = (signature: string): Gate =>
+  ({ key: "repair-generic", signature, tool: "mcp__srv__tool", status: "blocking", count: 5, sessions: ["a", "b"], projects: [], firstSeen: new Date().toISOString(), lastSeen: new Date().toISOString(), snippet: "Error: boom", remindedCount: 0, blockedCount: 0, recurredAfterReminder: 0, recurredAfterGate: 0, overrideCount: 0 }) as Gate
+const repairHasIdentity = repairSeed("mcp__srv__tool:action=delete")
+repairGate(repairHasIdentity)
+check("repairGate demotes an out-of-policy blocking generic gate to reminding", repairHasIdentity.status === "reminding")
+const repairNoIdentity = repairSeed("mcp__srv__tool:a=<n>")
+repairGate(repairNoIdentity)
+check("repairGate demotes an identity-less generic gate to watching", repairNoIdentity.status === "watching")
 
 await rm(tmp, { recursive: true, force: true })
 

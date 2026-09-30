@@ -8,6 +8,7 @@ import {
   isNoiseError,
   nonTransparentProducers,
   patternKey,
+  PROBE_TOOLS,
   sanitizeForStore,
 } from "./patterns"
 import { checkFeedbackDemotion, GLOBAL_PROJECTS, MAX_SESSIONS, retireAntiNag, retireTaught, type LogEvent } from "./store"
@@ -33,8 +34,9 @@ export async function enforceAfter(event: NormalizedEvent, ctx: EnforceContext):
   if (event.tool === "edit" || event.tool === "write") {
     ctx.ephemeral.workspaceVersions.set(ctx.projectDir, (ctx.ephemeral.workspaceVersions.get(ctx.projectDir) ?? 0) + 1)
   }
-  // text signatures apply to bash ONLY — for file tools the output is file CONTENT
+  // text signatures apply to bash and generic tools (their own error text); probes are file CONTENT
   const text = event.output ?? ""
+  const textScanable = isBash || !PROBE_TOOLS.has(event.tool)
   const rawCommand = isBash && typeof event.args.command === "string" ? String(event.args.command) : ""
   // grep/pytest/linters: exit 1 is often the INTENDED outcome, not a mistake
   const intended = exitCode === 1 && isIntendedNonzero(rawCommand, 1)
@@ -43,14 +45,14 @@ export async function enforceAfter(event: NormalizedEvent, ctx: EnforceContext):
   let failed: boolean
   if (exitCode !== null) {
     failed = exitCode !== 0 && !intended
-    if (failed && isBash) detection = detectFailure(text)
+    if (failed && textScanable) detection = detectFailure(text)
   } else {
-    detection = isBash ? detectFailure(text) : detection
+    detection = textScanable ? detectFailure(text) : detection
     failed = detection.matched
   }
 
   const args = scrubbedArgs(event.args)
-  let signature = callSignature(event.tool, args)
+  let signature = callSignature(event.tool, args, ctx.projectDir)
   if (event.callId !== null) {
     if (!signature) signature = ctx.ephemeral.pendingCalls.get(event.callId) ?? null
     ctx.ephemeral.pendingCalls.delete(event.callId)

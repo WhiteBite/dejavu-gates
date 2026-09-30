@@ -7,12 +7,16 @@
  *
  * Run: bun test/property.ts
  */
+import { join } from "node:path"
 import {
   bashSegmentSignatures,
   callSignature,
   fuzzySimilar,
+  hasGenericResidualIdentity,
+  isRepoLocal,
   levenshtein,
   normalizeCommand,
+  normalizeFilePath,
   parameterizeError,
   scrubSecrets,
   splitChain,
@@ -259,6 +263,60 @@ for (const verb of VERBS) {
       fail("substitution hid a gated command", `${JSON.stringify(w)} -> ${JSON.stringify(bashSegmentSignatures(w))}`)
     }
   }
+}
+
+const projectDir = process.platform === "win32" ? "C:\\work\\project" : "/work/project"
+const FILES = ["src/x.ts", "lib/y.py", "a/b/z.json", "missing.ts"]
+for (let i = 0; i < 400; i++) {
+  const rel = pick(FILES)
+  const abs = join(projectDir, rel)
+  const winRel = rel.replace(/\//g, "\\")
+  const norm = normalizeFilePath(abs, projectDir)
+  if (norm !== rel) fail("absolute path did not normalize to repo-relative", `${JSON.stringify(abs)} -> ${JSON.stringify(norm)}`)
+  if (normalizeFilePath(rel, projectDir) !== norm) fail("relative spelling diverged from absolute", `${JSON.stringify(rel)} vs ${JSON.stringify(abs)}`)
+  if (normalizeFilePath(winRel, projectDir) !== norm) fail("windows separators diverged", `${JSON.stringify(winRel)} vs ${JSON.stringify(rel)}`)
+  if (normalizeFilePath(abs) !== rel.split("/").pop()) fail("missing projectDir did not fall back to basename", `${JSON.stringify(abs)}`)
+  const outside = join(projectDir, "..", "elsewhere", rel.split("/").pop() ?? rel)
+  if (normalizeFilePath(outside, projectDir) !== (rel.split("/").pop() ?? rel)) fail("out-of-repo path did not fall back to basename", JSON.stringify(outside))
+}
+
+if (isRepoLocal("read:src/git/x.ts")) fail("non-bash signature treated as repo-local", "read:src/git/x.ts")
+if (!isRepoLocal("bash:git status")) fail("bash repo-local verb lost", "bash:git status")
+
+// generic (unknown) tool signatures: deterministic, key-order-independent, bounded
+const GENERIC_TOOLS = ["mcp__srv__tool", "spawn_agent", "custom_tool"]
+const GENERIC_VALUES: unknown[] = [1, 2.5, "delete", "https://x.example/a", "550e8400-e29b-41d4-a716-446655440000", "deadbeefcafe0123", true, null, [1, "x"], { k: 1, j: "y" }]
+for (let i = 0; i < 500; i++) {
+  const tool = pick(GENERIC_TOOLS)
+  const args: Record<string, unknown> = {}
+  const n = 1 + rint(4)
+  for (let j = 0; j < n; j++) args[`k${rint(5)}`] = pick(GENERIC_VALUES)
+  const sig = callSignature(tool, args)
+  if (sig === null || sig === "") {
+    fail("generic tool produced no signature", `${tool} ${JSON.stringify(args)}`)
+    break
+  }
+  if (!sig.startsWith(`${tool.toLowerCase()}:`)) {
+    fail("generic signature lost its tool prefix", `${tool} -> ${sig}`)
+    break
+  }
+  if (sig.startsWith("bash:")) {
+    fail("generic signature masqueraded as bash", `${tool} -> ${sig}`)
+    break
+  }
+  if (sig.length > 512) {
+    fail("generic signature explosion", `${tool} -> ${sig.length} chars`)
+    break
+  }
+  const reordered: Record<string, unknown> = {}
+  for (const key of Object.keys(args).reverse()) reordered[key] = args[key]
+  if (callSignature(tool, reordered) !== sig) {
+    fail("generic signature not key-order-independent", `${tool} ${JSON.stringify(args)} -> ${sig} vs ${callSignature(tool, reordered)}`)
+    break
+  }
+}
+if (hasGenericResidualIdentity(callSignature("mcp__srv__tool", { a: 1, b: 2 }) ?? "")) {
+  fail("numeric-only generic shape gained residual identity", "mcp__srv__tool:a=<n> b=<n>")
 }
 
 if (failures > 0) {

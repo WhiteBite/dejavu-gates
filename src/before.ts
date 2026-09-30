@@ -36,7 +36,7 @@ export async function enforceBefore(event: NormalizedEvent, ctx: EnforceContext)
   // a repeat OVERRIDE only waives the repeat block — gate processing continues
   if (repeat !== null && repeat.kind !== "override") return denyOutcome(repeat.message, "repeat")
   const args = scrubbedArgs(rawArgs)
-  const signature = callSignature(event.tool, args)
+  const signature = callSignature(event.tool, args, ctx.projectDir)
   if (!signature) return allowOutcome()
 
   if (event.tool === "bash" && typeof rawArgs.command === "string") {

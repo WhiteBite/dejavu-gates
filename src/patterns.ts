@@ -1,4 +1,5 @@
 import { createHash } from "node:crypto"
+import { isAbsolute, relative, resolve } from "node:path"
 
 /** Override marker stripped before normalization so bypassed failures land on the original pattern. */
 const OVERRIDE_MARKER = /#?\s*dejavu:proceed/gi
@@ -218,6 +219,76 @@ export function parameterizeError(text: string): string {
     s = s.replace(rule, token)
   }
   return s.replace(/\s+/g, " ").trim()
+}
+
+// --- Generic (unknown-tool) signatures ---------------------------------------
+
+/** Bounded length of a surviving literal value in a generic signature — an
+ * unbounded value would let a huge payload inflate the gate key. */
+const GENERIC_VALUE_MAX = 120
+
+/** Composite render bound: each leaf is capped, but a wide array/object would
+ * still inflate the shape, so over-long composites collapse to the placeholder. */
+const GENERIC_COMPOSITE_MAX = GENERIC_VALUE_MAX * 2
+
+/** Every value a fully-parameterized generic argument can collapse to.
+ * `<list>`/`<obj>` are the composite forms, computed at render time so
+ * "all values parameterized away" is readable straight off the signature. */
+const GENERIC_PLACEHOLDER = /^<(?:n|bool|null|str|path|hash|uuid|sha|md5|ip|url|email|date|list|obj|unknown)>$/
+
+/** Field names lowercase and lose whitespace so the `key=value` pairs stay
+ * whitespace-delimited (the residual-identity scan splits on whitespace). */
+function normalizeGenericKey(key: string): string {
+  return key.toLowerCase().replace(/\s+/g, "_")
+}
+
+/**
+ * One generic argument value → a single whitespace-free token. Numbers,
+ * booleans, null and the parameterization vocabulary (uuid/hash/url/ip/date/
+ * path) collapse to placeholders; a surviving literal string IS the identity
+ * of an MCP/custom call. Composites report `<list>`/`<obj>` when every part is
+ * a placeholder — the over-generic signal the residual-identity guard reads.
+ */
+function normalizeGenericValue(value: unknown, depth: number): string {
+  if (typeof value === "number") return "<n>"
+  if (typeof value === "boolean") return "<bool>"
+  if (value === null || value === undefined) return "<null>"
+  if (typeof value === "string") {
+    const parameterized = parameterizeError(sanitizeForStore(value)).replace(/\s+/g, "_")
+    if (parameterized === "") return "<str>"
+    // a bare numeric string is data like any JSON number — collapse it
+    if (/^[+-]?\d+(?:\.\d+)?$/.test(parameterized)) return "<n>"
+    return parameterized.slice(0, GENERIC_VALUE_MAX)
+  }
+  if (Array.isArray(value)) {
+    if (depth >= 3) return "<list>"
+    if (value.length === 0) return "<list>"
+    const items = value.map((item) => normalizeGenericValue(item, depth + 1))
+    if (items.every((item) => GENERIC_PLACEHOLDER.test(item))) return "<list>"
+    const rendered = `[${items.join(",")}]`
+    return rendered.length > GENERIC_COMPOSITE_MAX ? "<list>" : rendered
+  }
+  if (typeof value === "object") {
+    if (depth >= 3) return "<obj>"
+    const record = value as Record<string, unknown>
+    const entries = Object.keys(record)
+      .sort()
+      .map((key) => ({ key: normalizeGenericKey(key), value: normalizeGenericValue(record[key], depth + 1) }))
+    if (entries.length === 0) return "<obj>"
+    if (entries.every((entry) => GENERIC_PLACEHOLDER.test(entry.value))) return "<obj>"
+    const rendered = `{${entries.map((entry) => `${entry.key}=${entry.value}`).join(",")}}`
+    return rendered.length > GENERIC_COMPOSITE_MAX ? "<obj>" : rendered
+  }
+  return "<unknown>"
+}
+
+/** Deterministic shape of a generic tool's arguments: sorted, lowercased keys
+ * with each value parameterized — key order can never change the identity. */
+function normalizeGenericArgs(args: Record<string, unknown>): string {
+  return Object.keys(args)
+    .sort()
+    .map((key) => `${normalizeGenericKey(key)}=${normalizeGenericValue(args[key], 0)}`)
+    .join(" ")
 }
 
 // --- Intended non-zero exits / diagnostic detection --------------------------
@@ -607,6 +678,27 @@ export function hasResidualIdentity(signature: string): boolean {
   return body.split(/\s*(?:\|\||&&|[|;&])\s*|\n+/).some((segment) => segmentHasIdentity(segment))
 }
 
+/**
+ * Generic-tool residual identity: at least one argument value survived
+ * parameterization as a literal. A shape whose every value is a placeholder
+ * (`a=<n> z=<n>`, `id=<uuid>`) matches a whole tool family — it may only
+ * watch. Distinct from segmentHasIdentity: generic args have no shell
+ * segments, so identity is read off the rendered `key=value` values.
+ */
+export function hasGenericResidualIdentity(signature: string): boolean {
+  return signature.split(/\s+/).some((token) => {
+    if (!token.includes("=")) return false
+    const value = token.slice(token.indexOf("=") + 1)
+    return value !== "" && !GENERIC_PLACEHOLDER.test(value)
+  })
+}
+
+/** A generic-tool signature (`mcp__srv__tool:key=value …`) as opposed to a
+ * bash chain or a dedicated file-probe signature (`read:src/x.ts`). */
+export function isGenericSignature(signature: string): boolean {
+  return !signature.startsWith("bash:") && signature.includes("=")
+}
+
 /** Unix read-only viewers habitually typed into PowerShell: their failures stay
  * RECORDED (a missing file / not-recognized is teachable), but they never BLOCK —
  * a read-only habit punished with a hard stop and a generic correction produced
@@ -622,14 +714,10 @@ export function isUnixViewerSignature(signature: string): boolean {
   return UNIX_VIEWER_VERBS.some((rule) => rule.test(signature))
 }
 
-/**
- * Blocking policy: only bash commands that are NOT diagnostics may ever
- * become enforced gates. File probes and diagnostic queries are measured
- * (watching) but never interrupt the agent — the data showed blocking them
- * punishes normal work. Unix read-only viewers never block either (teach the
- * PowerShell-native form via reminder instead). Signatures without residual
- * identity never enforce at any tier — they are too broad to interrupt anything.
- */
+/** File probes: dedicated shapes, routine failures, measured only — never any enforcement tier. */
+export const PROBE_TOOLS = new Set(["read", "glob", "grep", "write", "edit"])
+
+/** Only non-diagnostic bash may block; probes/generic remind or watch. */
 export function canBlock(tool: string, signature: string): boolean {
   if (tool !== "bash") return false
   if (!hasResidualIdentity(signature)) return false
@@ -637,17 +725,15 @@ export function canBlock(tool: string, signature: string): boolean {
   return !isDiagnosticSignature(signature)
 }
 
-/**
- * Remind-only policy: diagnostic bash commands still surface a REMINDER when
- * they recur (the old behavior gave them zero signal), but they NEVER block —
- * blocking a test/lint the agent is iterating on punishes normal work. Unix
- * viewers join this tier: their exit-1 stays recordable (unlike diagnostics),
- * and the reminder teaches the PowerShell-native equivalent.
- */
+/** Diagnostics remind (never block); generic tools with identity remind. */
 export function canRemind(tool: string, signature: string): boolean {
-  if (tool !== "bash") return false
-  if (!hasResidualIdentity(signature)) return false
-  return isDiagnosticSignature(signature) || isUnixViewerSignature(signature)
+  if (tool === "bash") {
+    if (!hasResidualIdentity(signature)) return false
+    return isDiagnosticSignature(signature) || isUnixViewerSignature(signature)
+  }
+  // generic tools (MCP/spawn_agent/custom) remind only, and only with residual identity
+  if (PROBE_TOOLS.has(tool)) return false
+  return hasGenericResidualIdentity(signature)
 }
 
 /**
@@ -666,6 +752,8 @@ const REPO_LOCAL_VERBS: RegExp[] = [
 ]
 
 export function isRepoLocal(signature: string): boolean {
+  // repo-local verbs are a bash-tier concept — a file path merely containing "git" must not inherit it
+  if (!signature.startsWith("bash:")) return false
   return REPO_LOCAL_VERBS.some((rule) => rule.test(signature))
 }
 
@@ -842,19 +930,18 @@ export function bashSegmentSignatures(command: string): string[] {
   return signatures
 }
 
-/** Normalize a file path: keep basename + extension, drop directories. */
-export function normalizeFilePath(filePath: string): string {
+/** Repo-relative file signature; out-of-repo or projectDir-less paths fall back to the basename. */
+export function normalizeFilePath(filePath: string, projectDir?: string): string {
   const unified = filePath.replace(/\\/g, "/")
   const base = unified.split("/").pop() ?? unified
-  return base.toLowerCase()
+  if (projectDir === undefined || projectDir === "") return base.toLowerCase()
+  const rel = relative(projectDir, resolve(projectDir, filePath)).replace(/\\/g, "/")
+  if (rel === "" || rel === ".." || rel.startsWith("../") || isAbsolute(rel)) return base.toLowerCase()
+  return rel.toLowerCase()
 }
 
-/**
- * Stable identity of a planned tool call for recurrence matching.
- * For bash this is the WHOLE command; use bashSegmentSignatures() in
- * addition when matching gates. Returns null for tools we do not track.
- */
-export function callSignature(tool: string, args: Record<string, unknown>): string | null {
+/** Call identity for recurrence matching; unknown tools sign a generic shape. */
+export function callSignature(tool: string, args: Record<string, unknown>, projectDir?: string): string | null {
   switch (tool) {
     case "bash": {
       const command = args.command
@@ -867,7 +954,7 @@ export function callSignature(tool: string, args: Record<string, unknown>): stri
     case "write": {
       const filePath = args.filePath
       return typeof filePath === "string" && filePath.trim() !== ""
-        ? `${tool}:${normalizeFilePath(filePath)}`
+        ? `${tool}:${normalizeFilePath(filePath, projectDir)}`
         : null
     }
     case "glob":
@@ -877,8 +964,11 @@ export function callSignature(tool: string, args: Record<string, unknown>): stri
         ? `${tool}:${pattern.toLowerCase().replace(/\s+/g, " ").trim()}`
         : null
     }
-    default:
-      return null
+    default: {
+      // an argless call has no call identity — the error text is the only key
+      const shape = normalizeGenericArgs(args)
+      return shape === "" ? null : `${tool.toLowerCase()}:${shape}`
+    }
   }
 }
 
@@ -1037,12 +1127,7 @@ export interface FailureDetection {
   snippet: string
 }
 
-/**
- * Conservative failure signatures scanned line-by-line in BASH output only.
- * File-tool output is file CONTENT — scanning it for "TypeError" produced
- * dozens of false gates on legitimate reads; file tools are covered by the
- * event channel instead.
- */
+/** Failure signatures for bash and generic-tool output; file probes are CONTENT, covered by the event channel. */
 const FAILURE_SIGNATURES: RegExp[] = [
   /exit (?:code|status):?\s*[1-9]\d*/i,
   /\berror TS\d+\b/,

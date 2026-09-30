@@ -23,7 +23,7 @@ export async function recordEventFailure(event: NormalizedEvent, ctx: EnforceCon
   if (isNoiseError(errorText)) return
   const session = event.sessionId
 
-  let signature: string | null = callSignature(event.tool, scrubbedArgs(event.args))
+  let signature: string | null = callSignature(event.tool, scrubbedArgs(event.args), ctx.projectDir)
   if (!signature) {
     signature = `${event.tool}:tool-error:${parameterizeError(errorText).slice(0, 120)}`
   }
