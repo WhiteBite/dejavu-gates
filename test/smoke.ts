@@ -2935,6 +2935,26 @@ const r106Page: R99Msg[] = [
 ]
 await r106Transform?.({} as never, { messages: r106Page } as never)
 check("shape loop: pagination with moving offsets is one shape", r106Page.some((m) => r106ShapeText(m).includes("SHAPE LOOP")))
+// different commits stay different shapes — git archaeology is not a loop
+const r106Git: R99Msg[] = [
+  r99User("r106g"),
+  r106Bash("git show abc1234", "r106g"),
+  r106Bash("git show def5678", "r106g"),
+  r106Bash("git show 9ab0c12", "r106g"),
+]
+await r106Transform?.({} as never, { messages: r106Git } as never)
+check("shape loop: different commit hashes stay distinct shapes", !r106Git.some((m) => r106ShapeText(m).includes("SHAPE LOOP")))
+// a byte-identical series gets the REPETITION note and no second SHAPE LOOP note on the same part
+const r106DupCmd = "node verify.js"
+const r106Dup: R99Msg[] = [
+  r99User("r106d"),
+  r106Bash(r106DupCmd, "r106d"),
+  r106Bash(r106DupCmd, "r106d"),
+  r106Bash(r106DupCmd, "r106d"),
+]
+await r106Transform?.({} as never, { messages: r106Dup } as never)
+const r106LastOut = r106Dup[3]?.parts[0]?.state?.output ?? ""
+check("shape loop: a byte-identical series is not double-noted as a shape loop", r106LastOut.includes("REPETITION") && !r106LastOut.includes("SHAPE LOOP"))
 
 // --- 104. timeout-kill correction names both leak shapes ---
 const r104Corr = suggestCorrection("bash:npx vitest run <n> >& <n>", "shell tool terminated command after exceeding timeout 300000ms")

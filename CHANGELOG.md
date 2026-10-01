@@ -1,5 +1,12 @@
 # Changelog
 
+## 2.46.1 - 2026-10-01
+
+### Fixed
+- **Shape-loop normalization no longer over-collapses.** `signCallShape` used the full `normalizeCommand`, which parameterizes paths/hashes/quoted strings — so `git show <hashA>` vs `<hashB>` (different commits) collapsed into one shape and false-fired on legitimate read-only investigation. Shape identity now uses a light normalization that strips only comments and standalone numbers, preserving the data that makes one call genuinely different.
+- Shape-loop channel: cross-channel dedup (a byte-identical series already annotated REPETITION doesn't get a second SHAPE LOOP note), the `shape-loop` event only logs when the note actually attached, the persisted key crosses `sanitizeForStore`, `shapeLoopNotes` evicts in parity with the repeatSeries cap, and the edit-exemption requires a completed edit (an attempted/rejected one no longer exempts the round).
+- Shape-loop channel gains the moving-failure-form guard the windowed channel has — a call whose failure output changes between rounds is iteration, not a loop.
+
 ## 2.46.0 - 2026-09-30
 
 ### Added

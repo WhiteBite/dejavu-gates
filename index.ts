@@ -1,6 +1,6 @@
 import type { Plugin } from "@opencode-ai/plugin"
 import type { TextPart, UserMessage } from "@opencode-ai/sdk"
-import { detectRepeatSeries, detectRepeatWindows, detectShapeLoops, looksLikeFailure, parameterizeError, REPEAT_MARKER } from "./src/patterns"
+import { detectRepeatSeries, detectRepeatWindows, detectShapeLoops, looksLikeFailure, parameterizeError, REPEAT_MARKER, sanitizeForStore } from "./src/patterns"
 import {
   cleanupSession,
   createEphemeralState,
@@ -259,6 +259,7 @@ export const Dejavu: Plugin = async ({ directory, client }) => {
         // Remind: a tail series (the model just repeated) gets a NOTE on the
         // last tool result — payload-only, the run is never interrupted.
         let noted = 0
+        const annotatedParts = new Set<string>()
         for (const s of scan.series) {
           if (!s.reachesTail || s.occurrences.length < REPEAT_REMIND_AT) continue
           const lastOcc = s.occurrences[s.occurrences.length - 1]
@@ -273,6 +274,7 @@ export const Dejavu: Plugin = async ({ directory, client }) => {
             part.state.output += note
             noted += 1
           }
+          annotatedParts.add(`${lastOcc.messageIndex}:${lastOcc.partIndex}`)
         }
         // Windowed repeats: the same call ≥REPEAT_WINDOW_MIN times across the
         // last REPEAT_WINDOW_ROUNDS assistant rounds, any adjacency — an
@@ -306,6 +308,7 @@ export const Dejavu: Plugin = async ({ directory, client }) => {
             lastPart.state.error += note
             windowedNoted += 1
           }
+          annotatedParts.add(`${w.lastOccurrence.messageIndex}:${w.lastOccurrence.partIndex}`)
           if (w.count > windowedMax) windowedMax = w.count
         }
         // windowed NOTE events get their own per-session watermark — the loop
@@ -320,9 +323,14 @@ export const Dejavu: Plugin = async ({ directory, client }) => {
         if (shapeSession !== null) {
           const lastIsAssistantForShape = output.messages[output.messages.length - 1]?.info.role === "assistant"
           for (const sw of detectShapeLoops(output.messages, { window: REPEAT_WINDOW_ROUNDS, min: SHAPE_LOOP_MIN }).windows) {
+            if (annotatedParts.has(`${sw.lastOccurrence.messageIndex}:${sw.lastOccurrence.partIndex}`)) continue
             const shapeKey = `${shapeSession}:${sw.key}`
             const lastPart = output.messages[sw.lastOccurrence.messageIndex]?.parts[sw.lastOccurrence.partIndex]
             if (lastPart === undefined || lastPart.type !== "tool" || lastPart.state == null) continue
+            const shapeLastText = "output" in lastPart.state && typeof lastPart.state.output === "string" ? lastPart.state.output : lastPart.state.status === "error" && typeof lastPart.state.error === "string" ? lastPart.state.error : ""
+            const shapePrevPart = sw.prevOccurrence === null ? undefined : output.messages[sw.prevOccurrence.messageIndex]?.parts[sw.prevOccurrence.partIndex]
+            const shapePrevText = shapePrevPart?.type === "tool" && shapePrevPart.state != null ? ("output" in shapePrevPart.state && typeof shapePrevPart.state.output === "string" ? shapePrevPart.state.output : shapePrevPart.state.status === "error" && typeof shapePrevPart.state.error === "string" ? shapePrevPart.state.error : "") : ""
+            if (shapePrevText !== "" && looksLikeFailure(shapePrevText) && looksLikeFailure(shapeLastText) && parameterizeError(shapePrevText) !== parameterizeError(shapeLastText)) continue
             const notedBefore = ephemeral.shapeLoopNotes.get(shapeKey) ?? 0
             if (notedBefore > 0) {
               if (lastIsAssistantForShape) {
@@ -332,14 +340,18 @@ export const Dejavu: Plugin = async ({ directory, client }) => {
               continue
             }
             const note = `\n\n[dejavu] SHAPE LOOP — this call has run ${sw.count} times in the last ${REPEAT_WINDOW_ROUNDS} rounds with only cosmetic variations (trailing comments, offsets, ordering). It is the same call; re-running it will not produce new information. If you are verifying work, verify once and move on; if you are paging a file, read the whole file once with a bigger limit instead of slices.`
+            let attached = false
             if ("output" in lastPart.state && typeof lastPart.state.output === "string") {
               lastPart.state.output += note
-              ephemeral.shapeLoopNotes.set(shapeKey, 1)
+              attached = true
             } else if (lastPart.state.status === "error" && typeof lastPart.state.error === "string") {
               lastPart.state.error += note
-              ephemeral.shapeLoopNotes.set(shapeKey, 1)
+              attached = true
             }
-            await stores.logAll({ type: "shape-loop", key: sw.key.slice(0, 80), tool: sw.tool, session: shapeSession, project: directory, repeatCount: sw.count })
+            if (attached) {
+              ephemeral.shapeLoopNotes.set(shapeKey, 1)
+              await stores.logAll({ type: "shape-loop", key: sanitizeForStore(sw.key.slice(0, 80)), tool: sw.tool, session: shapeSession, project: directory, repeatCount: sw.count })
+            }
           }
         }
         // Feed the before-hook's block tier + damped observability. Only live
@@ -387,6 +399,9 @@ export const Dejavu: Plugin = async ({ directory, client }) => {
             repeatSeries.delete(oldest.value)
             for (const key of ephemeral.loopBreakInjected) {
               if (key.startsWith(`${oldest.value}:`)) ephemeral.loopBreakInjected.delete(key)
+            }
+            for (const key of ephemeral.shapeLoopNotes.keys()) {
+              if (key.startsWith(`${oldest.value}:`)) ephemeral.shapeLoopNotes.delete(key)
             }
           }
         }

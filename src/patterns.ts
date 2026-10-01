@@ -1642,12 +1642,10 @@ export function signRepeatedCall(tool: string, args: Record<string, unknown>): s
   return `${tool}:${canonicalArgs(args)}`
 }
 
-/** Shape identity for a call: cosmetic variation (trailing comments, numeric
- * offsets) collapses into one shape. For the shape-loop detector — the 400
- * channel keeps signRepeatedCall (byte identity is the provider's rule). */
+/** Shape identity: cosmetic variation (trailing comments, numeric offsets) collapses. */
 export function signCallShape(tool: string, args: Record<string, unknown>): string {
   if (tool === "bash" && typeof args.command === "string") {
-    return `bash:${normalizeCommand(args.command).replace(/[ \t]+#[^\n]*/g, "").trim()}`
+    return `bash:${shapeNormalizeCommand(args.command)}`
   }
   const rebuilt: Record<string, unknown> = {}
   for (const key of Object.keys(args)
@@ -1657,6 +1655,20 @@ export function signCallShape(tool: string, args: Record<string, unknown>): stri
     rebuilt[key] = typeof value === "number" ? "<n>" : value
   }
   return `${tool}:${JSON.stringify(rebuilt)}`
+}
+
+/** Shape normalization keeps data (paths/hashes/quoted strings) so different commits stay different shapes. */
+function shapeNormalizeCommand(command: string): string {
+  let s = stripControl(command)
+  s = s.replace(/\r\n?/g, "\n")
+  s = s.replace(COMMENT_LINE, "$1")
+  s = s.toLowerCase()
+  // strip trailing comments only outside quoted spans — a `#` inside quotes is data
+  const parts = s.split(QUOTED_SPAN)
+  const quoted = s.match(QUOTED_SPAN) ?? []
+  s = parts.map((p) => p.replace(/[ \t]+#[^\n]*/g, "")).reduce((acc, p, i) => acc + p + (quoted[i] ?? ""), "")
+  s = s.replace(/\b\d+\b/g, "<n>")
+  return s.replace(/\s+/g, " ").trim()
 }
 
 export interface RepeatOccurrence {
@@ -1758,6 +1770,8 @@ export interface ShapeWindow {
   tool: string
   count: number
   lastOccurrence: RepeatOccurrence
+  /** previous occurrence (for failure-form comparison), null when count is 1 */
+  prevOccurrence: RepeatOccurrence | null
 }
 
 export interface ShapeWindowScan {
@@ -1772,7 +1786,7 @@ export interface ShapeWindowScan {
 export function detectShapeLoops(
   messages: ReadonlyArray<{
     info: { role: string; sessionID?: string }
-    parts: ReadonlyArray<{ type: string; tool?: string; state?: { input?: Record<string, unknown> } }>
+    parts: ReadonlyArray<{ type: string; tool?: string; state?: { input?: Record<string, unknown>; status?: string } }>
   }>,
   opts?: { window?: number; min?: number },
 ): ShapeWindowScan {
@@ -1799,7 +1813,7 @@ export function detectShapeLoops(
     for (let p = 0; p < msg.parts.length; p++) {
       const part = msg.parts[p]
       if (part?.type !== "tool" || typeof part.tool !== "string" || part.state?.input == null) continue
-      if (part.tool === "edit" || part.tool === "write") roundLandedEdit = true
+      if ((part.tool === "edit" || part.tool === "write") && part.state.status === "completed") roundLandedEdit = true
       const key = signCallShape(part.tool, part.state.input)
       if (!roundKeys.has(key)) roundKeys.set(key, { tool: part.tool, partIndex: p })
     }
@@ -1816,7 +1830,7 @@ export function detectShapeLoops(
     entry.occurrences.sort((a, b) => a.messageIndex - b.messageIndex || a.partIndex - b.partIndex)
     const lastOcc = entry.occurrences[entry.occurrences.length - 1]
     if (lastOcc === undefined || lastOcc.messageIndex !== lastAssistant) continue
-    windows.push({ key, tool: entry.tool, count: entry.occurrences.length, lastOccurrence: lastOcc })
+    windows.push({ key, tool: entry.tool, count: entry.occurrences.length, lastOccurrence: lastOcc, prevOccurrence: entry.occurrences[entry.occurrences.length - 2] ?? null })
   }
   return { sessionID: messages[0]?.info.sessionID ?? null, windows }
 }
