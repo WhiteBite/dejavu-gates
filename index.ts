@@ -230,7 +230,7 @@ export const Dejavu: Plugin = async ({ directory, client }) => {
           const loopKey = `${sessionID}:${logKey}`
           if (!ephemeral.loopBreakInjected.has(loopKey)) {
             ephemeral.loopBreakInjected.add(loopKey)
-            await stores.logAll({ type: "loop-break", key: logKey.slice(0, 80), tool, session: sessionID, project: directory, repeatCount: count })
+            await stores.logAll({ type: "loop-break", key: sanitizeForStore(logKey).slice(0, 80), tool, session: sessionID, project: directory, repeatCount: count })
           }
         }
         // Sanitize (payload only, never persisted — verified upstream): every
@@ -376,7 +376,7 @@ export const Dejavu: Plugin = async ({ directory, client }) => {
           const prevEntry = repeatSeries.get(sessionID)
           const watermark = prevEntry?.logged ?? 0
           if (maxLen > watermark && (mutated > 0 || noted > 0)) {
-            const logKey = (tailKey ?? maxKey).slice(0, 80)
+            const logKey = sanitizeForStore(tailKey ?? maxKey).slice(0, 80)
             if (mutated > 0) await stores.logAll({ type: "repeat-sanitized", key: logKey, session: sessionID, project: directory, repeatCount: maxLen })
             if (noted > 0) await stores.logAll({ type: "repeat-reminded", key: logKey, session: sessionID, project: directory, repeatCount: maxLen })
             if (tailLen > 0) await stores.logAll({ type: "repeat-detected", key: logKey, session: sessionID, project: directory, repeatCount: tailLen })

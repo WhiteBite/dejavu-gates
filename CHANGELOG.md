@@ -1,5 +1,10 @@
 # Changelog
 
+## 2.46.2 - 2026-10-01
+
+### Fixed
+- Loop-break and repeat-channel log keys now cross `sanitizeForStore` before persisting — a command carrying a secret no longer lands in log.jsonl unscrubbed via `loop-break`/`repeat-sanitized`/`repeat-reminded`/`repeat-detected` events.
+
 ## 2.46.1 - 2026-10-01
 
 ### Fixed
