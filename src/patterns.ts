@@ -1642,6 +1642,23 @@ export function signRepeatedCall(tool: string, args: Record<string, unknown>): s
   return `${tool}:${canonicalArgs(args)}`
 }
 
+/** Shape identity for a call: cosmetic variation (trailing comments, numeric
+ * offsets) collapses into one shape. For the shape-loop detector — the 400
+ * channel keeps signRepeatedCall (byte identity is the provider's rule). */
+export function signCallShape(tool: string, args: Record<string, unknown>): string {
+  if (tool === "bash" && typeof args.command === "string") {
+    return `bash:${normalizeCommand(args.command).replace(/[ \t]+#[^\n]*/g, "").trim()}`
+  }
+  const rebuilt: Record<string, unknown> = {}
+  for (const key of Object.keys(args)
+    .filter((k) => k !== REPEAT_MARKER && k !== REPEAT_PROCEED)
+    .sort()) {
+    const value = args[key]
+    rebuilt[key] = typeof value === "number" ? "<n>" : value
+  }
+  return `${tool}:${JSON.stringify(rebuilt)}`
+}
+
 export interface RepeatOccurrence {
   /** index into the messages array */
   messageIndex: number
@@ -1732,6 +1749,74 @@ export function detectRepeatWindows(
     const lastOcc = entry.occurrences[entry.occurrences.length - 1]
     if (lastOcc === undefined || lastOcc.messageIndex !== lastAssistant) continue
     windows.push({ key, tool: entry.tool, count: entry.occurrences.length, lastOccurrence: lastOcc, prevOccurrence: entry.occurrences[entry.occurrences.length - 2] ?? null })
+  }
+  return { sessionID: messages[0]?.info.sessionID ?? null, windows }
+}
+
+export interface ShapeWindow {
+  key: string
+  tool: string
+  count: number
+  lastOccurrence: RepeatOccurrence
+}
+
+export interface ShapeWindowScan {
+  sessionID: string | null
+  windows: ShapeWindow[]
+}
+
+/** Shape-level repeats: the same call with cosmetic variation (trailing
+ * comments, numeric offsets) — evades the byte-identical channels. Windowed,
+ * tail-anchored like detectRepeatWindows. A round that also lands an
+ * edit/write is iteration work, not a stuck loop — its shapes don't count. */
+export function detectShapeLoops(
+  messages: ReadonlyArray<{
+    info: { role: string; sessionID?: string }
+    parts: ReadonlyArray<{ type: string; tool?: string; state?: { input?: Record<string, unknown> } }>
+  }>,
+  opts?: { window?: number; min?: number },
+): ShapeWindowScan {
+  const window = opts?.window ?? 12
+  const min = opts?.min ?? 4
+  let lastAssistant = -1
+  for (let i = messages.length - 1; i >= 0; i--) {
+    if (messages[i]?.info.role === "assistant") {
+      lastAssistant = i
+      break
+    }
+  }
+  if (lastAssistant < 0) return { sessionID: messages[0]?.info.sessionID ?? null, windows: [] }
+  const counts = new Map<string, { tool: string; occurrences: RepeatOccurrence[] }>()
+  let roundsSeen = 0
+  for (let i = lastAssistant; i >= 0; i--) {
+    const msg = messages[i]
+    if (msg === undefined) continue
+    if (msg.info.role !== "assistant") continue
+    roundsSeen += 1
+    if (roundsSeen > window) break
+    let roundLandedEdit = false
+    const roundKeys = new Map<string, { tool: string; partIndex: number }>()
+    for (let p = 0; p < msg.parts.length; p++) {
+      const part = msg.parts[p]
+      if (part?.type !== "tool" || typeof part.tool !== "string" || part.state?.input == null) continue
+      if (part.tool === "edit" || part.tool === "write") roundLandedEdit = true
+      const key = signCallShape(part.tool, part.state.input)
+      if (!roundKeys.has(key)) roundKeys.set(key, { tool: part.tool, partIndex: p })
+    }
+    if (roundLandedEdit) continue
+    for (const [key, found] of roundKeys) {
+      const entry = counts.get(key) ?? { tool: found.tool, occurrences: [] }
+      entry.occurrences.push({ messageIndex: i, partIndex: found.partIndex })
+      counts.set(key, entry)
+    }
+  }
+  const windows: ShapeWindow[] = []
+  for (const [key, entry] of counts) {
+    if (entry.occurrences.length < min) continue
+    entry.occurrences.sort((a, b) => a.messageIndex - b.messageIndex || a.partIndex - b.partIndex)
+    const lastOcc = entry.occurrences[entry.occurrences.length - 1]
+    if (lastOcc === undefined || lastOcc.messageIndex !== lastAssistant) continue
+    windows.push({ key, tool: entry.tool, count: entry.occurrences.length, lastOccurrence: lastOcc })
   }
   return { sessionID: messages[0]?.info.sessionID ?? null, windows }
 }

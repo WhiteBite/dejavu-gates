@@ -1,6 +1,6 @@
 import type { Plugin } from "@opencode-ai/plugin"
 import type { TextPart, UserMessage } from "@opencode-ai/sdk"
-import { detectRepeatSeries, detectRepeatWindows, looksLikeFailure, parameterizeError, REPEAT_MARKER } from "./src/patterns"
+import { detectRepeatSeries, detectRepeatWindows, detectShapeLoops, looksLikeFailure, parameterizeError, REPEAT_MARKER } from "./src/patterns"
 import {
   cleanupSession,
   createEphemeralState,
@@ -26,6 +26,8 @@ const REPEAT_SESSIONS_CAP = 1000
 /** repeat channel: a key this frequent within the last REPEAT_WINDOW_ROUNDS assistant rounds earns a NOTE */
 const REPEAT_WINDOW_MIN = 3
 const REPEAT_WINDOW_ROUNDS = 12
+/** shape channel: same call with cosmetic variation this often earns a NOTE; a second detection injects a loop break */
+const SHAPE_LOOP_MIN = 3
 
 /** Sentinel: intentional gate/reminder throws (rethrown); our own bugs are swallowed. */
 class GateSignal extends Error {}
@@ -209,6 +211,28 @@ export const Dejavu: Plugin = async ({ directory, client }) => {
     "experimental.chat.messages.transform": async (_input, output) => {
       try {
         const scan = detectRepeatSeries(output.messages)
+        const injectLoopBreak = async (text: string, logKey: string, tool: string, count: number): Promise<void> => {
+          const sessionID = scan.sessionID
+          if (sessionID === null) return
+          const lastInfo = output.messages[output.messages.length - 1]?.info as { mode?: string; agent?: string; providerID?: string; modelID?: string } | undefined
+          const now = Date.now()
+          const messageId = `dejavu-loopbreak-${now}`
+          const info: UserMessage = {
+            id: messageId,
+            sessionID,
+            role: "user",
+            time: { created: now },
+            agent: lastInfo?.agent ?? lastInfo?.mode ?? "user",
+            model: lastInfo?.providerID !== undefined && lastInfo?.modelID !== undefined ? { providerID: lastInfo.providerID, modelID: lastInfo.modelID } : { providerID: "unknown", modelID: "unknown" },
+          }
+          const part: TextPart = { id: `${messageId}-p1`, sessionID, messageID: messageId, type: "text", text, synthetic: true }
+          output.messages.push({ info, parts: [part] })
+          const loopKey = `${sessionID}:${logKey}`
+          if (!ephemeral.loopBreakInjected.has(loopKey)) {
+            ephemeral.loopBreakInjected.add(loopKey)
+            await stores.logAll({ type: "loop-break", key: logKey.slice(0, 80), tool, session: sessionID, project: directory, repeatCount: count })
+          }
+        }
         // Sanitize (payload only, never persisted — verified upstream): every
         // occurrence past the first of a series gets a marker, so the provider
         // never sees byte-identical consecutive calls. A marker the model
@@ -291,6 +315,33 @@ export const Dejavu: Plugin = async ({ directory, client }) => {
           repeatWindowLogged.set(windowSession, windowedMax)
           await stores.logAll({ type: "repeat-windowed", key: "windowed", session: windowSession, project: directory, repeatCount: windowedMax })
         }
+        // shape loops: same call with cosmetic variation (comment/offset churn) — invisible to byte-identical channels
+        const shapeSession = scan.sessionID
+        if (shapeSession !== null) {
+          const lastIsAssistantForShape = output.messages[output.messages.length - 1]?.info.role === "assistant"
+          for (const sw of detectShapeLoops(output.messages, { window: REPEAT_WINDOW_ROUNDS, min: SHAPE_LOOP_MIN }).windows) {
+            const shapeKey = `${shapeSession}:${sw.key}`
+            const lastPart = output.messages[sw.lastOccurrence.messageIndex]?.parts[sw.lastOccurrence.partIndex]
+            if (lastPart === undefined || lastPart.type !== "tool" || lastPart.state == null) continue
+            const notedBefore = ephemeral.shapeLoopNotes.get(shapeKey) ?? 0
+            if (notedBefore > 0) {
+              if (lastIsAssistantForShape) {
+                const text = `[dejavu loop protection — automated message, not the user] You have run the same call ${sw.count} times in the last ${REPEAT_WINDOW_ROUNDS} rounds with only cosmetic variations (trailing comments, offsets). It is the same call and the result will not change. Reply in plain text ONLY — no tool calls: (1) what you finished, (2) what you verified, (3) what remains. If you are a subagent, this text reply IS your final report to whoever launched you.`
+                await injectLoopBreak(text, sw.key, sw.tool, sw.count)
+              }
+              continue
+            }
+            const note = `\n\n[dejavu] SHAPE LOOP — this call has run ${sw.count} times in the last ${REPEAT_WINDOW_ROUNDS} rounds with only cosmetic variations (trailing comments, offsets, ordering). It is the same call; re-running it will not produce new information. If you are verifying work, verify once and move on; if you are paging a file, read the whole file once with a bigger limit instead of slices.`
+            if ("output" in lastPart.state && typeof lastPart.state.output === "string") {
+              lastPart.state.output += note
+              ephemeral.shapeLoopNotes.set(shapeKey, 1)
+            } else if (lastPart.state.status === "error" && typeof lastPart.state.error === "string") {
+              lastPart.state.error += note
+              ephemeral.shapeLoopNotes.set(shapeKey, 1)
+            }
+            await stores.logAll({ type: "shape-loop", key: sw.key.slice(0, 80), tool: sw.tool, session: shapeSession, project: directory, repeatCount: sw.count })
+          }
+        }
         // Feed the before-hook's block tier + damped observability. Only live
         // tail series may block; an ended loop clears its entry so stale
         // evidence never keeps blocking.
@@ -327,28 +378,8 @@ export const Dejavu: Plugin = async ({ directory, client }) => {
           // compaction also triggers this hook on a cloned head — lastBlockAt proves a live prompt-path block
           const blockIsLive = entry !== undefined && Date.now() - entry.lastBlockAt < 120_000
           if (tailKey !== null && tailLen > 0 && lastIsAssistant && blockIsLive && entry !== undefined && entry.blocked >= REPEAT_STOP_AFTER) {
-            const tailSeries = scan.series.find((s) => s.reachesTail && s.key === tailKey)
-            const lastOcc = tailSeries?.occurrences[tailSeries.occurrences.length - 1]
-            const sourceInfo = (lastOcc === undefined ? undefined : output.messages[lastOcc.messageIndex]?.info) as { mode?: string; agent?: string; providerID?: string; modelID?: string } | undefined
-            const now = Date.now()
-            const messageId = `dejavu-loopbreak-${now}`
             const text = `[dejavu loop protection — automated message, not the user] The tool call you keep retrying has been blocked ${entry.blocked} times and will never run in this session. Do not re-issue it, rename it, or work around it. Reply in plain text ONLY — no tool calls: (1) what you finished, (2) what is blocked and why, (3) what remains. If you are a subagent, this text reply IS your final report to whoever launched you.`
-            const info: UserMessage = {
-              id: messageId,
-              sessionID,
-              role: "user",
-              time: { created: now },
-              agent: sourceInfo?.agent ?? sourceInfo?.mode ?? "user",
-              model: sourceInfo?.providerID !== undefined && sourceInfo?.modelID !== undefined ? { providerID: sourceInfo.providerID, modelID: sourceInfo.modelID } : { providerID: "unknown", modelID: "unknown" },
-            }
-            const part: TextPart = { id: `${messageId}-p1`, sessionID, messageID: messageId, type: "text", text, synthetic: true }
-            output.messages.push({ info, parts: [part] })
-            const loopKey = `${sessionID}:${tailKey}`
-            if (!ephemeral.loopBreakInjected.has(loopKey)) {
-              ephemeral.loopBreakInjected.add(loopKey)
-              const tailTool = tailSeries?.tool ?? "unknown"
-              await stores.logAll({ type: "loop-break", key: tailKey.slice(0, 80), tool: tailTool, session: sessionID, project: directory, repeatCount: entry.blocked })
-            }
+            await injectLoopBreak(text, tailKey, scan.series.find((s) => s.reachesTail && s.key === tailKey)?.tool ?? "unknown", entry.blocked)
           }
           while (repeatSeries.size > REPEAT_SESSIONS_CAP) {
             const oldest = repeatSeries.keys().next()

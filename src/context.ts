@@ -44,6 +44,8 @@ export interface EphemeralState {
   repeatWindowLogged: Map<string, number>
   /** loop-break: session:seriesKey pairs that already logged an injection */
   loopBreakInjected: Set<string>
+  /** shape loops: session:shapeKey → times already noted (escalation ladder) */
+  shapeLoopNotes: Map<string, number>
   /** iteration discriminator: projectDir → count of landed edit/write calls;
    *  a failure with a moved version is debugging, not a blind retry */
   workspaceVersions: Map<string, number>
@@ -70,6 +72,7 @@ export function createEphemeralState(): EphemeralState {
     repeatSeries: new Map(),
     repeatWindowLogged: new Map(),
     loopBreakInjected: new Set(),
+    shapeLoopNotes: new Map(),
     workspaceVersions: new Map(),
     handledParts: new Set(),
     recentRecords: new Map(),

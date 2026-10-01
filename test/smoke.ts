@@ -2890,6 +2890,52 @@ const r105TextTail: R99Msg[] = [r99User("r105s"), r99Asst({ task_id: "t1" }, {},
 await r105Transform?.({} as never, { messages: r105TextTail } as never)
 check("loop break: a text reply at the tail ends the injection", !r105HasBreak(r105TextTail))
 
+// --- 106. shape loops: same call with comment/offset churn → NOTE, then inject ---
+const r106Dir = join(tmp, "r106-shape-project")
+const r106Hooks = await Dejavu({ directory: r106Dir, client: { app: { log: async () => ({}) } } } as unknown as Ctx)
+const r106Transform = r106Hooks["experimental.chat.messages.transform"]
+const r106Bash = (cmd: string, sessionID = "r106s"): R99Msg => ({
+  info: { role: "assistant", sessionID },
+  parts: [{ type: "tool", tool: "bash", state: { status: "completed", output: "ok", input: { command: cmd } } }],
+})
+const r106Edit = (sessionID = "r106s"): R99Msg => ({
+  info: { role: "assistant", sessionID },
+  parts: [{ type: "tool", tool: "edit", state: { status: "completed", output: "ok", input: { filePath: "x.ts" } } }],
+})
+const r106ShapeText = (m: R99Msg): string => String((m.parts[0] as { text?: string; state?: { output?: string } } | undefined)?.state?.output ?? (m.parts[0] as { text?: string } | undefined)?.text ?? "")
+const r106Populate = async (extra: R99Msg[] = []): Promise<R99Msg[]> => {
+  const msgs: R99Msg[] = [
+    r99User("r106s"),
+    r106Bash(`node build.js # verify pass 1`),
+    r106Bash(`node build.js # verify pass 2`),
+    r106Bash(`node build.js # verify pass 3`),
+    ...extra,
+  ]
+  await r106Transform?.({} as never, { messages: msgs } as never)
+  return msgs
+}
+const r106First = await r106Populate()
+check("shape loop: same call with comment churn earns a SHAPE LOOP note", r106First.some((m) => r106ShapeText(m).includes("SHAPE LOOP")))
+check("shape loop: first detection does not inject", !r106First.some((m) => r106ShapeText(m).includes("loop protection")))
+const r106Second = await r106Populate()
+check("shape loop: a repeated detection injects a loop break", r106Second.some((m) => r106ShapeText(m).includes("loop protection")))
+// a round that lands an edit alongside the call is iteration, not a loop round
+const r106Iter: R99Msg[] = [r99User("r106i"), r106Bash("node build.js # a", "r106i"), { info: { role: "assistant", sessionID: "r106i" }, parts: [
+  { type: "tool", tool: "bash", state: { status: "completed", output: "ok", input: { command: "node build.js # b" } } },
+  { type: "tool", tool: "edit", state: { status: "completed", output: "ok", input: { filePath: "x.ts" } } },
+] }, r106Bash("node build.js # c", "r106i")]
+await r106Transform?.({} as never, { messages: r106Iter } as never)
+check("shape loop: a round that landed an edit does not count toward the loop", !r106Iter.some((m) => r106ShapeText(m).includes("SHAPE LOOP")))
+// pagination slices collapse to one shape too
+const r106Page: R99Msg[] = [
+  r99User("r106p"),
+  r106Bash(`Get-Content "$env:TMP/x.ts" | Select-Object -Skip 60 -First 20`, "r106p"),
+  r106Bash(`Get-Content "$env:TMP/x.ts" | Select-Object -Skip 133 -First 20`, "r106p"),
+  r106Bash(`Get-Content "$env:TMP/x.ts" | Select-Object -Skip 482 -First 30`, "r106p"),
+]
+await r106Transform?.({} as never, { messages: r106Page } as never)
+check("shape loop: pagination with moving offsets is one shape", r106Page.some((m) => r106ShapeText(m).includes("SHAPE LOOP")))
+
 // --- 104. timeout-kill correction names both leak shapes ---
 const r104Corr = suggestCorrection("bash:npx vitest run <n> >& <n>", "shell tool terminated command after exceeding timeout 300000ms")
 check("timeout correction explains the EOF semantics", r104Corr.includes("EOF"))

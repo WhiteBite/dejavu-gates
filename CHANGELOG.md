@@ -1,5 +1,15 @@
 # Changelog
 
+## 2.46.0 - 2026-09-30
+
+### Added
+- **Shape-loop detection (OpenCode repeat channel)** — a call re-issued with only cosmetic variation (a changed trailing comment like `# verify batch A again/third/fourth pass`, or moving pagination offsets like `-Skip 133` → `-Skip 482`) shares one normalized shape; the byte-identical repeat channel never saw it. `detectShapeLoops` counts shape repeats across the last 12 assistant rounds (a round that lands an edit/write is iteration, exempt); at 3+ the last tool result gets a `[dejavu] SHAPE LOOP` NOTE, and a second detection of the same shape injects the automated loop-break user message. Payload-only, no gates, no persistence.
+
+## 2.45.1 - 2026-09-30
+
+### Fixed
+- Loop-break injection freshness gate: `lastBlockAt` must be < 120 s so a compaction-path transform on a cloned message head can't inject into a stale session. Metadata for the synthetic message copies the assistant's flat `mode`/`providerID`/`modelID` fields (not a nested `model` object, which AssistantMessage doesn't have). `loopBreakInjected` evicts in parity with the `repeatSeries` cap.
+
 ## 2.45.0 - 2026-09-30
 
 ### Added
