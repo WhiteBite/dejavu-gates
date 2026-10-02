@@ -8,7 +8,7 @@
   "license": "https://opensource.org/licenses/MIT",
   "keywords": "opencode, opencode-plugin, claude-code, codex, gemini-cli, cursor, copilot-cli, crush, ai-agents, coding-agent, error-gates, hooks, memory, reliability, bun",
   "url": "https://github.com/WhiteBite/dejavu-gates",
-  "softwareVersion": "2.49.0",
+  "softwareVersion": "2.50.0",
   "codeRepository": "https://github.com/WhiteBite/dejavu-gates",
   "author": "WhiteBite",
   "sameAs": [

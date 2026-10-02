@@ -54,7 +54,7 @@ quickstart:
   prerequisites:
     - "Node.js >= 18"
   install: "npm install dejavu-gates"
-  run:
+  run: "dejavu report"
   test: "npm run test"
 
 artifacts:

@@ -32,6 +32,15 @@ This is the concatenated documentation intended for LLM grounding. Regenerate wi
 Cross-session **memory prosthesis with teeth** for AI coding agents. Agents repeat the same mistakes because they forget between sessions — and markdown rules don't fix that. dejavu mechanically detects recurring tool-call failures (bash, read, edit, write, glob, grep) and promotes them into enforced gates: a reminder on the next attempt, a hard block on same-session repeat offense. One engine, many hosts: OpenCode (plugin), Claude Code, Codex CLI, Gemini CLI, Cursor, Copilot CLI, Crush, Devin CLI, Kiro (hook-handler CLI), Cline (in-package plugin). TypeScript + Bun, ships as source, no build step.
 
 ## Supported harnesses
+## Quickstart
+
+```bash
+npm install dejavu-gates
+dejavu report
+```
+
+Tests: `npm run test`
+
 
 | Harness | Install | Block (pre) | Remind NOTE (post) | Notes |
 |---|---|---|---|---|
@@ -60,7 +69,7 @@ tool call fails  →  signature normalized (paths/numbers/hashes stripped)
  retry fails again →  same-session repeat offense → hard BLOCK on further attempts
  diagnostic cmd   →  gate stays remind-only: the call RUNS and the reminder rides
                      on the failing output as a [dejavu] NOTE (once per session)
- ```
+```
 
 Design decisions (post-mortem of existing approaches):
 
@@ -209,7 +218,7 @@ echo '{"hook_event_name":"PreToolUse","session_id":"s","tool_name":"Bash","tool_
 - Every `log.jsonl` gets an `init` event with `PLUGIN_VERSION`; `detected` events carry `channel` (`exit`/`text`/`event`) and the raw exit code; `reminded`/`blocked` carry `via` (`exact`/`fuzzy`/`segment`). Stale plugin sessions are therefore visible in the data.
 - `bun scripts/doctor.ts [--repair] [projectDirs...]` — one-command report over every invariant the data model implies: gate shape, duplicate keys, temporal order, nested-token corruption, blocking without evidence, policy violations, index↔gates consistency, stale project copies, missed escalation, log integrity, secrets, version drift. `--repair` heals first (idempotent), then reports. `dejavu report [dirs...]` (the npm bin) runs the same report for any harness, no OpenCode needed.
 - `bun scripts/analyze.ts [projectDirs...]` — store summary: statuses, tools, top patterns.
-- `dejavu lesson list` / `dejavu lesson set <key> "<one-line fix>"` — review gates whose `correction` is still the machine default and write a human correction onto an existing gate (cannot create gates; promotion stays mechanical).
+- `dejavu lesson list` / `dejavu lesson set <key> "<one-line fix>"` — review gates whose `correction` is still the machine default and write a human correction onto an existing gate (cannot create gates; promotion stays mechanical). `lesson list --all` includes watching gates; `lesson set --author owner|agent` records who wrote the correction; `lesson retire-when <key> <spec>` declares an external invalidation (`dep:<name>@>=<min>`, `path-present/absent:<p>`, `tag:<name>`) that `doctor` evaluates.
 - `/dejavu` command (OpenCode, installed globally) runs doctor first, then reports.
 - Hook CLI diagnostics: set `DEJAVU_DEBUG=1` to see engine log lines on stderr (stdout always stays pure JSON).
 
@@ -360,63 +369,6 @@ dejavu is a community project. It is not built by, and not affiliated with, the 
 ## License
 
 MIT
-
-## Who is it for
-
-<!-- TODO: who is this for? -->
-
-## Use cases
-
-<!-- TODO: 3-7 concrete use cases -->
-
-## Why choose this
-
-<!-- TODO: 2-4 differentiators, with numbers -->
-
-## Examples
-### Example (replace with a real one)
-
-```bash
-npm start
-```
-
-## Who is it for
-
-<!-- TODO: who is this for? -->
-
-## Use cases
-
-<!-- TODO: 3-7 concrete use cases -->
-
-## Why choose this
-
-<!-- TODO: 2-4 differentiators, with numbers -->
-
-## Examples
-### Example (replace with a real one)
-
-```bash
-npm start
-```
-
-## Who is it for
-
-<!-- TODO: who is this for? -->
-
-## Use cases
-
-<!-- TODO: 3-7 concrete use cases -->
-
-## Why choose this
-
-<!-- TODO: 2-4 differentiators, with numbers -->
-
-## Examples
-### Example (replace with a real one)
-
-```bash
-npm start
-```
 
 ## Who is it for
 

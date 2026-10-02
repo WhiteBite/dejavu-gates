@@ -21,6 +21,15 @@
 Cross-session **memory prosthesis with teeth** for AI coding agents. Agents repeat the same mistakes because they forget between sessions — and markdown rules don't fix that. dejavu mechanically detects recurring tool-call failures (bash, read, edit, write, glob, grep) and promotes them into enforced gates: a reminder on the next attempt, a hard block on same-session repeat offense. One engine, many hosts: OpenCode (plugin), Claude Code, Codex CLI, Gemini CLI, Cursor, Copilot CLI, Crush, Devin CLI, Kiro (hook-handler CLI), Cline (in-package plugin). TypeScript + Bun, ships as source, no build step.
 
 ## Supported harnesses
+## Quickstart
+
+```bash
+npm install dejavu-gates
+dejavu report
+```
+
+Tests: `npm run test`
+
 
 | Harness | Install | Block (pre) | Remind NOTE (post) | Notes |
 |---|---|---|---|---|
@@ -49,7 +58,7 @@ tool call fails  →  signature normalized (paths/numbers/hashes stripped)
  retry fails again →  same-session repeat offense → hard BLOCK on further attempts
  diagnostic cmd   →  gate stays remind-only: the call RUNS and the reminder rides
                      on the failing output as a [dejavu] NOTE (once per session)
- ```
+```
 
 Design decisions (post-mortem of existing approaches):
 
@@ -349,63 +358,6 @@ dejavu is a community project. It is not built by, and not affiliated with, the 
 ## License
 
 MIT
-
-## Who is it for
-
-<!-- TODO: who is this for? -->
-
-## Use cases
-
-<!-- TODO: 3-7 concrete use cases -->
-
-## Why choose this
-
-<!-- TODO: 2-4 differentiators, with numbers -->
-
-## Examples
-### Example (replace with a real one)
-
-```bash
-npm start
-```
-
-## Who is it for
-
-<!-- TODO: who is this for? -->
-
-## Use cases
-
-<!-- TODO: 3-7 concrete use cases -->
-
-## Why choose this
-
-<!-- TODO: 2-4 differentiators, with numbers -->
-
-## Examples
-### Example (replace with a real one)
-
-```bash
-npm start
-```
-
-## Who is it for
-
-<!-- TODO: who is this for? -->
-
-## Use cases
-
-<!-- TODO: 3-7 concrete use cases -->
-
-## Why choose this
-
-<!-- TODO: 2-4 differentiators, with numbers -->
-
-## Examples
-### Example (replace with a real one)
-
-```bash
-npm start
-```
 
 ## Who is it for
 
