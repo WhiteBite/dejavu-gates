@@ -205,6 +205,7 @@ bun scripts/install-hooks.ts --harness <claude|codex|gemini|cursor|copilot|crush
 - `DEJAVU_HOME` env var overrides the global store dir — smoke test and scripts rely on it
 - Bump `PLUGIN_VERSION` (src/store.ts) on behavior changes — doctor detects version drift via `init` log events — AND keep `package.json` `version` in sync (npm publish uses the package version)
 - gates.json files are human-editable by design: delete a gate object to disable, edit `correction` to teach
+- Project stores self-ignore: init writes `.opencode/dejavu/.gitignore` (gates.json committable, runtime files ignored); `doctor --repair` sweeps orphan `*.tmp`/stale `*.lock` artifacts (`--prune-corrupt=<days>` opt-in prunes quarantine files)
 
 ## Discoverability (RDK)
 

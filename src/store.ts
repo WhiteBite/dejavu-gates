@@ -245,6 +245,9 @@ const DEMOTE_REOFFENSE_SESSIONS = 2
 /** prune an index key absent from every scope visible to the sweeper after this many days (a live gate in an unopened project clears its own candidacy) */
 const ORPHAN_CANDIDATE_DAYS = 7
 
+/** Self-ignoring .gitignore for the PROJECT store dir: gates.json is committable (shared repo gotchas), runtime files are not. */
+const STORE_GITIGNORE = "# dejavu: gates.json is committable (shared repo gotchas); runtime files are not.\n*\n!gates.json\n!.gitignore\n"
+
 /** bash pays the base bar; every non-bash tool (probes and generic) pays the probe bar. */
 function promotionThreshold(tool: string): number {
   return tool === "bash" ? PROMOTE_COUNT : PROMOTE_COUNT_PROBE
@@ -636,6 +639,20 @@ export class GateStore {
     // We know the content we just wrote — refresh the TTL cache directly.
     // (keyIndex/enforcedCache hold references into this.gates, still valid.)
     this.cacheUntilMs = Date.now() + LOAD_CACHE_TTL_MS
+  }
+
+  /** Write the self-ignoring .gitignore into this store dir (project scope
+   * only — the global dir is not inside a repo). Best-effort: never clobbers
+   * an existing file, never throws — init must not fail on hygiene. */
+  async ensureGitignore(): Promise<void> {
+    try {
+      const target = join(this.dir, ".gitignore")
+      if (existsSync(ntPath(target))) return
+      await mkdir(ntPath(this.dir), { recursive: true })
+      await atomicWrite(target, STORE_GITIGNORE)
+    } catch {
+      // best-effort hygiene: a read-only store dir must never fail init
+    }
   }
 
   /** Cross-project pattern index; meaningful only on the global store. Read-only. */
@@ -1433,6 +1450,7 @@ export class Stores {
     for (const store of this.scopes()) {
       await store.reconcile()
     }
+    if (this.projectStore) await this.projectStore.ensureGitignore()
 
     // Index-driven escalation healing: a key proven in enough project dirs
     // belongs in the global store even if recordFailure never moved it

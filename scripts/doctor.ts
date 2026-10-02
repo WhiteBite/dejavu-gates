@@ -2,18 +2,24 @@
  * One-command pathology report for dejavu stores. Checks every invariant the
  * data model implies, so debugging starts from facts, not guesses.
  *
- * Usage: bun scripts/doctor.ts [--repair] [projectDir ...]
+ * Usage: bun scripts/doctor.ts [--repair] [--prune-corrupt[=<days>]] [projectDir ...]
  *   --repair  heal first (reconcile + migrate), then report
  */
 import { existsSync } from "node:fs"
 import { readFile, readdir, stat } from "node:fs/promises"
 import { join } from "node:path"
+import { CORRUPT_DEFAULT_DAYS, sweepStoreArtifacts, TMP_ORPHAN_MS } from "../src/fs"
 import { canBlock, canRemind, isRepoLocal, sanitizeForStore } from "../src/patterns"
 import { createStores, DEMOTE_RECURRENCES, GateStore, GLOBAL_PROJECTS, MAX_GATES, NOISE_TTL_DAYS, resolveGlobalDir, retireTaught, PLUGIN_VERSION, PROMOTE_SESSIONS, TTL_DAYS, type Gate } from "../src/store"
 import { coerceGateShape, hasNestedTokens } from "../src/validate"
 
 const repair = process.argv.includes("--repair")
 const globalDir = resolveGlobalDir()
+const DAY_MS = 24 * 60 * 60 * 1000
+const pruneArg = process.argv.find((a) => a === "--prune-corrupt" || a.startsWith("--prune-corrupt="))
+const pruneCorrupt = pruneArg !== undefined
+const pruneDaysRaw = pruneArg !== undefined ? Number(pruneArg.split("=")[1]) : Number.NaN
+const pruneDays = Number.isFinite(pruneDaysRaw) && pruneDaysRaw >= 0 ? pruneDaysRaw : CORRUPT_DEFAULT_DAYS
 
 const FILE_NOT_FOUND_CORRECTION = /can't open file|cannot find path|no such file|cannot find the (?:file|path)|ENOENT/i
 
@@ -35,7 +41,9 @@ function staleCorrectionPath(gate: Gate): string | null {
 // discover project dirs from the global index — it is the only registry of
 // which projects dejavu has seen. (Running global-only produced hundreds of
 // false "index orphans": keys whose gates live in project stores.)
-let projectDirs = process.argv.slice(2).filter((a) => a !== "--repair")
+let projectDirs = process.argv
+  .slice(2)
+  .filter((a) => a !== "--repair" && a !== "--prune-corrupt" && !a.startsWith("--prune-corrupt="))
 if (projectDirs.length === 0) {
   const discovered = new Set<string>()
   const index = await new GateStore(globalDir).loadIndex()
@@ -76,6 +84,13 @@ if (repair) {
         }
         if (staleFixed) await store.save()
       })
+    }
+    // quarantine artifacts are forensic bytes — prune them only with --prune-corrupt
+    for (const store of stores.projectStore ? [stores.projectStore, stores.globalStore] : [stores.globalStore]) {
+      const swept = await sweepStoreArtifacts(store.dir, { tmpOrphanMs: TMP_ORPHAN_MS, corruptMaxAgeMs: pruneDays * DAY_MS, pruneCorrupt })
+      if (swept.tmp + swept.locks + swept.corrupt > 0) {
+        store.deferEvent({ type: "repaired", key: "sweep", snippet: `removed ${swept.tmp} tmp, ${swept.locks} lock, ${swept.corrupt} corrupt artifact(s)` })
+      }
     }
     // The script exits after this — flush deferred repair/quarantine/demotion
     // events now, or they are silently lost ("every repair is logged" invariant).

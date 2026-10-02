@@ -6,13 +6,13 @@
  */
 import { spawnSync } from "node:child_process"
 import { existsSync } from "node:fs"
-import { mkdir, mkdtemp, readFile, stat, writeFile } from "node:fs/promises"
+import { mkdir, mkdtemp, readFile, stat, utimes, writeFile } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { fileURLToPath } from "node:url"
-import { atomicWrite, ntPath } from "../src/fs"
+import { atomicWrite, CORRUPT_DEFAULT_DAYS, ntPath, sweepStoreArtifacts, TMP_ORPHAN_MS } from "../src/fs"
 import { callSignature, patternKey } from "../src/patterns"
-import { GateStore, GLOBAL_PROJECTS, NOISE_TTL_DAYS, PLUGIN_VERSION, Stores, TTL_DAYS } from "../src/store"
+import { createStores, GateStore, GLOBAL_PROJECTS, NOISE_TTL_DAYS, PLUGIN_VERSION, Stores, TTL_DAYS } from "../src/store"
 import { makeChecker } from "./helpers"
 
 const { check, report } = makeChecker()
@@ -197,6 +197,49 @@ const inst = spawnSync("bun", [join(repoRoot, "src", "main.ts"), "install", "--h
 const settingsPath = join(instCwd, ".claude", "settings.json")
 check("installer exits 0 through the shared atomicWrite", inst.status === 0)
 check("installer wrote .claude/settings.json via the shared primitive", existsSync(settingsPath) && (await readFile(settingsPath, "utf8")).includes("src/cli.ts"))
+
+// --- 11. project store writes a self-ignoring .gitignore at init ---
+const giProject = join(tmp, "gitignore-project")
+const giGlobalDir = join(tmp, "dejavu-home")
+const giStores = createStores(giProject)
+await giStores.reconcileAll()
+const giPath = join(giProject, ".opencode", "dejavu", ".gitignore")
+check("reconcileAll writes the project store .gitignore", existsSync(giPath) && (await readFile(giPath, "utf8")).includes("!gates.json"))
+check("the global store dir never gets a .gitignore", !existsSync(join(giGlobalDir, ".gitignore")))
+const giCustom = "# user edit\n*\n!gates.json\n"
+await writeFile(giPath, giCustom, "utf8")
+await giStores.reconcileAll()
+check("a user-modified .gitignore survives a re-run", (await readFile(giPath, "utf8")) === giCustom)
+
+// --- 12. sweepStoreArtifacts: orphan tmp, stale locks, opt-in corrupt prune ---
+const sweepDir = join(tmp, "sweep")
+await mkdir(sweepDir, { recursive: true })
+const DAY_MS = 24 * 60 * 60 * 1000
+const backdate = async (path: string, ageMs: number): Promise<void> => {
+  const at = new Date(Date.now() - ageMs)
+  await utimes(path, at, at)
+}
+const sweepTmp = join(sweepDir, "gates.json.999999.tmp")
+await writeFile(sweepTmp, "x", "utf8")
+await backdate(sweepTmp, TMP_ORPHAN_MS + 60000)
+const sweepLiveTmp = join(sweepDir, `gates.json.${process.pid}.tmp`)
+await writeFile(sweepLiveTmp, "x", "utf8")
+const sweepDeadLock = join(sweepDir, "gates.json.lock")
+await writeFile(sweepDeadLock, "99999999", "utf8")
+const sweepLiveLock = join(sweepDir, "index.json.lock")
+await writeFile(sweepLiveLock, String(process.pid), "utf8")
+const sweepCorrupt = join(sweepDir, `gates.json.corrupt-${Date.now()}`)
+await writeFile(sweepCorrupt, "x", "utf8")
+const sweepOpts = { tmpOrphanMs: TMP_ORPHAN_MS, corruptMaxAgeMs: CORRUPT_DEFAULT_DAYS * DAY_MS, pruneCorrupt: false }
+const kept = await sweepStoreArtifacts(sweepDir, sweepOpts)
+check("sweep removes an orphaned tmp artifact past the age window", kept.tmp === 1 && !existsSync(sweepTmp))
+check("sweep keeps a fresh tmp artifact from a live pid", existsSync(sweepLiveTmp))
+check("sweep removes a lock held by a dead pid", kept.locks === 1 && !existsSync(sweepDeadLock))
+check("sweep never removes a lock held by a live pid", existsSync(sweepLiveLock))
+check("pruneCorrupt=false keeps quarantine artifacts", kept.corrupt === 0 && existsSync(sweepCorrupt))
+await backdate(sweepCorrupt, (CORRUPT_DEFAULT_DAYS + 1) * DAY_MS)
+const pruned = await sweepStoreArtifacts(sweepDir, { ...sweepOpts, pruneCorrupt: true })
+check("pruneCorrupt=true removes quarantine artifacts past the age window", pruned.corrupt === 1 && !existsSync(sweepCorrupt))
 
 if (process.env.BENCH === "1") {
   const benchProject = join(tmp, "bench-project")
