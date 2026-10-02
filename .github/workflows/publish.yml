@@ -6,6 +6,10 @@ on:
       - "v*"
   workflow_dispatch:
 
+concurrency:
+  group: publish
+  cancel-in-progress: false
+
 jobs:
   publish:
     if: startsWith(github.ref, 'refs/tags/v')
@@ -30,13 +34,28 @@ jobs:
       - run: bun test/install.ts
       - run: bun test/v2-host.ts
       - run: bun test/cline-plugin.ts
-      - run: bun test/cline-plugin.ts
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
-      - run: npx --yes npm@^11.5.1 publish --provenance
-      - name: Extract release notes from CHANGELOG
-        run: awk -v h="## ${GITHUB_REF_NAME#v} " 'index($0, h) == 1 { on = 1; next } on && /^## / { exit } on { print }' CHANGELOG.md > /tmp/release-notes.md
+      - name: Check whether this exact version is already published
+        id: ver
+        run: |
+          local_version="$(node -p "require('./package.json').version")"
+          if npm view "dejavu-gates@${local_version}" version >/dev/null 2>&1; then
+            echo "version already in registry, skipping publish"
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "skip=false" >> "$GITHUB_OUTPUT"
+          fi
+      - name: Publish to npm via OIDC
+        if: steps.ver.outputs.skip == 'false'
+        run: npx --yes npm@^11.5.1 publish --provenance
       - name: GitHub Release
-        run: gh release create "$GITHUB_REF_NAME" --title "$GITHUB_REF_NAME" --notes-file /tmp/release-notes.md
+        run: |
+          if gh release view "$GITHUB_REF_NAME" >/dev/null 2>&1; then
+            echo "release $GITHUB_REF_NAME already exists, skipping"
+          else
+            awk -v h="## ${GITHUB_REF_NAME#v} " 'index($0, h) == 1 { on = 1; next } on && /^## / { exit } on { print }' CHANGELOG.md > /tmp/release-notes.md
+            gh release create "$GITHUB_REF_NAME" --title "$GITHUB_REF_NAME" --notes-file /tmp/release-notes.md
+          fi
         env:
           GH_TOKEN: ${{ github.token }}
 
@@ -49,12 +68,25 @@ jobs:
       packages: write
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
-      - name: Scope the package for GitHub Packages
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          registry-url: https://npm.pkg.github.com
+      - name: Check whether this exact version is already mirrored
+        id: mirror
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          local_version="$(node -p "require('./package.json').version")"
+          if npm view "@whitebite/dejavu-gates@${local_version}" version >/dev/null 2>&1; then
+            echo "version already mirrored, skipping"
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "skip=false" >> "$GITHUB_OUTPUT"
+          fi
+      - name: Publish scoped mirror to GitHub Packages
+        if: steps.mirror.outputs.skip == 'false'
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           node -e 'const fs = require("node:fs"); const p = JSON.parse(fs.readFileSync("package.json", "utf8")); p.name = "@whitebite/dejavu-gates"; fs.writeFileSync("package.json", JSON.stringify(p, null, 2) + "\n")'
-      - name: Publish to GitHub Packages
-        run: |
-          printf '@whitebite:registry=https://npm.pkg.github.com/\n//npm.pkg.github.com/:_authToken=%s\n' "$GITHUB_TOKEN" > .npmrc
           npm publish
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
