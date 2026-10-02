@@ -202,12 +202,14 @@ echo '{"hook_event_name":"PreToolUse","session_id":"s","tool_name":"Bash","tool_
 - **Gates heal, not just accumulate** — dejavu sees successes too: a SUCCESS matching an enforced gate grows `succeededAfterGate`, and after 3 in a row the gate retires to `watching` (logged `healed`), so a command you fixed stops triggering reminders. A failure resets the streak. The negative twin: a gate the agent keeps fighting (recurrences or explicit overrides) demotes itself (logged `demoted`) — enforcement listens to behavior in both directions. Third path: a gate reminded 5+ times with zero reoffense has TAUGHT its lesson — it retires softly (logged `retired-taught`), re-promotion on new failures stays possible. Heal-aware: a blocking gate with a live heal streak does not interrupt the first run — it lets a likely-fixed command run and blocks only a repeat failure.
 - **Auto-corrections, no manual work** — a promoted gate always ships with a mechanical, overridable default correction chosen by command family (stale `--check` artifacts, failing tests, type errors, network, installs, go/cargo/maven/dotnet/rspec/phpunit/make builds) or from the captured error line, so a gate never sits "NOT TEACHING" awaiting a human. `migrate()` backfills existing gates.
 - **Repeat channel (OpenCode only)** — DashScope/Qwen hard-rejects a request whose history carries the same tool call (name + args byte-identical) in consecutive rounds (HTTP 400), and one rejection poisons the session forever. The transform hook scans every outgoing payload statelessly: occurrences past the first of an identical-consecutive series get a `_dejavu_repeat` marker (payload-only, never persisted), a series reaching the tail gets a `[dejavu] REPETITION` note on its last tool result, and a third identical call is hard-blocked in the before-hook. Bypass: `_dejavu_proceed: true` in args (logged as override). No gates, no persistence, no promotion — pure payload hygiene.
+- **Loop break (OpenCode only)** — a model that keeps re-issuing the call past the REPEAT STOP message gets an automated user-role message appended to the outgoing payload (payload-only, marked `synthetic`). Blocked tool errors are an in-loop stimulus that weak models read as "retry"; a user-role turn is the one stimulus that reliably forces a text reply and ends the loop. The injection fires only while the same series owns the tail — a real user message or a text reply ends it — and logs `loop-break` once per series.
 
 ## Observability (debugging aids)
 
 - Every `log.jsonl` gets an `init` event with `PLUGIN_VERSION`; `detected` events carry `channel` (`exit`/`text`/`event`) and the raw exit code; `reminded`/`blocked` carry `via` (`exact`/`fuzzy`/`segment`). Stale plugin sessions are therefore visible in the data.
 - `bun scripts/doctor.ts [--repair] [projectDirs...]` — one-command report over every invariant the data model implies: gate shape, duplicate keys, temporal order, nested-token corruption, blocking without evidence, policy violations, index↔gates consistency, stale project copies, missed escalation, log integrity, secrets, version drift. `--repair` heals first (idempotent), then reports. `dejavu report [dirs...]` (the npm bin) runs the same report for any harness, no OpenCode needed.
 - `bun scripts/analyze.ts [projectDirs...]` — store summary: statuses, tools, top patterns.
+- `dejavu lesson list` / `dejavu lesson set <key> "<one-line fix>"` — review gates whose `correction` is still the machine default and write a human correction onto an existing gate (cannot create gates; promotion stays mechanical).
 - `/dejavu` command (OpenCode, installed globally) runs doctor first, then reports.
 - Hook CLI diagnostics: set `DEJAVU_DEBUG=1` to see engine log lines on stderr (stdout always stays pure JSON).
 
@@ -237,6 +239,23 @@ Language ecosystems covered by failure detection: JS/TS, Python, Go, Rust, Java/
 
 The store paths are historical (`.opencode/`) but the store is harness-neutral — ALL harnesses share it. Both files are human-editable. Removing a gate object disables it. Editing `correction` improves what the agent is told. Clearing `feedbackDemoted` (and setting `status` back to `blocking`/`reminding`) re-enforces a gate the agent's behavior retired — it gets a fresh grace window via `feedbackBaseline`.
 
+Project stores keep themselves out of `git status`: init writes a self-ignoring `.opencode/dejavu/.gitignore` — `gates.json` stays committable (shared repo gotchas), runtime files (log, index, locks, tmp) are ignored — and `doctor --repair` sweeps orphaned `*.tmp` files and stale `*.lock` files (`--prune-corrupt=<days>` opts into deleting quarantine artifacts past the age; default 30 days).
+
+### Environment overrides
+
+`DEJAVU_HOME` moves both store dirs; `DEJAVU_DEBUG=1` prints hook-CLI diagnostics to stderr. The enforcement tunables below can be overridden per process without editing source — each is read once at startup and falls back to its default when the value is not an integer within bounds:
+
+| Variable | Default | Bounds | Effect |
+|---|---|---|---|
+| `DEJAVU_TTL_DAYS` | 60 | 1–3650 | days without recurrence before a gate expires |
+| `DEJAVU_NOISE_TTL_DAYS` | 7 | 1–365 | TTL for one-off patterns (`watching`, count ≤ 1) |
+| `DEJAVU_PROMOTE_COUNT` | 3 | 1–100 | failures before a bash pattern becomes a gate |
+| `DEJAVU_PROMOTE_COUNT_PROBE` | 5 | 1–100 | failures before a probe tool becomes a gate |
+| `DEJAVU_PROMOTE_SESSIONS` | 2 | 1–100 | distinct sessions required to promote |
+| `DEJAVU_HEAL_SUCCESSES` | 3 | 1–100 | consecutive successes that retire a gate |
+| `DEJAVU_DEMOTE_RECURRENCES` | 3 | 1–100 | post-gate recurrences that demote a gate |
+| `DEJAVU_DEMOTE_OVERRIDES` | 3 | 1–100 | explicit bypasses that demote a blocking gate |
+
 ## Development
 
 ```bash
@@ -251,6 +270,7 @@ bun test/guards.ts         # proactive guards characterization (fire shapes, pre
 bun test/messages.ts       # teaching-text framing (tier-truthful, data-label, correction bound)
 bun test/property.ts       # seeded generator: normalization/fuzzy invariants
 bun test/fuzz.ts           # mutation fuzz: no crash, no invariant break
+bun test/env.ts            # DEJAVU_* env overrides: resolved tunables + promotion effect
 bun run lint:ast           # ast-grep structural gates (needs ast-grep on PATH)
 ```
 
@@ -409,6 +429,13 @@ npm start
 ## Why choose this
 
 <!-- TODO: 2-4 differentiators, with numbers -->
+
+## Examples
+### Example (replace with a real one)
+
+```bash
+npm start
+```
 <!-- rdk:generated:end -->
 
 ## Hand-written notes
