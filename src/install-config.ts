@@ -9,6 +9,7 @@ import { readFile } from "node:fs/promises"
 import { homedir } from "node:os"
 import { dirname, join } from "node:path"
 import { ntPath } from "./fs"
+import { mergeHooks, renderTemplate } from "./kit"
 
 export type Harness = "claude" | "codex" | "gemini" | "cursor" | "copilot" | "crush" | "devin" | "kiro"
 
@@ -115,8 +116,8 @@ export function warnIfNoBun(): void {
 export async function loadTemplate(harness: Harness): Promise<Json> {
   const path = join(PACKAGE_ROOT, "scripts", "templates", `${harness}.json`)
   // {{CLI}} lands inside a JSON string, so the path quotes must arrive JSON-escaped.
-  const substituted = (await readFile(ntPath(path), "utf8")).replaceAll("{{CLI}}", CLI_COMMAND.replaceAll(`"`, `\\"`))
-  const parsed: unknown = JSON.parse(substituted)
+  const rendered = renderTemplate(await readFile(ntPath(path), "utf8"), { CLI: CLI_COMMAND })
+  const parsed: unknown = JSON.parse(rendered)
   if (parsed === null || typeof parsed !== "object" || Array.isArray(parsed)) throw new Error(`template is not a JSON object: ${path}`)
   return parsed as Json
 }
@@ -170,33 +171,25 @@ export function stripDejavu(entries: unknown, harness: string): unknown[] {
   return kept
 }
 
+/** mergeHooks replaces non-array foreign event values with the template array; the golden suite pins their verbatim survival. */
+function restoreForeignEvents(target: Json, source: Json): void {
+  for (const [event, value] of Object.entries(source)) {
+    if (!Array.isArray(value)) target[event] = value
+  }
+}
+
 /** Append fresh template entries after stripping prior dejavu ones; unknown fields and foreign hooks survive. */
 export function mergeConfig(existing: Json, template: Json, harness: string): Json {
-  const merged: Json = { ...existing }
-  for (const [key, value] of Object.entries(template)) {
-    if (key !== "hooks" && !(key in merged)) merged[key] = value
-  }
-  const mergedHooks: Json = { ...asRecord(merged.hooks) }
-  for (const [event, entries] of Object.entries(asRecord(template.hooks))) {
-    const existingEntries = mergedHooks[event]
-    // non-array foreign value survives verbatim — the template array must not clobber it
-    if (existingEntries !== undefined && !Array.isArray(existingEntries)) continue
-    mergedHooks[event] = [...stripDejavu(existingEntries, harness), ...(Array.isArray(entries) ? entries : [])]
-  }
-  merged.hooks = mergedHooks
+  const merged = mergeHooks(existing, template, { shape: "nested-hooks", isMine: (command) => isDejavuCommand(command, harness) })
+  restoreForeignEvents(asRecord(merged.hooks), asRecord(existing.hooks))
   return merged
 }
 
 /** Root-hooks variant of mergeConfig: template.hooks entries are merged into the config root as event keys.
  * Foreign root-level keys and custom fields survive. */
 export function mergeConfigRoot(existing: Json, template: Json, harness: string): Json {
-  const merged: Json = { ...existing }
-  for (const [event, entries] of Object.entries(asRecord(template.hooks))) {
-    const existingEntries = merged[event]
-    // non-array foreign value survives verbatim — the template array must not clobber it
-    if (existingEntries !== undefined && !Array.isArray(existingEntries)) continue
-    merged[event] = [...stripDejavu(existingEntries, harness), ...(Array.isArray(entries) ? entries : [])]
-  }
+  const merged = mergeHooks(existing, asRecord(template.hooks), { shape: "root-events", isMine: (command) => isDejavuCommand(command, harness) })
+  restoreForeignEvents(merged, existing)
   return merged
 }
 
