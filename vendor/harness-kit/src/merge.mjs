@@ -109,6 +109,8 @@ export function mergeHooks(existing, template, { shape, isMine }) {
   for (const [event, entries] of Object.entries(templateEvents)) {
     if (!rootScoped && event === 'hooks') continue;
     if (!Array.isArray(entries)) continue;
+    // foreign non-array event value: keep verbatim, skip template entries for it
+    if (event in container && !Array.isArray(container[event])) continue;
     const current = Array.isArray(container[event]) ? container[event] : [];
     const appended = [...current, ...entries];
     if (appended.length === 0) delete container[event];

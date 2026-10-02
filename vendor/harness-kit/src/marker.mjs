@@ -37,7 +37,10 @@ function writeShellBlock(path, block, opts) {
     next = current.replace(/\n?$/, '\n') + block;
     action = 'appended';
   }
-  if (current !== null && next === current) return { action: 'unchanged' };
+  if (current !== null && next === current) {
+    if (opts.executable !== false && process.platform !== 'win32') chmodSync(path, 0o755);
+    return { action: 'unchanged' };
+  }
   write(path, next);
   if (opts.executable !== false && process.platform !== 'win32') chmodSync(path, 0o755);
   return { action };
