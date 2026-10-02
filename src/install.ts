@@ -15,8 +15,8 @@ import {
   collectCommands,
   collectCommandsRoot,
   ConfigParseError,
+  configShape,
   detectHarnesses,
-  extractCliPath,
   HARNESSES,
   isDejavuCommand,
   isDejavuHookCommand,
@@ -30,6 +30,7 @@ import {
   type Harness,
   type Json,
 } from "./install-config"
+import { checkDrift, type CheckDriftInput } from "./kit"
 
 const USAGE = `usage: dejavu <install|uninstall|hooks --check> [--harness <csv>] [--user|--project] [--yes] [--dry-run]
   install           write/refresh dejavu hook entries (default when no subcommand is given)
@@ -217,17 +218,21 @@ type CheckStatus = "ok" | "stale" | "missing" | "broken"
 
 async function checkOne(harness: Harness, user: boolean): Promise<{ status: CheckStatus; line: string }> {
   const target = targetPath(harness, user)
-  let config: Json
+  let input: CheckDriftInput
   try {
-    config = await readExisting(target)
+    input = { config: await readExisting(target) }
   } catch (error) {
-    if (error instanceof ConfigParseError) return { status: "broken", line: `${harness}: broken — ${target} is not valid JSON` }
-    throw error
+    if (error instanceof ConfigParseError) input = { parseError: true }
+    else throw error
   }
-  const commands = (HARNESSES[harness].rootHooks === true ? collectCommandsRoot : collectCommands)(config, (c) => isDejavuHookCommand(c, harness))
-  if (commands.length === 0) return { status: "missing", line: `${harness}: missing — no dejavu hooks in ${target}` }
-  const gone = commands.map(extractCliPath).find((p) => p === null || !existsSync(ntPath(p)))
-  if (gone !== undefined) return { status: "stale", line: `${harness}: stale — hook cli not on disk: ${gone ?? "(unparseable command)"} (${target})` }
+  const result = checkDrift(input, {
+    shape: configShape(harness),
+    identify: (command) => isDejavuHookCommand(command, harness),
+    pathExists: (cliPath) => existsSync(ntPath(cliPath)),
+  })
+  if (result.status === "broken") return { status: "broken", line: `${harness}: broken — ${target} is not valid JSON` }
+  if (result.status === "missing") return { status: "missing", line: `${harness}: missing — no dejavu hooks in ${target}` }
+  if (result.status === "stale") return { status: "stale", line: `${harness}: stale — hook cli not on disk: ${result.detail ?? "(unparseable command)"} (${target})` }
   return { status: "ok", line: `${harness}: ok — ${target}` }
 }
 

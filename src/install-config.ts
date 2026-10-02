@@ -9,7 +9,7 @@ import { readFile } from "node:fs/promises"
 import { homedir } from "node:os"
 import { dirname, join } from "node:path"
 import { ntPath } from "./fs"
-import { mergeHooks, renderTemplate } from "./kit"
+import { collectCommands as kitCollectCommands, mergeHooks, renderTemplate, type MergeShape } from "./kit"
 
 export type Harness = "claude" | "codex" | "gemini" | "cursor" | "copilot" | "crush" | "devin" | "kiro"
 
@@ -195,46 +195,18 @@ export function mergeConfigRoot(existing: Json, template: Json, harness: string)
 
 /** All hook command strings in a config matching the predicate, from both flat and nested entry shapes. */
 export function collectCommands(config: Json, match: (command: unknown) => boolean): string[] {
-  const commands: string[] = []
-  const walk = (entries: unknown): void => {
-    if (!Array.isArray(entries)) return
-    for (const entry of entries) {
-      const record = asRecord(entry)
-      if (match(record.command)) commands.push(record.command as string)
-      // kiro shape: the command nests under the entry's action object
-      const actionCommand = asRecord(record.action).command
-      if (match(actionCommand)) commands.push(actionCommand as string)
-      if (Array.isArray(record.hooks)) walk(record.hooks)
-    }
-  }
-  // kiro shape: top-level hooks is an array of hook entries, not an event map
-  if (Array.isArray(config.hooks)) {
-    walk(config.hooks)
-    return commands
-  }
-  for (const entries of Object.values(asRecord(config.hooks))) walk(entries)
-  return commands
+  // kiro configs carry hooks as an entry array, not an event map
+  const shape: MergeShape = Array.isArray(config.hooks) ? "hooks-array" : "nested-hooks"
+  return kitCollectCommands(config, { shape }).filter((command) => match(command))
 }
 
 /** Collect commands from a root-hooks config where event keys sit at the config root. */
 export function collectCommandsRoot(config: Json, match: (command: unknown) => boolean): string[] {
-  const commands: string[] = []
-  const walk = (entries: unknown): void => {
-    if (!Array.isArray(entries)) return
-    for (const entry of entries) {
-      const record = asRecord(entry)
-      if (match(record.command)) commands.push(record.command as string)
-      if (Array.isArray(record.hooks)) walk(record.hooks)
-    }
-  }
-  for (const entries of Object.values(config)) {
-    if (entries === null || typeof entries !== "object") continue
-    if (Array.isArray(entries)) walk(entries)
-  }
-  return commands
+  return kitCollectCommands(config, { shape: "root-events" }).filter((command) => match(command))
 }
 
-/** First .ts script token in a hook command (quoted or bare) — the file whose existence the drift-check verifies. */
-export function extractCliPath(command: string): string | null {
-  return command.match(/"([^"]+\.ts)"/)?.[1] ?? command.match(/[^\s"]+\.ts/)?.[0] ?? null
+/** Kit collector/drift shape for a harness's hook config. */
+export function configShape(harness: Harness): MergeShape {
+  if (HARNESSES[harness].rootHooks === true) return "root-events"
+  return harness === "kiro" ? "hooks-array" : "nested-hooks"
 }
