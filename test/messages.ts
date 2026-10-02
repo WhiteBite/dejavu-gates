@@ -69,6 +69,7 @@ checker.check("blockMessage contains firstSeen date slice", block.includes(gate.
 checker.check("blockMessage contains gate key", block.includes(gate.key))
 checker.check("blockMessage contains CORRECTION label", block.includes("CORRECTION (guidance written for this gate"))
 checker.check("blockMessage points at recording a gate correction", block.includes("record it: set this gate's"))
+checker.check("blockMessage does not invite the agent to remove the gate", !block.includes("or remove this gate") && block.includes("do not remove it without telling the user"))
 
 // messages.ts has no correction truncation — assert the real behavior
 const longCorrection = "A".repeat(300)
