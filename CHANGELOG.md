@@ -1,5 +1,19 @@
 # Changelog
 
+## 2.50.0 - 2026-10-02
+
+### Added
+- **`dejavu lesson` surface** - `list --all` includes watching gates; `retire-when <key> <spec>` declares an external invalidation (`dep:<name>@>=<min>`, `path-present/absent:<p>`, `tag:<name>`) that `doctor` evaluates and `--repair` retires on; `list`/`show` surface a staleness verdict.
+- **Correction lifecycle metadata** - `correctionAt`, `correctionBaseline` (including `promoted`), and `correctionsProven` on a gate; the pure `lessonStaleness(gate)` returns `proven` / `repromoted` / `stale` / `dormant` / `fresh`, reported by `doctor` (STALE-LESSON / REPROMOTED-LESSON) and `lesson`.
+- **Author taxonomy** - `correctionOrigin` is `owner | agent | machine` (legacy `human` migrates to `owner`, unknown strings to `agent`); `mergeGate` ranks owner > agent > machine with a newer-edit tie-break; `lesson set --author owner|agent` (default `agent`); owner text is protected from mechanical retirement and template re-derivation.
+- **IDF rare-token veto** - `fuzzySimilar` accepts an optional token document-frequency index; a non-flag token in the two signatures' symmetric difference seen in <=2 gates vetoes a near-duplicate merge, preserving the flag-disjoint rule and the strict-subset-addition rescue.
+- **Doctor checks** - orphaned-lesson sibling hint, proven-lessons and instruction-surface discoverability reports, correction-claim validation (`--repair`), and the RETIRE-WHEN MET class.
+- **Store hygiene** - project stores write a self-ignoring `.opencode/dejavu/.gitignore` (gates.json committable, runtime files ignored); `doctor --repair` sweeps orphan `*.tmp` and stale `*.lock` (`--prune-corrupt=<days>` opt-in for quarantine artifacts).
+
+### Fixed
+- **Installer/migrate hardening** - locked atomic log scrub (`GateStore.scrubLog`), `ntPath` on installer reads/backup/rm, `merge:false` configs validated before overwrite, object-shaped foreign event values preserved, copilot marker narrowed to `.github/hooks`, kiro `apply_patch` alias, and `migrate` runs the TTL sweep.
+- **`npm ERR!` resolver text rule** resurrected (`\b` after `!` never matched); the detection corpus no longer appends `exit code 1`; bundled `hooks/` and installer templates pinned in event parity.
+
 ## 2.49.0 - 2026-10-02
 
 ### Fixed
