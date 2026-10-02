@@ -34,7 +34,7 @@ jobs:
       - run: bun test/install.ts
       - run: bun test/v2-host.ts
       - run: bun test/cline-plugin.ts
-      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
       - name: Check whether this exact version is already published
         id: ver
         run: |
@@ -68,7 +68,7 @@ jobs:
       packages: write
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
           registry-url: https://npm.pkg.github.com
       - name: Check whether this exact version is already mirrored
