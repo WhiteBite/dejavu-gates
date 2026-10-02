@@ -7,23 +7,7 @@
  *   annotation → `{json: {hookSpecificOutput: {additionalContext: annotation}}, exitCode: 0, stderr: null}`.
  */
 import type { HarnessAdapter, HookPhase, NormalizedEvent } from "../types"
-import { internalTool, internalArgs, str, rec, UNKNOWN_SESSION, denyDecision, makeOutbound, errorSignalled, genericToolOutput } from "./shared"
-
-/** Build a string output from a generic tool_response value. */
-function buildOutput(response: unknown): string | null {
-  if (typeof response === "string") return response
-  if (typeof response === "object" && response !== null) {
-    const obj = response as Record<string, unknown>
-    const parts: string[] = []
-    const stdout = str(obj, "stdout")
-    if (stdout) parts.push(stdout)
-    const stderr = str(obj, "stderr")
-    if (stderr) parts.push(stderr)
-    if (parts.length > 0) return parts.join("\n")
-    return JSON.stringify(response)
-  }
-  return null
-}
+import { internalTool, internalArgs, str, rec, UNKNOWN_SESSION, denyDecision, makeOutbound, errorSignalled, extractOutput, genericToolOutput } from "./shared"
 
 export const codexAdapter: HarnessAdapter = {
   name: "codex",
@@ -64,6 +48,7 @@ export const codexAdapter: HarnessAdapter = {
 
     // post phase
     const toolResponse = r.tool_response
+    const errored = errorSignalled(r, toolResponse)
     return {
       harness: "codex",
       phase,
@@ -72,9 +57,10 @@ export const codexAdapter: HarnessAdapter = {
       sessionId,
       callId,
       cwd,
-      output: genericToolOutput(tool, buildOutput(toolResponse), errorSignalled(r, toolResponse)),
+      output: genericToolOutput(tool, extractOutput(toolResponse), errored),
       exitCode: null,
       channel: "text",
+      errored,
       raw,
     }
   },

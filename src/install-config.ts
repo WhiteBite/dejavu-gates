@@ -5,7 +5,7 @@
  */
 import { spawnSync } from "node:child_process"
 import { existsSync } from "node:fs"
-import { readFile, rename, rm, writeFile } from "node:fs/promises"
+import { readFile } from "node:fs/promises"
 import { homedir } from "node:os"
 import { dirname, join } from "node:path"
 
@@ -13,7 +13,7 @@ export type Harness = "claude" | "codex" | "gemini" | "cursor" | "copilot" | "cr
 
 export type Json = Record<string, unknown>
 
-export interface HarnessSpec {
+interface HarnessSpec {
   readonly project: string
   /** user-scope path; absent when the harness has no documented user scope */
   readonly user?: string
@@ -52,10 +52,10 @@ export const HARNESSES: Record<Harness, HarnessSpec> = {
 
 /** import.meta.dir is a Bun extension absent from @types/node. */
 const SRC_DIR = (import.meta as ImportMeta & { dir: string }).dir
-export const PACKAGE_ROOT = dirname(SRC_DIR).replace(/\\/g, "/")
+const PACKAGE_ROOT = dirname(SRC_DIR).replace(/\\/g, "/")
 
 /** Hook commands invoke bare `bun` (resolved from the harness's PATH) against the absolute cli.ts of THIS install. */
-export const CLI_COMMAND = `bun "${PACKAGE_ROOT}/src/cli.ts"`
+const CLI_COMMAND = `bun "${PACKAGE_ROOT}/src/cli.ts"`
 
 const USER_MARKERS: Record<Harness, readonly string[]> = {
   claude: [".claude"],
@@ -238,30 +238,4 @@ export function collectCommandsRoot(config: Json, match: (command: unknown) => b
 /** First .ts script token in a hook command (quoted or bare) — the file whose existence the drift-check verifies. */
 export function extractCliPath(command: string): string | null {
   return command.match(/"([^"]+\.ts)"/)?.[1] ?? command.match(/[^\s"]+\.ts/)?.[0] ?? null
-}
-
-const RETRYABLE = new Set(["EPERM", "EACCES", "EBUSY"])
-
-/** tmp + rename with backoff retry (Windows AV/indexer locks), minimal copy of src/store.ts atomicWrite. */
-export async function atomicWrite(path: string, content: string): Promise<void> {
-  const tmp = `${path}.${process.pid}.tmp`
-  for (let attempt = 0; ; attempt++) {
-    try {
-      await writeFile(tmp, content, "utf8")
-      await rename(tmp, path)
-      return
-    } catch (error) {
-      const code = (error as { code?: string }).code ?? ""
-      if (RETRYABLE.has(code) && attempt < 5) {
-        await new Promise((resolvePromise) => setTimeout(resolvePromise, 50 * 2 ** attempt))
-        continue
-      }
-      try {
-        await rm(tmp, { force: true })
-      } catch {
-        // orphan tmp is harmless
-      }
-      throw error
-    }
-  }
 }

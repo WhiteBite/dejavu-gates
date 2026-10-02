@@ -1,7 +1,7 @@
 # PROJECT KNOWLEDGE BASE
 
-**Generated:** 2026-08-22 (refreshed 2026-09-26)
-**Commit:** 2.39.0 (cross-harness port, npm `dejavu-gates`)
+**Generated:** 2026-08-22 (refreshed 2026-10-01)
+**Commit:** 2.48.0 (audit-fix batch: attribution/identity/iteration correctness, CLI-init perf, repeat-channel engine extraction + V2 parity, host-init unification)
 **Branch:** main
 
 ## OVERVIEW
@@ -12,25 +12,32 @@ dejavu — error gates for AI coding agents ("memory prosthesis with teeth"): me
 
 ```
 dejavu-gates/
-├── index.ts            # OpenCode plugin host — exports Dejavu (Plugin factory); glue only since 2.39
+├── index.ts            # OpenCode V1 plugin host — exports Dejavu (Plugin factory); glue only
 ├── src/
 │   ├── patterns.ts     # Pure engine: signatures, normalization, secret scrub, detection, blocking policy
 │   ├── store.ts        # GateStore/Stores: two-scope persistence, locks, promotion, TTL, migration, reconcile
+│   ├── fs.ts           # leaf fs primitives: ntPath (NT long paths) + atomicWrite (tmp+rename, AV backoff) — shared by store and installer
 │   ├── validate.ts     # Invariant layer: strict gate parsing + mechanical repair (parse-don't-validate boundary)
 │   ├── types.ts        # Cross-harness contract: NormalizedEvent/Verdict/OutboundDecision/HarnessAdapter (types only, zero imports)
 │   ├── enforce.ts      # Engine public surface (re-exports) + EnforceContext
 │   ├── context.ts      # EphemeralState (+ CLI degradation contract), caps, cross-channel dedup helpers, shared retirement tunables
+│   ├── host-init.ts    # host boot lifecycle: initStores (ordered reconcile→migrate→expire + per-host opts), scheduleSweep (jittered TTL), rateLimitedErrorSink
 │   ├── before.ts       # enforceBefore — repeat block, guards, remind→block chain under the store lock
 │   ├── after.ts        # enforceAfter — failure detection/attribution/recording, reminding NOTE production
 │   ├── event.ts        # recordEventFailure + cleanupSession (event channel)
 │   ├── guards.ts       # proactive guards (long-running/wait-loop/spawn/orphan-job) — messages verbatim
 │   ├── repeat.ts       # repeat-series before-block (override FALLS THROUGH to gate processing)
+│   ├── repeat-channel.ts # transform-channel orchestration (sanitize markers, REPETITION/windowed notes, shape loops, loop-break injection) — engine module, hosts wire it (V1 transform / V2 generate)
 │   ├── messages.ts     # remindMessage/remindNote/blockMessage — the teaching texts
+│   ├── lesson.ts       # `dejavu lesson` subcommand: list/show/set human corrections on existing gates
 │   ├── adapters/       # per-harness payload↔contract mapping: shared.ts + claude/codex/gemini/cursor/copilot/crush/devin/kiro.ts
-│   ├── opencode-v2.ts  # OpenCode V2 host glue: v2Setup registers tool/event/compaction hooks on the V2 plugin Context
-│   └── cli.ts          # hook-handler CLI: stdin JSON → engine → stdout decision JSON, exit 0/2/1, fail-open
-├── test/               # smoke (plugin), enforce (engine), adapters, cli (e2e spawn), language-gaps, property, fuzz — plain bun scripts
-├── scripts/            # doctor.ts, analyze.ts, migrate.ts, install-hooks.ts (+ templates/*.json per harness)
+│   ├── opencode-v2.ts  # OpenCode V2 host glue: v2Setup registers tool/event/compaction/generate hooks on the V2 plugin Context
+│   ├── cli.ts          # hook-handler CLI: stdin JSON → engine → stdout decision JSON, exit 0/2/1, fail-open
+│   ├── install.ts      # `dejavu install|uninstall|hooks` — idempotent harness-config merging (backup, foreign-hook survival)
+│   ├── install-config.ts # per-harness config paths/shapes + dejavu-entry detection (isDejavuCommand/isDejavuHookCommand)
+│   └── main.ts         # npm bin entry (`dejavu`/`dejavu-gates`): routes install/report/lesson/hook subcommands
+├── test/               # smoke (plugin), enforce (engine), adapters, cli (e2e spawn), store (persistence perf/behavior), language-gaps, property, fuzz, guards, messages, install, v2-host, cline-plugin, env, recurrence, lesson — plain bun scripts
+├── scripts/            # doctor.ts, analyze.ts, migrate.ts, install-hooks.ts (shim → src/install.ts) + templates/*.json per harness
 ├── commands/           # /dejavu slash-command: dejavu.md (OpenCode copy-in + Claude/Cursor plugin discovery) + dejavu.toml (Gemini extension discovery)
 ├── skills/dejavu/      # Companion agent-protocol skill (install → ~/.config/opencode/skills/)
 └── .omo/, .codegraph/  # Tooling artifacts — not project code
@@ -43,12 +50,14 @@ dejavu-gates/
 | Gate enforcement (remind/block/override) | `src/before.ts` + `src/after.ts` (via `src/enforce.ts`) | hosts only glue: index.ts throws GateSignal on deny verdicts; cli.ts maps verdicts to harness dialects |
 | Failure detection + recording | `src/after.ts` (exit/text) + `src/event.ts` (event channel) | cross-channel dedup guard counts one call once; external harnesses have NO exit codes → text channel only |
 | Harness payload mapping | `src/adapters/<h>.ts` + `src/adapters/shared.ts` | tool aliases + arg-field normalization feed callSignature — signatures stay harness-neutral so gates travel |
-| Hook config generation | `scripts/install-hooks.ts` + `scripts/templates/*.json` | idempotent merge, aborts on unparseable config, {{CLI}} placeholder |
+| Hook config generation | `src/install.ts` + `src/install-config.ts` + `scripts/templates/*.json` | idempotent merge, aborts on unparseable config, {{CLI}} placeholder; `scripts/install-hooks.ts` is a shim |
+| Repeat/loop-break transform channel | `src/repeat-channel.ts` (orchestration) + `src/patterns.ts` (detectRepeatSeries/Windows/ShapeLoops) | hosts only register + cast payloads: V1 `experimental.chat.messages.transform`, V2 `generate` hook |
+| Host boot (init/sweep/error sink) | `src/host-init.ts` | ordered reconcile→migrate→expire once; per-host reduction is explicit opts (CLI: no init event/rotate/health) |
 | Signature/normalization | `src/patterns.ts` | `callSignature`, `normalizeCommand`, `parameterizeError` |
 | Enforcement policy | `src/patterns.ts:canBlock()`/`canRemind()` | three tiers — bash non-diagnostics block, diagnostics + Unix viewers remind-only, everything else just watches |
 | Persistence, locks, promotion, global escalation | `src/store.ts` | `Stores.recordFailure()` is the core; cross-project evidence lives in global `index.json` |
 | Self-healing / reconcile | `src/store.ts` + `src/validate.ts` | `Stores.reconcileAll()` at every init; `doctor --repair` on demand |
-| Tunables | `src/store.ts`, `src/context.ts`, `src/before.ts`, `src/repeat.ts`, `index.ts` | promote thresholds in store; retirement tunables + caps in context; review/race in before; repeat-block in repeat; TTL/transform-only in index |
+| Tunables | `src/store.ts`, `src/context.ts`, `src/before.ts`, `src/repeat.ts`, `src/repeat-channel.ts`, `src/host-init.ts` | promote thresholds in store; retirement tunables + caps in context; review/race in before; repeat-block in repeat; channel notes/windows/shape-loop in repeat-channel; TTL/error-sink intervals in host-init |
 | Pathology checks | `scripts/doctor.ts` | defect classes: unparseable/bad records, duplicate keys, temporal inversion, nested tokens, enforced-without-evidence, stale blocking/reminding, not-teaching, annoying, stale-correction, review-flagged, reminders-ignored, unsanitized, stale copies, corrupt logs, version drift, cross-store index checks, flappy, flood evictions, cross-channel double-count, quarantine artifacts, feedback-demoted, overridden, lock degradations; no-arg run discovers projects from the index |
 
 ## CODE MAP
@@ -58,10 +67,12 @@ Line numbers intentionally omitted — they rot every round; locate by symbol na
 | Symbol | Type | Location | Role |
 |--------|------|----------|------|
 | `Dejavu` | Plugin factory | index.ts | V1 entry of a dual V1/V2 default export; wires 4 hooks |
-| `v2Setup` | fn | src/opencode-v2.ts | OpenCode V2 host: registers execute.before/after (deny via throw), event.subscribe (session.deleted cleanup), and compaction hooks on the V2 plugin Context; reuses the same engine calls as the V1 host |
+| `v2Setup` | fn | src/opencode-v2.ts | OpenCode V2 host: registers execute.before/after (deny via throw), event.subscribe (session.deleted cleanup), compaction, and generate (repeat-channel parity with V1's transform) hooks on the V2 plugin Context; reuses the same engine calls as the V1 host |
 | `GateSignal` | class | index.ts | sentinel error — the ONLY error rethrown from hooks |
 | `enforceBefore` / `enforceAfter` | fn | src/before.ts / src/after.ts | the engine's two hook entry points; return verdicts/outcomes, never throw GateSignal (hosts translate) |
 | `recordEventFailure` / `cleanupSession` | fn | src/event.ts | event-channel failure recording + session teardown |
+| `applyRepeatChannel` | fn | src/repeat-channel.ts | transform-channel orchestration over structural messages — sanitize markers, REPETITION/windowed/shape notes, loop-break injection; hosts cast payloads and apply injections |
+| `initStores` / `scheduleSweep` / `rateLimitedErrorSink` | fn | src/host-init.ts | host boot: ordered init (per-host opts), jittered TTL sweep with disposer, 60s error-sink rate limit |
 | `EnforceContext` / `EphemeralState` | interface / fn | src/context.ts | injected host dependencies (stores/log/onHookError/projectDir) + per-process state; `createEphemeralState()` JSDoc is the CLI degradation contract |
 | `NormalizedEvent` / `Verdict` / `OutboundDecision` / `HarnessAdapter` | types | src/types.ts | the cross-harness contract; zero imports, types only |
 | `internalTool` / `internalArgs` | fn | src/adapters/shared.ts | harness tool-name aliases + arg-field normalization → callSignature vocabulary |
@@ -75,9 +86,10 @@ Line numbers intentionally omitted — they rot every round; locate by symbol na
 | `canBlock` / `canRemind` | fn | src/patterns.ts | blocking tier / remind-only tier (diagnostics + iteration verbs + Unix viewers via `isUnixViewerSignature`) |
 | `isRepoLocal` | fn | src/patterns.ts | repo-local verbs that never escalate globally |
 | `splitChain` / `bashSegmentSignatures` | fn | src/patterns.ts | quote/paren-aware chain split; per-segment signatures, unfolds `cmd /c` + `$(...)` + backticks (chain-bypass protection) |
+| `producerSegmentSignatures` | fn | src/patterns.ts | producer-only segment signatures for chain attribution — transparent segments (nav/env/inert/pipe-tail) can never absorb a failure |
 | `callSignature` | fn | src/patterns.ts | stable call identity per tool (bash/read/edit/write/glob/grep) |
 | `patternKey` | fn | src/patterns.ts | sha1 prefix-12 of signature — the gate key |
-| `fuzzySimilar` | fn | src/patterns.ts | near-duplicate merge; length-band pre-filter + `FUZZY_MAX_LEN` cap |
+| `fuzzySimilar` | fn | src/patterns.ts | near-duplicate merge; O(1) length-band pre-filter + `FUZZY_MAX_LEN` cap; strict flag additions with identical base rescue onto an absolute budget (`SUBSET_ADD_MAX_DISTANCE`) |
 | `detectFailure` / `failureSnippet` | fn | src/patterns.ts | line-by-line bash-output failure scan / evidence line selection (error-aware tail scan, never a success-shaped line) |
 | `looksLikeSuccess` / `looksLikeFailure` | fn | src/patterns.ts | evidence-quality classifiers — a pass summary is never failure evidence |
 | `isNoiseError` | fn | src/patterns.ts | infrastructure noise ≠ failure: aborted/cancelled/empty-result/dismissed + server-side unavailability (LSP daemon, MCP transport, non-2xx) |
@@ -95,7 +107,9 @@ Line numbers intentionally omitted — they rot every round; locate by symbol na
 | `coerceGateShape` | fn | src/validate.ts | strict parse of a persisted gate record (hopeless → null) |
 | `repairGate` | fn | src/validate.ts | mechanical repair: inverted dates, truncation, re-sanitize, demote, session-state hygiene |
 | `hasNestedTokens` | fn | src/validate.ts | nested-placeholder corruption fingerprint |
-| `atomicWrite` / `withLock` | fn | src/store.ts | Windows-safe fs primitives (ownership-verified unlock) |
+| `atomicWrite` / `ntPath` | fn | src/fs.ts | Windows-safe write primitives (tmp+rename, AV backoff, long paths) — shared by store and installer |
+| `withLock` | fn | src/store.ts | lockfile with stale-steal, ownership-verified unlock, 3s cross-process degrade |
+| `extractOutput` / `errorSignalled` / `genericToolOutput` | fn | src/adapters/shared.ts | one output extractor for all adapters (empty parts skipped); structural failure signal → `errored` on post events; success-shaped generic results stay out of the text scan |
 
 ## CONVENTIONS
 
@@ -111,7 +125,7 @@ Line numbers intentionally omitted — they rot every round; locate by symbol na
 - Do NOT scan read/edit/write output for failure text — it is file CONTENT, not command output (caused false gates); file-tool failures come exclusively from the event channel
 - Do NOT surface a success-shaped line as failure evidence — `failureSnippet` scans from the end for a failure-shaped line, `looksLikeSuccess` rejects pass summaries, and `recordFailure` never overwrites a failure-shaped snippet with a success-shaped one; a gate that teaches "fix `17 passed`" is anti-teaching
 - Do NOT quote a success-shaped or bare-`exit code` snippet in a correction — `suggestCorrection` falls back to family/generic text; `repairGate` re-derives machine template corrections that quoted a success line (human edits never match the fixed template and stay)
-- Do NOT attribute a multi-producer chain failure to a single segment — the exit code does not say which producer failed; `nonTransparentProducers` must be exactly 1 or the failure records under the whole call (a diagnostic segment's gate must not be inflated by another producer's failure)
+- Do NOT attribute a multi-producer chain failure to a single segment — the exit code does not say which producer failed; `nonTransparentProducers` must be exactly 1 or the failure records under the whole call (a diagnostic segment's gate must not be inflated by another producer's failure). Attribution iterates ONLY producer segments (`producerSegmentSignatures`) — a transparent segment's gate (cd/pipe-tail/env) must never absorb the failure even when its key is known
 - Do NOT record noise as failure — `isNoiseError()` filters it on both channels: aborted/cancelled executions AND server-side unavailability (LSP daemon down, MCP transport, non-2xx) are not agent mistakes; client-side errors (4xx, ENOENT, syntax) stay teachable. Retroactively, `migrate()` backdates already-recorded noise gates to the epoch so the TTL sweep expires them
 - Do NOT count exit 1 from diagnostic verbs (grep/tsc/pytest/curl/ls...) as failure — intended outcome; exit ≥ 2 always counts (OpenCode normalizes exits to 1, so discriminate by command shape)
 - Do NOT flatten interpreter one-liner payloads (`python -c`, `node -e`, PowerShell `& "...\python.exe" -c @"..."@`) to `<str>` — the code IS the call; `hashInterpreterPayload` fingerprints it so distinct scripts never share a gate
@@ -125,16 +139,20 @@ Line numbers intentionally omitted — they rot every round; locate by symbol na
 - Do NOT delete quarantine files (`gates.json.corrupt-*`, `log.jsonl.corrupt`) without inspection — they are the preserved forensic bytes of corrupted data
 - Do NOT bypass the validation boundary — gates enter memory through `coerceGateShape`/`repairGate` (in `load()`/`loadForMutation()`) and structural healing through `reconcile()`; never hand-roll raw JSON reads/writes of store files. Use `loadForMutation()` (not a `load(true)` flag) inside locks — the write capability is in the name (`no-load-force-flag` ast-grep gate)
 - Do NOT block in the post phase — the call already ran; `mapOutbound` canonical contract: post checks annotation FIRST (rides on allow, exit 0), only pre denies. An adapter that early-returns on `action === "allow"` before the annotation branch silently kills the reminding NOTE (the 2.39 pre-release bug)
-- Do NOT write to stdout anywhere in `src/**` — the CLI's stdout is the harness's decision-JSON channel; diagnostics go to stderr (DEJAVU_DEBUG-gated in the CLI)
+- Do NOT write to stdout in the hook paths (engine + `src/cli.ts`) — the CLI's stdout is the harness's decision-JSON channel; diagnostics go to stderr (DEJAVU_DEBUG-gated in the CLI). Separate bin entries (`src/main.ts`, `src/install.ts`, `src/lesson.ts`) own their process's stdout — they never share a process with the hook channel
 - Do NOT let adapters throw on malformed payloads — `mapInbound` returns `null` (CLI no-ops `{}` exit 0); harness JSON is untrusted external input and must cross `sanitizeForStore()` via the engine like everything else
 - Do NOT make the CLI fail closed — any internal error prints `{}` and exits 0; a dejavu bug must never wedge the host's tool pipeline (usage errors exit 1, blocks exit 2)
 
 ## UNIQUE STYLES
 
 - Two host forms, one engine: the OpenCode plugin (long-lived process, all channels incl. transform/compacting hooks) and the hook CLI (one short-lived process per hook event; fresh EphemeralState per invocation — repeat-series/pending-calls/dedup-window/iteration-discriminator degrade per-process BY DESIGN, gate enforcement does NOT: the remind→block chain is persisted on the gate). `createEphemeralState()` JSDoc is the contract
+- The repeat/loop-break channel is engine code (`src/repeat-channel.ts`), not host code: both OpenCode hosts wire the SAME `applyRepeatChannel` (V1 via `experimental.chat.messages.transform`, V2 via the `generate` hook over a structural payload view) — hosts keep only registration + payload casts + injection application
+- Host boot is one helper (`src/host-init.ts`): `initStores` encodes the reconcile→migrate→expire order once, per-host reduction is explicit opts (CLI: no init event, no rotate, no health), `scheduleSweep` returns a disposer (V2 disposes; index/cline don't), `rateLimitedErrorSink` replaces the three 60s copies (the CLI stays unlimited — one process, one call)
+- Iteration evidence counts only LANDED edits: the workspace-version bump is gated on `!failed && event.errored !== true` — a failed edit/write must never lift the hard-block chain or mark the next failure "iterated"; `errored` is the host's structural failure signal (adapters: `errorSignalled`; V2 routes `event.error` to the event channel instead)
 - Unified cross-harness store: adapters normalize tool names/arg fields BEFORE callSignature, so signatures are harness-neutral — a gate learned in Claude Code fires in OpenCode/Cursor/etc.; all hosts share `.opencode/dejavu/` + `~/.config/opencode/dejavu/` (paths are historical, the store is harness-neutral)
 - Two-scope store: project gates in `<repo>/.opencode/dejavu/` (committable) escalate to global `~/.config/opencode/dejavu/` after appearing in 2+ project dirs (agent habits vs repo quirks) — except repo-local verbs (npm/git/gradle/docker/...), which are repo quirks by nature and stay project-scoped forever
-- Three enforcement tiers: `blocking` (remind-abort, then hard-block on same-session repeat), `reminding` (diagnostics + Unix viewers — annotate the failing output, never interrupt), `watching` (evidence only); `fuzzySimilar` never merges disjoint flag sets but allows subset additions
+- Three enforcement tiers: `blocking` (remind-abort, then hard-block on same-session repeat), `reminding` (diagnostics + Unix viewers — annotate the failing output, never interrupt), `watching` (evidence only); `fuzzySimilar` never merges disjoint flag sets; strict flag additions with identical non-flag text merge on an absolute budget even when the relative band rejects
+- Session cleanup: in-process hosts clean on session.deleted/departed; CLI harnesses via the `session-event` phase — implemented for Claude (`SessionEnd` hook → `forgetSession`), other CLI harnesses remain TTL-only until their session-end surface is verified
 - Self-healing stores: every init runs `reconcileAll()` — unparseable files are quarantined (bytes preserved in `*.corrupt-*`, never deleted), records are strictly parsed + mechanically repaired, index is reconciled, and every repair is logged (`repaired`/`quarantined` events); `doctor --repair` does the same on demand — one command replaces hand-debugging. The init-storm version-stamp skip is a STARTUP optimization only: `doctor --repair` and the migrate script call `migrate(force)` so an explicit repair always applies the full per-gate healing, even on a same-version re-run
 - Multi-window safe: the remind→block chain is persisted on the gate, not in process memory — several OpenCode windows (each its own process on the shared store) and process restarts all see the same escalation; hot-path reads use a 1s TTL cache + O(1) key index
 - `dejavu:proceed` escape hatch: trailing marker comment, matched with word boundaries, stripped before normalization so bypassed failures land on the original pattern
@@ -162,6 +180,7 @@ bun test/smoke.ts            # full behavioral test; exit 1 on any failure
 bun test/enforce.ts          # engine characterization (harness-agnostic core)
 bun test/adapters.ts         # adapter mapping + decision dialects
 bun test/cli.ts              # CLI end-to-end (spawn, promotion, block/annotate, fail-open)
+bun test/store.ts            # store persistence: reconcile no-op skip, excise prefilter, expire peek, deferred index (BENCH=1 for the init benchmark)
 bun test/language-gaps.ts    # language-ecosystem coverage of patterns.ts
 bun test/guards.ts           # proactive guards characterization (fire shapes, precedence, bypass warnings)
 bun test/messages.ts         # teaching-text framing (tier-truthful, data-label, storeDir-derived path)
@@ -180,7 +199,7 @@ bun scripts/install-hooks.ts --harness <claude|codex|gemini|cursor|copilot|crush
 ## NOTES
 
 - `tsconfig.json` covers `index.ts`, `src/**`, `scripts/**`, `test/**` — everything typechecks
-- CI: GitHub Actions (`bun install --frozen-lockfile` + typecheck + smoke + enforce + adapters + cli + language-gaps + guards + messages + property + fuzz + install + v2-host + cline-plugin + `ast-grep scan`) on every push/PR
+- CI: GitHub Actions (`bun install --frozen-lockfile` + typecheck + smoke + enforce + adapters + cli + store + language-gaps + guards + messages + property + fuzz + install + v2-host + cline-plugin + env + recurrence + `ast-grep scan`) on every push/PR
 - Structural gates live in `.ast-grep/rules/` + `sgconfig.yml`: `no-load-force-flag` forbids `load(true)`/`loadIndex(true)` (use the named `loadForMutation()`/`loadIndexForMutation()`). Add a gate here when a bug class is structurally repeatable; sabotage-test it (introduce the bug shape → gate must fire)
 - Install = npm (`{ "plugin": ["dejavu-gates"] }`) or clone + re-export from `~/.config/opencode/plugins/dejavu.ts` (see README); other harnesses via `scripts/install-hooks.ts`
 - `DEJAVU_HOME` env var overrides the global store dir — smoke test and scripts rely on it

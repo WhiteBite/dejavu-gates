@@ -4,7 +4,8 @@
  * promoted-gate artifact on disk. Run: bun test/cli.ts
  */
 import { spawnSync } from "node:child_process"
-import { mkdtemp, readFile } from "node:fs/promises"
+import { existsSync } from "node:fs"
+import { mkdir, mkdtemp, readFile, writeFile } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { fileURLToPath } from "node:url"
@@ -205,6 +206,58 @@ check("malformed stdin → exit 0 + {} (fail-open)", malformed.exitCode === 0 &&
 
 const malformedKiro = runCli("pre", "kiro", "{not valid json", block.storeDir, block.globalDir)
 check("malformed stdin on kiro → exit 0 + silent stdout (fail-open, nothing injected)", malformedKiro.exitCode === 0 && malformedKiro.stdout === "")
+
+// --- SessionEnd cleanup: Claude session teardown wipes the ended session's gate state ---
+const se = await makeWorld("session-end")
+const SE_SIG = "bash:se-cleanup-tool --prod"
+const seGate = {
+  key: "bbbb22222222",
+  signature: SE_SIG,
+  tool: "bash",
+  status: "blocking",
+  count: 3,
+  sessions: ["seA", "seB"],
+  projects: [],
+  firstSeen: new Date().toISOString(),
+  lastSeen: new Date().toISOString(),
+  snippet: "se-cleanup-tool: command not found",
+  remindedSessions: { seC: Date.now(), seD: Date.now() },
+  failedSessions: { seC: Date.now(), seD: Date.now() },
+}
+await mkdir(join(se.storeDir, ".opencode", "dejavu"), { recursive: true })
+await writeFile(join(se.storeDir, ".opencode", "dejavu", "gates.json"), JSON.stringify({ version: 1, gates: [seGate] }), "utf8")
+
+const sessionEnd = runCli(
+  "session-event",
+  "claude",
+  { hook_event_name: "SessionEnd", session_id: "seC", cwd: se.storeDir, transcript_path: "/tmp/t.jsonl", reason: "clear" },
+  se.storeDir,
+  se.globalDir,
+)
+check("claude SessionEnd → exit 0 (allow decision)", sessionEnd.exitCode === 0)
+check("claude SessionEnd → stdout stays pure JSON {}", sessionEnd.stdout.trim() === "{}")
+
+interface SeGateRow {
+  signature?: string
+  sessions?: string[]
+  remindedSessions?: Record<string, number>
+  failedSessions?: Record<string, number>
+}
+const seGates = (JSON.parse(await readFile(join(se.storeDir, ".opencode", "dejavu", "gates.json"), "utf8")) as { gates: SeGateRow[] }).gates
+const seGateAfter = seGates.find((g) => g.signature === SE_SIG)
+check("SessionEnd wipes the ended session from remindedSessions", seGateAfter?.remindedSessions?.seC === undefined)
+check("SessionEnd wipes the ended session from failedSessions", seGateAfter?.failedSessions?.seC === undefined)
+check("SessionEnd keeps other sessions' enforcement state", seGateAfter?.remindedSessions?.seD !== undefined && seGateAfter?.failedSessions?.seD !== undefined)
+check("SessionEnd leaves the gate and its session evidence in place", seGateAfter !== undefined && (seGateAfter.sessions?.length ?? 0) === 2)
+
+const seLogPath = join(se.storeDir, ".opencode", "dejavu", "log.jsonl")
+const seLog = existsSync(seLogPath) ? await readFile(seLogPath, "utf8") : ""
+check("SessionEnd records no failure (no detected event)", !seLog.includes('"detected"'))
+
+const sessionEndNoSession = runCli("session-event", "claude", { hook_event_name: "SessionEnd" }, se.storeDir, se.globalDir)
+check("SessionEnd without session_id → {} exit 0 (fail-open)", sessionEndNoSession.exitCode === 0 && sessionEndNoSession.stdout.trim() === "{}")
+const sessionEndGarbage = runCli("session-event", "claude", 42, se.storeDir, se.globalDir)
+check("garbage session-event payload → {} exit 0 (fail-open)", sessionEndGarbage.exitCode === 0 && sessionEndGarbage.stdout.trim() === "{}")
 
 // --- usage error: missing --harness → exit 1 (distinct from allow/block) ---
 const noHarness = spawnSync("bun", [cliPath, "pre"], { input: "{}", env: { ...process.env, DEJAVU_HOME: block.globalDir }, cwd: repoRoot, encoding: "utf8" })

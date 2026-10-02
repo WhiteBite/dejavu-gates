@@ -9,9 +9,9 @@ import { copyFile, mkdir, rm } from "node:fs/promises"
 import { homedir } from "node:os"
 import { dirname, join, resolve } from "node:path"
 import { createInterface } from "node:readline"
+import { atomicWrite } from "./fs"
 import {
   asRecord,
-  atomicWrite,
   collectCommands,
   collectCommandsRoot,
   ConfigParseError,

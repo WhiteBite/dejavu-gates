@@ -1,12 +1,13 @@
 import { existsSync } from "node:fs"
-import { appendFile, mkdir, readFile, rename, stat, unlink, writeFile } from "node:fs/promises"
+import { appendFile, mkdir, readFile, stat, unlink, writeFile } from "node:fs/promises"
 import { homedir } from "node:os"
 import { dirname, join } from "node:path"
+import { atomicWrite, ntPath } from "./fs"
 import { canBlock, canRemind, fuzzySimilar, FUZZY_MAX_LEN, hasGenericResidualIdentity, hasResidualIdentity, isGenericSignature, isNoiseError, isRepoLocal, looksLikeFailure, parameterizeError, sanitizeForStore, scrubSecrets, suggestCorrection } from "./patterns"
 import { coerceGateShape, failedAtMs, repairGate } from "./validate"
 
 /** Bumped on behavior changes; stamped into init log events so stale sessions are visible. */
-export const PLUGIN_VERSION = "2.46.2"
+export const PLUGIN_VERSION = "2.48.0"
 
 /** Global store root — DEJAVU_HOME overrides it (testing, custom setups). */
 export function resolveGlobalDir(): string {
@@ -176,6 +177,8 @@ export interface LogEvent {
   tool?: string
   session?: string
   project?: string
+  /** harness that observed the failure (detected events) */
+  harness?: string
   snippet?: string
   /** which detection channel fired: metadata exit, bash text scan, or event stream */
   channel?: "exit" | "text" | "event"
@@ -230,53 +233,27 @@ export const DEMOTE_OVERRIDES = envInt("DEJAVU_DEMOTE_OVERRIDES", 3, 1, 100)
 /** override demotion additionally requires this many DISTINCT bypassing
  * sessions — mirror of DEMOTE_REOFFENSE_SESSIONS: one stubborn/injected
  * session must not disarm a gate for everyone */
-export const DEMOTE_OVERRIDE_SESSIONS = 2
+const DEMOTE_OVERRIDE_SESSIONS = 2
 /** recurrence demotion additionally requires this many DISTINCT sessions that
  * reoffended after a reminder — one bad session (or one bad model in a shared
  * store) must not be able to demote a gate for everyone else */
-export const DEMOTE_REOFFENSE_SESSIONS = 2
+const DEMOTE_REOFFENSE_SESSIONS = 2
 /** prune an index key absent from every scope visible to the sweeper after this many days (a live gate in an unopened project clears its own candidacy) */
-export const ORPHAN_CANDIDATE_DAYS = 7
+const ORPHAN_CANDIDATE_DAYS = 7
 
 /** bash pays the base bar; every non-bash tool (probes and generic) pays the probe bar. */
 function promotionThreshold(tool: string): number {
   return tool === "bash" ? PROMOTE_COUNT : PROMOTE_COUNT_PROBE
 }
 
+/** Shared expiry rule — expire() and the expireAll unlocked peek must never diverge. */
+function gateExpirable(gate: Gate, ttlDays: number, noiseTtlDays: number, now: number): boolean {
+  // noise TTL is for TRUE one-offs; a twice-seen pattern earns the full TTL so slow recurrences still promote
+  const ttl = gate.status !== "watching" || gate.count >= 2 ? ttlDays : noiseTtlDays
+  return Date.parse(gate.lastSeen) < now - ttl * DAY_MS
+}
+
 // --- Windows-safe fs helpers -------------------------------------------------
-
-/** NT long-path prefix so deeply nested project dirs do not hit MAX_PATH. */
-function ntPath(p: string): string {
-  if (process.platform !== "win32") return p
-  if (p.startsWith("\\\\?\\")) return p
-  return `\\\\?\\${p}`
-}
-
-const RETRYABLE = new Set(["EPERM", "EACCES", "EBUSY"])
-
-/** tmp + rename with exponential-backoff retry (Windows AV/indexer locks). */
-async function atomicWrite(path: string, content: string): Promise<void> {
-  const tmp = `${path}.${process.pid}.tmp`
-  for (let attempt = 0; ; attempt++) {
-    try {
-      await writeFile(ntPath(tmp), content, "utf8")
-      await rename(ntPath(tmp), ntPath(path))
-      return
-    } catch (error) {
-      const code = (error as { code?: string }).code ?? ""
-      if (RETRYABLE.has(code) && attempt < 5) {
-        await new Promise((resolve) => setTimeout(resolve, 50 * 2 ** attempt))
-        continue
-      }
-      try {
-        await unlink(ntPath(tmp))
-      } catch {
-        // orphan tmp is harmless
-      }
-      throw error
-    }
-  }
-}
 
 const LOCK_STALE_MS = 5000
 const LOCK_WAIT_MS = 3000
@@ -417,6 +394,8 @@ export class GateStore {
   /** events queued inside the gates lock, flushed on the next log() — logging
    * under the gates lock extends the critical section into degrade storms */
   private deferredEvents: LogEvent[] = []
+  /** lastSeen-only index refreshes deferred by recordFailure; flushed under the index lock by flushDeferred */
+  private pendingIndexTouches: Map<string, string> = new Map()
   /** Set by Stores on the PROJECT store → the global store. Deferred events
    * bypass logAll's routing, so a salient event deferred on the project store
    * (demoted in migrate, retired-healed in expireAll) would never reach the
@@ -449,20 +428,45 @@ export class GateStore {
    * the "every repair is logged" invariant. No-op when the queue is empty.
    */
   async flushDeferred(): Promise<void> {
-    if (this.deferredEvents.length === 0) return
-    let salient: LogEvent[] = []
-    await this.withLogLock(async () => {
-      if (this.deferredEvents.length === 0) return
-      const batch = this.deferredEvents
-      this.deferredEvents = []
-      if (this.routeSalientTo !== null) salient = batch.filter((e) => GLOBAL_LOG_EVENTS.has(e.type))
-      await mkdir(ntPath(this.dir), { recursive: true })
-      for (const e of batch) {
-        const line = `${JSON.stringify({ ts: new Date().toISOString(), ...e })}\n`
-        await appendFile(ntPath(this.logPath), line, "utf8")
+    if (this.deferredEvents.length !== 0) {
+      let salient: LogEvent[] = []
+      await this.withLogLock(async () => {
+        if (this.deferredEvents.length === 0) return
+        const batch = this.deferredEvents
+        this.deferredEvents = []
+        if (this.routeSalientTo !== null) salient = batch.filter((e) => GLOBAL_LOG_EVENTS.has(e.type))
+        await mkdir(ntPath(this.dir), { recursive: true })
+        for (const e of batch) {
+          const line = `${JSON.stringify({ ts: new Date().toISOString(), ...e })}\n`
+          await appendFile(ntPath(this.logPath), line, "utf8")
+        }
+      })
+      if (salient.length > 0 && this.routeSalientTo !== null) await this.routeSalientTo.appendBatch(salient)
+    }
+    // sequenced after the log drain: the index lock is taken alone, never nested with the log lock
+    await this.flushPendingIndexTouches()
+  }
+
+  /** Queue a lastSeen-only index refresh; persisted by the next flushDeferred. */
+  deferIndexTouch(key: string, lastSeen: string): void {
+    this.pendingIndexTouches.set(key, lastSeen)
+  }
+
+  private async flushPendingIndexTouches(): Promise<void> {
+    if (this.pendingIndexTouches.size === 0) return
+    await this.runLockedIndex(async () => {
+      const index = await this.loadIndexForMutation()
+      let changed = false
+      for (const [key, ts] of this.pendingIndexTouches) {
+        const entry = index.keys[key]
+        // absent entry: pruned or never structural — the next failure/reconcile rebuilds it
+        if (entry === undefined || ts <= entry.lastSeen) continue
+        entry.lastSeen = ts
+        changed = true
       }
+      if (changed) await this.saveIndex()
+      this.pendingIndexTouches.clear()
     })
-    if (salient.length > 0 && this.routeSalientTo !== null) await this.routeSalientTo.appendBatch(salient)
   }
 
   /** Append an already-formed batch of events under the log lock. Used by a peer
@@ -738,13 +742,7 @@ export class GateStore {
   async expire(ttlDays: number, noiseTtlDays: number): Promise<Gate[]> {
     const gates = await this.loadForMutation()
     const now = Date.now()
-    const expired = gates.filter((g) => {
-      // Noise TTL is for TRUE one-offs (never recurred): a twice-seen pattern
-      // has proven recurrence and gets the full TTL even below the promotion
-      // bar, so slow recurrences (every 8+ days) can still reach promotion.
-      const ttl = g.status !== "watching" || g.count >= 2 ? ttlDays : noiseTtlDays
-      return Date.parse(g.lastSeen) < now - ttl * DAY_MS
-    })
+    const expired = gates.filter((g) => gateExpirable(g, ttlDays, noiseTtlDays, now))
     if (expired.length === 0) return []
     const expiredKeys = new Set(expired.map((g) => g.key))
     this.gates = gates.filter((g) => !expiredKeys.has(g.key))
@@ -791,7 +789,10 @@ export class GateStore {
     // runLocked (not bare withLock) so stale-steal/degrade are reported.
     await this.runLocked(async () => {
       let raw: string | null = null
+      let mtimeMs = 0
       try {
+        const info = await stat(ntPath(this.gatesPath))
+        mtimeMs = info.mtimeMs
         raw = await readFile(ntPath(this.gatesPath), "utf8")
       } catch {
         // no gates file yet — nothing structural to heal
@@ -829,16 +830,23 @@ export class GateStore {
             }
           }
           const merged = parsed.gates.length - dropped - byKey.size
+          if (dropped === 0 && repaired === 0 && merged === 0) {
+            // no-op heal skips the rewrite; the parsed view refreshes the cache like save() would
+            this.gates = [...byKey.values()]
+            this.keyIndex = new Map(this.gates.map((g) => [g.key, g]))
+            this.enforcedCache = this.gates.filter((g) => g.status !== "watching")
+            this.mtimeMs = mtimeMs
+            this.cacheUntilMs = Date.now() + LOAD_CACHE_TTL_MS
+            return
+          }
           this.gates = [...byKey.values()]
           this.mtimeMs = 0
           await this.save()
-          if (dropped > 0 || repaired > 0 || merged > 0) {
-            this.deferEvent({
-              type: "repaired",
-              key: "gates.json",
-              snippet: `dropped ${dropped} hopeless record(s), repaired ${repaired}, merged ${merged} duplicate key(s)`,
-            })
-          }
+          this.deferEvent({
+            type: "repaired",
+            key: "gates.json",
+            snippet: `dropped ${dropped} hopeless record(s), repaired ${repaired}, merged ${merged} duplicate key(s)`,
+          })
         }
       }
     })
@@ -886,7 +894,13 @@ export class GateStore {
       const good: string[] = []
       const bad: string[] = []
       for (const line of raw.split("\n")) {
-        if (line.trim() === "") continue
+        const trimmed = line.trim()
+        if (trimmed === "") continue
+        // shape prefilter: truncated/interleaved corruption always breaks the {…} envelope
+        if (trimmed.startsWith("{") && trimmed.endsWith("}")) {
+          good.push(line)
+          continue
+        }
         try {
           JSON.parse(line)
           good.push(line)
@@ -1144,9 +1158,18 @@ export class Stores {
   }
 
   async expireAll(ttlDays: number, noiseTtlDays: number): Promise<void> {
+    let anyExpired = false
+    const peekedKeys = new Set<string>()
+    const now = Date.now()
     for (const store of this.scopes()) {
+      // day-scale TTLs: an unlocked load() peek skips the locked pass when nothing is expirable
+      const gates = await store.load()
+      for (const gate of gates) peekedKeys.add(gate.key)
+      if (!gates.some((g) => gateExpirable(g, ttlDays, noiseTtlDays, now))) continue
       await store.runLocked(async () => {
         const expired = await store.expire(ttlDays, noiseTtlDays)
+        if (expired.length === 0) return
+        anyExpired = true
         for (const gate of expired) {
           // Correction lifecycle: a corrected gate that never recurred after
           // promotion means the pattern died out — the mechanical signal that
@@ -1160,6 +1183,7 @@ export class Stores {
         }
       })
     }
+    if (!anyExpired && !(await this.indexSweepPending(peekedKeys, ttlDays, now))) return
     // Keys this process can see (own project + global). A key absent here may
     // still live in another project's store — orphan pruning is therefore a
     // time-decayed candidacy, not an immediate delete.
@@ -1198,6 +1222,23 @@ export class Stores {
       }
       if (changed) await this.globalStore.saveIndex()
     })
+  }
+
+  /** Routing-hint peek: true when the locked index sweep has TTL rot or a candidacy flip to act on. */
+  private async indexSweepPending(visibleKeys: Set<string>, ttlDays: number, now: number): Promise<boolean> {
+    const index = await this.globalStore.loadIndex()
+    const cutoff = now - ttlDays * DAY_MS
+    for (const key of Object.keys(index.keys)) {
+      const entry = index.keys[key]
+      if (!entry) continue
+      if (Date.parse(entry.lastSeen) < cutoff) return true
+      if (visibleKeys.has(key)) {
+        if (entry.orphanCandidateSince !== undefined) return true
+        continue
+      }
+      if (entry.orphanCandidateSince === undefined || now - entry.orphanCandidateSince > ORPHAN_CANDIDATE_DAYS * DAY_MS) return true
+    }
+    return false
   }
 
   async rotateLogs(): Promise<void> {
@@ -1741,10 +1782,8 @@ export class Stores {
     await this.globalStore.runLockedIndex(async () => {
       const index = await this.globalStore.loadIndexForMutation()
       let entry = index.keys[movedGate.key]
-      // Every failure indexes, including the first: a pattern failing ONCE per
-      // project across N projects is the canonical agent habit — skipping
-      // count<2 starved exactly the sparse cross-project evidence the global
-      // store exists to collect (it could never reach GLOBAL_PROJECTS).
+      // structural (new key/project) saves now — first evidence must survive a crash; lastSeen-only repeats defer
+      const structural = entry === undefined || (input.projectDir !== "" && !entry.projects.includes(input.projectDir))
       if (!entry) {
         entry = { projects: [], lastSeen: now }
         index.keys[movedGate.key] = entry
@@ -1754,11 +1793,9 @@ export class Stores {
         if (entry.projects.length > MAX_PROJECTS) entry.projects = entry.projects.slice(-MAX_PROJECTS)
       }
       entry.lastSeen = now
-      await this.globalStore.saveIndex()
-      // Escalation evidence counts only project dirs that still exist on
-      // disk: a repo renamed/moved (common on Windows dev machines) is a
-      // ghost — escalation must not rest on its strength. The index entry
-      // keeps the ghost (evidence preserved; it may be a removable drive).
+      if (structural) await this.globalStore.saveIndex()
+      else this.globalStore.deferIndexTouch(movedGate.key, now)
+      // escalation counts only dirs that still exist — ghost dirs (moved repos) must not strengthen it
       indexProjects = entry.projects.filter((p) => existsSync(p)).length
     })
 

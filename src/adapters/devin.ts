@@ -36,6 +36,7 @@ export const devinAdapter: HarnessAdapter = {
         raw,
       }
     }
+    const errored = errorSignalled(r, r.tool_response)
     let output = extractOutput(r.tool_response)
     const errorText = str(r, "error")
     if (errorText !== null) output = output === null ? errorText : `${output}\n${errorText}`
@@ -47,9 +48,10 @@ export const devinAdapter: HarnessAdapter = {
       sessionId,
       callId: null,
       cwd,
-      output: genericToolOutput(toolMapped, output, errorSignalled(r, r.tool_response)),
+      output: genericToolOutput(toolMapped, output, errored),
       exitCode: null,
       channel: "text",
+      errored,
       raw,
     }
   },

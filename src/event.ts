@@ -48,6 +48,7 @@ export async function recordEventFailure(event: NormalizedEvent, ctx: EnforceCon
     tool: event.tool,
     session,
     project: ctx.projectDir,
+    harness: event.harness,
     snippet: errorText.slice(0, 200),
     channel: "event",
   })

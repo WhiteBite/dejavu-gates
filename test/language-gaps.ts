@@ -28,6 +28,10 @@ const phpB = normalizeCommand('php -r "echo 2;"')
 check("different php -r payloads get different fingerprints", phpA !== phpB)
 check("identical php -r payloads get identical fingerprints", phpA === normalizeCommand('php -r "echo 1;"'))
 check("one-liner normalization stays idempotent", normalizeCommand(phpA) === phpA)
+check(
+  "quote spellings of the same code converge on one fingerprint",
+  normalizeCommand('python -c "print(1)"') === normalizeCommand("python -c 'print(1)'") && normalizeCommand('python -c "print(1)"') === normalizeCommand("python -c print(1)"),
+)
 
 const pyMod = normalizeCommand("python -m http.server")
 check("python -m keeps the module name visible", pyMod.includes("http.server"))

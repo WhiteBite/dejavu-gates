@@ -3,7 +3,7 @@
  * (src/enforce.ts + siblings), exercised standalone — no OpenCode plugin
  * harness. Run: bun test/enforce.ts
  */
-import { mkdir, mkdtemp, rm } from "node:fs/promises"
+import { mkdir, mkdtemp, readFile, rm } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import {
@@ -155,6 +155,8 @@ check("a non-diagnostic bash failure with an error line is recorded", fOut.recor
 const fGate = (await readProjectGates(f)).find((g) => g.key === patternKey(callSignature("bash", { command: fCmd }) ?? ""))
 check("the recorded failure lands as a gate in the project store", fGate !== undefined && fGate.count === 1 && fGate.status === "watching")
 check("the gate keeps the failure-shaped line as evidence", fGate?.snippet === "Error: kaboom happened")
+const fEvents = (await readFile(join(f.projectStoreDir, "log.jsonl"), "utf8")).split("\n").filter((l) => l !== "").map((l) => JSON.parse(l) as { type?: string; harness?: string })
+check("a detected event carries the harness that observed the failure", fEvents.some((e) => e.type === "detected" && e.harness === "opencode"))
 
 // --- g. text-only failure detection (no exit code — the Claude Code case) ---
 const g = await makeWorld("g")
@@ -242,6 +244,36 @@ const nFail = await enforceAfter(ev({ tool: "bash", sessionId: "n-live", args: {
 check("a second process with fresh ephemeral state records the failed retry", nFail.recorded === true)
 const nBlock = await enforceBefore(ev({ tool: "bash", sessionId: "n-live", args: { command: nCmd } }), respawn(n))
 check("a third process hard-blocks the repeat — the chain survives fresh ephemeral state", nBlock.verdict.action === "deny" && nBlock.signalKind === "block")
+
+// --- ig. iteration grace: only a LANDED edit/write lifts the hard block ---
+const ig = await makeWorld("ig")
+const igCmd = "iter-grace-tool --run"
+await failUntilPromoted(ig.stores, ig.projectDir, igCmd, ["ig-seed-1", "ig-seed-2"])
+await enforceBefore(ev({ tool: "bash", sessionId: "ig-live", args: { command: igCmd } }), ig.ctx)
+await enforceAfter(ev({ tool: "bash", sessionId: "ig-live", args: { command: igCmd }, phase: "post", output: "Error: boom", exitCode: 1, channel: "exit" }), ig.ctx)
+const igGate0 = (await readProjectGates(ig)).find((g) => g.key === patternKey(callSignature("bash", { command: igCmd }) ?? ""))
+check("setup: the failed retry armed the block chain", igGate0?.failedSessions?.["ig-live"] !== undefined)
+await enforceAfter(ev({ tool: "edit", sessionId: "ig-live", args: { filePath: join(ig.projectDir, "src", "x.ts") }, phase: "post", output: "Error: edit rejected", exitCode: null, channel: "text", errored: true }), ig.ctx)
+const igBlock = await enforceBefore(ev({ tool: "bash", sessionId: "ig-live", args: { command: igCmd } }), ig.ctx)
+check("a FAILED edit (errored signal) does not lift the hard block", igBlock.verdict.action === "deny" && igBlock.signalKind === "block")
+
+const ig2 = await makeWorld("ig2")
+const ig2Cmd = "iter-grace-ok-tool --run"
+await failUntilPromoted(ig2.stores, ig2.projectDir, ig2Cmd, ["ig2-seed-1", "ig2-seed-2"])
+await enforceBefore(ev({ tool: "bash", sessionId: "ig2-live", args: { command: ig2Cmd } }), ig2.ctx)
+await enforceAfter(ev({ tool: "bash", sessionId: "ig2-live", args: { command: ig2Cmd }, phase: "post", output: "Error: boom", exitCode: 1, channel: "exit" }), ig2.ctx)
+await enforceAfter(ev({ tool: "edit", sessionId: "ig2-live", args: { filePath: join(ig2.projectDir, "src", "x.ts") }, phase: "post", output: "ok", exitCode: null, channel: "text" }), ig2.ctx)
+const ig2Retry = await enforceBefore(ev({ tool: "bash", sessionId: "ig2-live", args: { command: ig2Cmd } }), ig2.ctx)
+check("a landed edit still grants the iteration retry (grace preserved)", ig2Retry.verdict.action === "allow")
+
+const ig3 = await makeWorld("ig3")
+const ig3Cmd = "iter-grace-exit-tool --run"
+await failUntilPromoted(ig3.stores, ig3.projectDir, ig3Cmd, ["ig3-seed-1", "ig3-seed-2"])
+await enforceBefore(ev({ tool: "bash", sessionId: "ig3-live", args: { command: ig3Cmd } }), ig3.ctx)
+await enforceAfter(ev({ tool: "bash", sessionId: "ig3-live", args: { command: ig3Cmd }, phase: "post", output: "Error: boom", exitCode: 1, channel: "exit" }), ig3.ctx)
+await enforceAfter(ev({ tool: "edit", sessionId: "ig3-live", args: { filePath: join(ig3.projectDir, "src", "x.ts") }, phase: "post", output: "Error: edit rejected", exitCode: 1, channel: "exit" }), ig3.ctx)
+const ig3Block = await enforceBefore(ev({ tool: "bash", sessionId: "ig3-live", args: { command: ig3Cmd } }), ig3.ctx)
+check("a failing-exit edit does not lift the hard block either", ig3Block.verdict.action === "deny" && ig3Block.signalKind === "block")
 
 // --- ws2. file signatures are repo-relative: one file, one key ---
 const ws2 = await makeWorld("ws2")
@@ -368,8 +400,10 @@ const gbText = await enforceAfter(ev({ tool: "mcp__srv__tool", sessionId: "gb1",
 check("enforceAfter records a generic failure via the text channel (no exit code)", gbText.recorded === true && (await readProjectGates(gb)).some((g) => g.tool === "mcp__srv__tool" && g.count === 1))
 
 const gc = await makeWorld("gc")
-await recordEventFailure(ev({ tool: "mcp__srv__tool", sessionId: "gc1", args: { action: "delete", id: 7 }, phase: "post", output: "Error: mcp tool exploded", channel: "event", callId: "gc-part" }), gc.ctx)
+await recordEventFailure(ev({ tool: "mcp__srv__tool", sessionId: "gc1", harness: "claude", args: { action: "delete", id: 7 }, phase: "post", output: "Error: mcp tool exploded", channel: "event", callId: "gc-part" }), gc.ctx)
 check("recordEventFailure records a generic tool failure", (await readProjectGates(gc)).some((g) => g.tool === "mcp__srv__tool" && g.count === 1))
+const gcEvents = (await readFile(join(gc.projectStoreDir, "log.jsonl"), "utf8")).split("\n").filter((l) => l !== "").map((l) => JSON.parse(l) as { type?: string; harness?: string })
+check("the event-channel detected event carries the observing harness", gcEvents.some((e) => e.type === "detected" && e.harness === "claude"))
 
 const circular: unknown[] = []
 circular.push(circular)

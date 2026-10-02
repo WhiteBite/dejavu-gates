@@ -162,6 +162,36 @@ if (!/<code:[0-9a-f]{8}>/.test(callSignature("bash", { command: oneLinerA }) ?? 
   fail("one-liner fingerprint shape", callSignature("bash", { command: oneLinerA }) ?? "(null)")
 }
 
+// quote equivalence: the same code in double/single/bare spelling is ONE key
+const pyDouble = 'python -c "print(1)"'
+const pySingle = "python -c 'print(1)'"
+const pyBare = "python -c print(1)"
+if (
+  callSignature("bash", { command: pyDouble }) !== callSignature("bash", { command: pySingle }) ||
+  callSignature("bash", { command: pyDouble }) !== callSignature("bash", { command: pyBare })
+) {
+  fail(
+    "one-liner quote equivalence",
+    `${pyDouble} / ${pySingle} / ${pyBare} -> ${callSignature("bash", { command: pyDouble })} / ${callSignature("bash", { command: pySingle })} / ${callSignature("bash", { command: pyBare })}`,
+  )
+}
+const pyFlagged = 'python -c "print(1)" --flag'
+const pyFlaggedOnce = normalizeCommand(pyFlagged)
+if (normalizeCommand(pyFlaggedOnce) !== pyFlaggedOnce) {
+  fail("one-liner with trailing flags not idempotent", `${pyFlagged} -> ${pyFlaggedOnce} -> ${normalizeCommand(pyFlaggedOnce)}`)
+}
+if (callSignature("bash", { command: pyFlagged }) === callSignature("bash", { command: pyDouble })) {
+  fail("one-liner trailing flag must change the signature", `${pyFlagged} and ${pyDouble} collapsed`)
+}
+const pyHere = 'pwsh -c @"\nprint(1)\n"@'
+const pyHereSig = callSignature("bash", { command: pyHere })
+if (pyHereSig === null || !/^bash:pwsh -c <code:[0-9a-f]{8}>$/.test(pyHereSig)) {
+  fail("here-string fingerprint shape", pyHereSig ?? "(null)")
+}
+if (pyHereSig === callSignature("bash", { command: pyBare.replace("python", "pwsh") })) {
+  fail("here-string markers must participate in the fingerprint", "markers stripped from the hash")
+}
+
 // package-runner canonicalization is idempotent — a second pass must not rewrite it again
 const PACKAGE_RUNNER_FORMS = [
   "npm run build",
@@ -233,7 +263,6 @@ function refFuzzySimilar(a: string, b: string): boolean {
   const maxLen = Math.max(a.length, b.length)
   if (maxLen === 0) return true
   if (maxLen > 300) return false
-  if (Math.abs(a.length - b.length) / maxLen > 0.3) return false
   const codesA = a.match(/<code:[0-9a-f]+>/g)
   const codesB = b.match(/<code:[0-9a-f]+>/g)
   if (codesA !== null || codesB !== null) {
@@ -247,7 +276,15 @@ function refFuzzySimilar(a: string, b: string): boolean {
   const fa = flags(a)
   const fb = flags(b)
   if (!subset(fa, fb) && !subset(fb, fa)) return false
+  const nonFlag = (s: string): string => s.split(/\s+/).filter((t) => !t.startsWith("-")).join(" ")
+  const setEqual = (x: string[], y: string[]): boolean => {
+    const setY = new Set(y)
+    return new Set(x).size === setY.size && x.every((t) => setY.has(t))
+  }
+  const strictFlagAdd = !setEqual(fa, fb) && nonFlag(a) === nonFlag(b)
+  if (!strictFlagAdd && Math.abs(a.length - b.length) / maxLen > 0.3) return false
   const distance = levenshtein(a, b)
+  if (strictFlagAdd) return distance >= 3 && distance <= Math.max(Math.floor(maxLen * 0.3), 24)
   return distance >= 3 && distance / maxLen <= 0.3
 }
 function mutate(s: string): string {

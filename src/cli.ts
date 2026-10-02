@@ -28,7 +28,8 @@ import {
   recordEventFailure,
   type EnforceContext,
 } from "./enforce"
-import { createStores, GLOBAL_PROJECTS, NOISE_TTL_DAYS, TTL_DAYS } from "./store"
+import { initStores } from "./host-init"
+import { createStores } from "./store"
 import type {
   HarnessAdapter,
   HarnessName,
@@ -127,11 +128,12 @@ async function dispatch(
       const outcome = await enforceAfter(event, ctx)
       // no post-hook channel (crush): detection above still taught the store, only the annotation is skipped
       if (!adapter.postChannel) return allowDecision()
-      const verdict: Verdict = { action: "allow", reason: null, annotation: outcome.annotation, degraded: false }
+      const verdict: Verdict = { action: "allow", reason: null, annotation: outcome.annotation }
       return adapter.mapOutbound("post", verdict)
     }
     case "session-event": {
-      await recordEventFailure(event, ctx)
+      // a null-output session event (SessionEnd) is pure teardown — recording it would fabricate a failure
+      if (event.output !== null) await recordEventFailure(event, ctx)
       const hookName = str(event.raw, "hook_event_name")?.toLowerCase() ?? ""
       if (hookName.includes("end") || hookName.includes("delete")) await cleanupSession(event.sessionId, ctx)
       return allowDecision()
@@ -150,20 +152,20 @@ export async function runHook(argv: string[]): Promise<number> {
   const event = adapter.mapInbound(args.phase, readHookPayload())
   if (event === null) {
     // fail-open speaks the harness's own allow dialect (Kiro's silence included)
-    process.stdout.write(formatStdout(adapter.mapOutbound(args.phase, { action: "allow", reason: null, annotation: null, degraded: false })))
+    process.stdout.write(formatStdout(adapter.mapOutbound(args.phase, { action: "allow", reason: null, annotation: null })))
     return 0
   }
   const projectDir = args.store ?? event.cwd ?? process.cwd()
   const stores = createStores(projectDir)
-  try {
-    // per-invocation init is the CLI's accepted cost — all three passes are idempotent
-    await stores.reconcileAll(GLOBAL_PROJECTS)
-    await stores.migrate()
-    await stores.expireAll(TTL_DAYS, NOISE_TTL_DAYS)
-  } catch (error) {
-    // a broken store must not hang the tool pipeline — proceed gateless, stay visible
-    process.stderr.write(`[dejavu] init failed: ${formatError(error)}\n`)
-  }
+  // per-invocation init is the CLI's accepted cost — the three idempotent passes, nothing else
+  await initStores(stores, {
+    logInitEvent: false,
+    rotateLogs: false,
+    healthLog: false,
+    log: (_level, message) => {
+      process.stderr.write(`[dejavu] ${message}\n`)
+    },
+  })
   const debug = process.env.DEJAVU_DEBUG !== undefined && process.env.DEJAVU_DEBUG !== "" && process.env.DEJAVU_DEBUG !== "0"
   const ctx: EnforceContext = {
     stores,
@@ -184,7 +186,7 @@ export async function runHook(argv: string[]): Promise<number> {
     decision = await dispatch(adapter, event, ctx)
   } catch (error) {
     process.stderr.write(`[dejavu] dispatch error: ${formatError(error)}\n`)
-    decision = adapter.mapOutbound(event.phase, { action: "allow", reason: null, annotation: null, degraded: false })
+    decision = adapter.mapOutbound(event.phase, { action: "allow", reason: null, annotation: null })
   }
   try {
     // deferred repair/retire events must reach the log before this process exits

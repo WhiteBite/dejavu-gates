@@ -5,13 +5,13 @@
  * hookSpecificOutput for annotation).
  */
 import type { HarnessAdapter, NormalizedEvent } from "../types"
-import { internalTool, internalArgs, str, rec, UNKNOWN_SESSION, denyDecision, makeOutbound, errorSignalled, genericToolOutput } from "./shared"
+import { internalTool, internalArgs, str, rec, UNKNOWN_SESSION, denyDecision, makeOutbound, errorSignalled, extractOutput, genericToolOutput } from "./shared"
 
 /** Extract tool output text from a Gemini AfterTool response object. */
 function extractToolText(response: unknown): string | null {
-  if (typeof response === "string") return response
   if (typeof response === "object" && response !== null) {
     const obj = response as Record<string, unknown>
+    // gemini's ladder is first-match priority with per-field stringify — not the shared {stdout,stderr} join
     // error field takes priority (explicit failure signal)
     const errorText = str(obj, "error")
     if (errorText) return errorText
@@ -23,8 +23,9 @@ function extractToolText(response: unknown): string | null {
     const content = obj.llmContent
     if (typeof content === "string") return content
     if (typeof content === "object" && content !== null) return JSON.stringify(content)
+    return null
   }
-  return null
+  return extractOutput(response)
 }
 
 export const geminiAdapter: HarnessAdapter = {
@@ -64,7 +65,8 @@ export const geminiAdapter: HarnessAdapter = {
 
     if (phase === "post") {
       const toolResponse = rec(r, "tool_response") ?? {}
-      const output = extractToolText(toolResponse) ?? null
+      const errored = errorSignalled(r, toolResponse)
+      const output = extractToolText(toolResponse)
 
       return {
         harness: "gemini",
@@ -74,9 +76,10 @@ export const geminiAdapter: HarnessAdapter = {
         sessionId,
         callId: null,
         cwd,
-        output: genericToolOutput(toolMapped, output, errorSignalled(r, toolResponse)),
+        output: genericToolOutput(toolMapped, output, errored),
         exitCode: null,
         channel: "text",
+        errored,
         raw,
       }
     }

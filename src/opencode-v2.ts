@@ -1,19 +1,20 @@
 import type { Plugin } from "@opencode/plugin"
 import {
+  applyRepeatChannel,
   cleanupSession,
   createEphemeralState,
   enforceAfter,
   enforceBefore,
   recordEventFailure,
   type EnforceContext,
+  type RepeatChannelMessage,
+  type RepeatChannelPart,
+  type RepeatChannelState,
 } from "./enforce"
-import { createStores, GLOBAL_PROJECTS, NOISE_TTL_DAYS, PLUGIN_VERSION, TTL_DAYS } from "./store"
+import { createStores } from "./store"
+import { initStores, rateLimitedErrorSink, scheduleSweep } from "./host-init"
 import { genericToolOutput } from "./adapters/shared"
 import type { NormalizedEvent } from "./types"
-
-/** how often a long-lived process re-runs expiry */
-const TTL_INTERVAL_MS = 6 * 60 * 60 * 1000
-const HOOK_ERROR_LOG_INTERVAL_MS = 60_000
 
 /** Sentinel: intentional gate throws (rethrown to deny the call); our own bugs are swallowed. */
 class GateSignal extends Error {}
@@ -39,6 +40,113 @@ function engineTool(tool: string): string {
   return ENGINE_TOOL[tool] ?? tool
 }
 
+// --- V2 canonical → repeat-channel structural view ---------------------------
+
+/** V2 canonical form: tool calls live in assistant messages, results in
+ *  follow-up tool-role messages — the view merges them so the engine sees
+ *  V1-shaped rounds. */
+interface V2ContentPart {
+  type: string
+  id?: string
+  name?: string
+  input?: unknown
+  result?: { type: string; value: unknown }
+}
+
+interface V2Message {
+  role: string
+  content: V2ContentPart[]
+}
+
+function resultOutputText(result: { type: string; value: unknown }): string | undefined {
+  if (result.type === "text" && typeof result.value === "string") return result.value
+  if (result.type === "content" && Array.isArray(result.value)) {
+    return result.value
+      .map((item) =>
+        typeof item === "object" && item !== null && (item as { type?: string }).type === "text"
+          ? (item as { text?: unknown }).text
+          : "",
+      )
+      .filter((text): text is string => typeof text === "string")
+      .join("")
+  }
+  return undefined
+}
+
+function resultErrorText(result: { type: string; value: unknown }): string | undefined {
+  if (result.type !== "error") return undefined
+  if (typeof result.value === "string") return result.value
+  if (typeof result.value === "object" && result.value !== null) {
+    const message = (result.value as { error?: { message?: unknown } }).error?.message
+    if (typeof message === "string") return message
+  }
+  return undefined
+}
+
+function toolPartView(call: V2ContentPart, result: { type: string; value: unknown } | undefined): RepeatChannelPart {
+  const input = typeof call.input === "object" && call.input !== null ? (call.input as Record<string, unknown>) : undefined
+  const state: RepeatChannelState = {
+    input,
+    get status(): string | undefined {
+      if (result === undefined) return undefined
+      return result.type === "error" ? "error" : "completed"
+    },
+    get output(): string | undefined {
+      return result === undefined ? undefined : resultOutputText(result)
+    },
+    set output(value: string) {
+      if (result === undefined) return
+      if (result.type === "text") {
+        result.value = value
+        return
+      }
+      if (result.type === "content" && Array.isArray(result.value)) {
+        const previous = resultOutputText(result) ?? ""
+        result.value = value.startsWith(previous)
+          ? [...result.value, { type: "text", text: value.slice(previous.length) }]
+          : [{ type: "text", text: value }]
+      }
+    },
+    get error(): string | undefined {
+      return result === undefined ? undefined : resultErrorText(result)
+    },
+    set error(value: string) {
+      if (result === undefined || result.type !== "error") return
+      if (typeof result.value === "string") {
+        result.value = value
+        return
+      }
+      if (typeof result.value === "object" && result.value !== null) {
+        const error = (result.value as { error?: { message?: string } }).error
+        if (typeof error === "object" && error !== null) error.message = value
+      }
+    },
+  }
+  return { type: "tool", tool: typeof call.name === "string" ? call.name : undefined, state }
+}
+
+function toRepeatChannelMessages(messages: unknown, sessionID: string): RepeatChannelMessage[] {
+  const v2 = (Array.isArray(messages) ? messages : []) as V2Message[]
+  const resultsById = new Map<string, { type: string; value: unknown }>()
+  for (const msg of v2) {
+    if (msg.role !== "tool") continue
+    for (const part of msg.content) {
+      if (part.type === "tool-result" && typeof part.id === "string" && part.result != null) resultsById.set(part.id, part.result)
+    }
+  }
+  const structural: RepeatChannelMessage[] = []
+  for (const msg of v2) {
+    if (msg.role === "tool") continue
+    const parts: RepeatChannelPart[] = []
+    for (const part of msg.content) {
+      if (part.type !== "tool-call") continue
+      parts.push(toolPartView(part, typeof part.id === "string" ? resultsById.get(part.id) : undefined))
+    }
+    structural.push({ info: { role: msg.role, sessionID }, parts })
+  }
+  return structural
+}
+
 /** OpenCode V2 plugin host: registers dejavu's hooks on the V2 plugin Context. */
 export async function v2Setup(ctx: Plugin.Context): Promise<() => void> {
   const projectDir: string = ctx.location.directory
@@ -54,13 +162,7 @@ export async function v2Setup(ctx: Plugin.Context): Promise<() => void> {
     }
   }
 
-  let lastHookErrorLogMs = 0
-  const onHookError = (where: string, error: unknown): void => {
-    const now = Date.now()
-    if (now - lastHookErrorLogMs < HOOK_ERROR_LOG_INTERVAL_MS) return
-    lastHookErrorLogMs = now
-    process.stderr.write(`[dejavu] ${where} hook error: ${error instanceof Error ? error.message : String(error)}\n`)
-  }
+  const onHookError = rateLimitedErrorSink((line) => process.stderr.write(`[dejavu] ${line}\n`))
 
   const enforceCtx: EnforceContext = {
     stores,
@@ -71,43 +173,14 @@ export async function v2Setup(ctx: Plugin.Context): Promise<() => void> {
     projectDir,
   }
 
-  try {
-    await stores.reconcileAll(GLOBAL_PROJECTS)
-    await stores.migrate()
-    await stores.expireAll(TTL_DAYS, NOISE_TTL_DAYS)
-    await stores.rotateLogs()
-    await stores.logAll({ type: "init", key: "dejavu", version: PLUGIN_VERSION })
-    const enforced = await stores.enforcedGates()
-    const notTeaching = enforced.filter((g) => g.recurredAfterGate >= 3).length
-    const review = enforced.filter((g) => g.review === true).length
-    if (notTeaching > 0 || review > 0) {
-      await stores.logAll({ type: "health", key: "dejavu", snippet: `not-teaching ${notTeaching}, review ${review}` })
-    }
-    log("dejavu", "info", `dejavu initialized v${PLUGIN_VERSION}`)
-  } catch (error) {
-    // init failures must not prevent hook registration — but must be visible
-    log("dejavu", "error", `dejavu init failed: ${error instanceof Error ? error.message : String(error)}`)
-  }
+  await initStores(stores, {
+    logInitEvent: true,
+    rotateLogs: true,
+    healthLog: true,
+    log: (level, message) => log("dejavu", level, `dejavu ${message}`),
+  })
 
-  let timer: ReturnType<typeof setTimeout> | undefined
-  let stopped = false
-  const schedule = (): void => {
-    if (stopped) return
-    const jitter = TTL_INTERVAL_MS * (0.75 + Math.random() * 0.5)
-    timer = setTimeout(async () => {
-      if (stopped) return
-      try {
-        await stores.expireAll(TTL_DAYS, NOISE_TTL_DAYS)
-        await stores.rotateLogs()
-        await stores.flushDeferredAll()
-      } catch {
-        // sweep failures must not stop the timer
-      }
-      schedule()
-    }, jitter)
-    ;(timer as { unref?: () => void }).unref?.()
-  }
-  schedule()
+  const stopSweep = scheduleSweep(stores)
 
   await ctx.tool.hook("execute.before", async (event) => {
     try {
@@ -214,9 +287,22 @@ export async function v2Setup(ctx: Plugin.Context): Promise<() => void> {
     }
   })
 
+  // the V2 transform equivalent: the generate hook carries the outgoing payload with mutable messages
+  await ctx.session.hook("generate", async (event) => {
+    try {
+      const structural = toRepeatChannelMessages(event.messages, event.sessionID)
+      const result = await applyRepeatChannel(structural, enforceCtx)
+      for (const injection of result.injected) {
+        const synthetic = { role: "user", content: [{ type: "text", text: injection.text }], metadata: { synthetic: true } }
+        event.messages.push(synthetic as unknown as (typeof event.messages)[number])
+      }
+    } catch (error) {
+      onHookError("generate", error)
+    }
+  })
+
   return (): void => {
-    stopped = true
-    clearTimeout(timer)
+    stopSweep()
     abort.abort()
   }
 }

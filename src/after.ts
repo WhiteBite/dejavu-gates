@@ -1,14 +1,15 @@
 import {
-  bashSegmentSignatures,
   callSignature,
   detectFailure,
   failureSnippet,
+  hasResidualIdentity,
   isDiagnosticSignature,
   isIntendedNonzero,
   isNoiseError,
   nonTransparentProducers,
   parameterizeError,
   patternKey,
+  producerSegmentSignatures,
   PROBE_TOOLS,
   sanitizeForStore,
 } from "./patterns"
@@ -31,10 +32,6 @@ function noneOutcome(): AfterOutcome {
 export async function enforceAfter(event: NormalizedEvent, ctx: EnforceContext): Promise<AfterOutcome> {
   const exitCode = event.exitCode
   const isBash = event.tool === "bash"
-  // iteration evidence: an edit/write arriving here landed (file-tool failures go via the event channel)
-  if (event.tool === "edit" || event.tool === "write") {
-    ctx.ephemeral.workspaceVersions.set(ctx.projectDir, (ctx.ephemeral.workspaceVersions.get(ctx.projectDir) ?? 0) + 1)
-  }
   // text signatures apply to bash and generic tools (their own error text); probes are file CONTENT
   const text = event.output ?? ""
   const textScanable = isBash || !PROBE_TOOLS.has(event.tool)
@@ -50,6 +47,10 @@ export async function enforceAfter(event: NormalizedEvent, ctx: EnforceContext):
   } else {
     detection = textScanable ? detectFailure(text) : detection
     failed = detection.matched
+  }
+  // only a landed edit/write is iteration evidence — a failed one must not lift the block
+  if ((event.tool === "edit" || event.tool === "write") && !failed && event.errored !== true) {
+    ctx.ephemeral.workspaceVersions.set(ctx.projectDir, (ctx.ephemeral.workspaceVersions.get(ctx.projectDir) ?? 0) + 1)
   }
 
   const args = scrubbedArgs(event.args)
@@ -67,7 +68,8 @@ export async function enforceAfter(event: NormalizedEvent, ctx: EnforceContext):
   // chain attribution needs exactly ONE non-transparent producer — else record under the whole call
   let recordSignature = signature
   if (event.tool === "bash" && typeof args.command === "string" && nonTransparentProducers(args.command) === 1) {
-    for (const segSig of bashSegmentSignatures(args.command)) {
+    for (const segSig of producerSegmentSignatures(args.command)) {
+      if (!hasResidualIdentity(segSig)) continue
       if (await ctx.stores.hasKey(patternKey(segSig))) {
         recordSignature = segSig
         break
@@ -108,6 +110,7 @@ export async function enforceAfter(event: NormalizedEvent, ctx: EnforceContext):
     tool: event.tool,
     session,
     project: ctx.projectDir,
+    harness: event.harness,
     snippet,
     channel: exitCode !== null ? "exit" : "text",
     exit: exitCode ?? undefined,

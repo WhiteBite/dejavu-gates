@@ -42,6 +42,9 @@ export interface NormalizedEvent {
   exitCode: number | null
   /** detection channel: exit-code scan, stdout/stderr text scan, or event stream */
   channel: "exit" | "text" | "event"
+  /** structural failure signal from the host (error field, is_error, failure event);
+   * the engine cannot infer it for probe tools — their output is file CONTENT, never scanned */
+  errored?: boolean
   /** original hook payload for adapter-specific fallbacks */
   raw: unknown
 }
@@ -54,8 +57,6 @@ export interface Verdict {
   reason: string | null
   /** post-hook note appended/attached to tool output */
   annotation: string | null
-  /** true when the harness lacks a channel (e.g. Crush has no post hook) */
-  degraded: boolean
 }
 
 /** Harness-specific outbound decision for printing to stdout/stderr */

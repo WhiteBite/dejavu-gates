@@ -263,10 +263,10 @@ const PY_A = 'python -c "print(\'alpha\')"'
 const PY_B = 'python -c "print(\'beta\')"'
 check("same one-liner normalizes to one key", callSignature("bash", { command: PY_A }) === callSignature("bash", { command: PY_A }))
 check("different one-liner code gets different keys", callSignature("bash", { command: PY_A }) !== callSignature("bash", { command: PY_B }))
-// sha1 fingerprint of this payload is 14021754 — ALL digits (~2.3% of payloads);
+// sha1 fingerprint of the code print(28) is 70602663 — ALL digits (~2.3% of payloads);
 // the number-parameterization rule must not eat it or every such one-liner collapses
-const PY_DIGIT_FP = 'python -c "print(16)"'
-check("all-digit code fingerprint survives number parameterization", (callSignature("bash", { command: PY_DIGIT_FP }) ?? "").includes("<code:14021754>"))
+const PY_DIGIT_FP = 'python -c "print(28)"'
+check("all-digit code fingerprint survives number parameterization", (callSignature("bash", { command: PY_DIGIT_FP }) ?? "").includes("<code:70602663>"))
 check(
   "legacy bare-<str> interpreter shapes cannot block",
   !canBlock("bash", "bash:python -c <str>") && !canBlock("bash", "bash:node -e <str>") && !canBlock("bash", "bash:& <str> -c @ <str> @"),
@@ -843,6 +843,11 @@ check("retired-healed (deferred, salient) is mirrored to the global log", healGl
 check("disjoint flags never fuzzy-merge", !fuzzySimilar("bash:python train.py --lr <n>", "bash:python train.py --epochs <n>"))
 check("disjoint short flags rejected even within length band", !fuzzySimilar("bash:python train.py --lr", "bash:python train.py -v"))
 check("subset flag addition still merges", fuzzySimilar("bash:python train.py", "bash:python train.py -v"))
+check("subset addition beyond the relative band still merges (gradlew)", fuzzySimilar("bash:gradlew test", "bash:gradlew test --no-daemon"))
+check("subset addition beyond the relative band still merges (git push)", fuzzySimilar("bash:git push", "bash:git push --force"))
+check("equal flag sets never take the subset exception (band still applies)", !fuzzySimilar("bash:short-cmd --flag", "bash:a-much-longer-command-name-here --flag"))
+check("disjoint flags never merge at any length", !fuzzySimilar("bash:gradlew test --aaaa", "bash:gradlew test --bbbb"))
+check("different base text never merges via the subset exception", !fuzzySimilar("bash:git push", "bash:git push origin --force"))
 
 // --- 35. repo-local verbs never escalate to the global store ---
 const repoDirA = join(tmp, "repo-local-a")
@@ -1829,6 +1834,70 @@ await failOn(hooksMA)(MA_FULL_CMD, "ma1", "ma1")
 const multiAttrGates = await readJson(join(multiAttrDir, ".opencode", "dejavu", "gates.json"))
 check("multi-producer chain is NOT attributed to the known segment", multiAttrGates.find((g) => g.key === patternKey(MA_SEG_SIG))?.count === 1)
 check("multi-producer chain records under the whole-call signature", multiAttrGates.some((g) => g.signature === MA_FULL_SIG))
+
+// --- 85d. transparent segments (cd/env/pipe-tail) never absorb a producer's failure ---
+const CD_SIG = callSignature("bash", { command: "cd /some/dir" }) ?? ""
+const PRODUCER_CHAIN = "cd /some/dir && obs-producer-cmd --build"
+const PRODUCER_CHAIN_SIG = callSignature("bash", { command: PRODUCER_CHAIN }) ?? ""
+const PRODUCER_SIG = callSignature("bash", { command: "obs-producer-cmd --build" }) ?? ""
+const transAttrDir = join(tmp, "trans-attr-project")
+await seedGates(transAttrDir, [
+  seedGate({
+    key: patternKey(CD_SIG),
+    signature: CD_SIG,
+    status: "watching",
+    count: 1,
+    sessions: ["t0"],
+    snippet: "seeded cd evidence",
+    firstSeen: new Date().toISOString(),
+    lastSeen: new Date().toISOString(),
+  }),
+])
+const hooksTR = await Dejavu({ directory: transAttrDir, client: { app: { log: async () => ({}) } } } as unknown as Ctx)
+await failOn(hooksTR)(PRODUCER_CHAIN, "ta1", "ta1")
+const transAttrGates = await readJson(join(transAttrDir, ".opencode", "dejavu", "gates.json"))
+const cdGate = transAttrGates.find((g) => g.key === patternKey(CD_SIG))
+check("transparent cd gate is not inflated by the producer's failure", cdGate?.count === 1 && cdGate?.snippet === "seeded cd evidence")
+check("producer chain failure records under the whole-call signature", transAttrGates.some((g) => g.signature === PRODUCER_CHAIN_SIG))
+
+const prodAttrDir = join(tmp, "prod-attr-project")
+await seedGates(prodAttrDir, [
+  seedGate({
+    key: patternKey(PRODUCER_SIG),
+    signature: PRODUCER_SIG,
+    status: "watching",
+    count: 1,
+    sessions: ["p0"],
+    firstSeen: new Date().toISOString(),
+    lastSeen: new Date().toISOString(),
+  }),
+])
+const hooksPR = await Dejavu({ directory: prodAttrDir, client: { app: { log: async () => ({}) } } } as unknown as Ctx)
+await failOn(hooksPR)(PRODUCER_CHAIN, "pa1", "pa1")
+const prodAttrGates = await readJson(join(prodAttrDir, ".opencode", "dejavu", "gates.json"))
+check("seeded producer gate absorbs the chained failure", prodAttrGates.find((g) => g.key === patternKey(PRODUCER_SIG))?.count === 2)
+check("no cd gate appears from the chained failure", !prodAttrGates.some((g) => g.signature === CD_SIG))
+
+const TAIL_SIG = callSignature("bash", { command: "tail -5" }) ?? ""
+const PIPE_CHAIN = "missing-producer-cmd | tail -5"
+const pipeAttrDir = join(tmp, "pipe-attr-project")
+await seedGates(pipeAttrDir, [
+  seedGate({
+    key: patternKey(TAIL_SIG),
+    signature: TAIL_SIG,
+    status: "watching",
+    count: 1,
+    sessions: ["pt0"],
+    snippet: "seeded tail evidence",
+    firstSeen: new Date().toISOString(),
+    lastSeen: new Date().toISOString(),
+  }),
+])
+const hooksPI = await Dejavu({ directory: pipeAttrDir, client: { app: { log: async () => ({}) } } } as unknown as Ctx)
+await failOn(hooksPI)(PIPE_CHAIN, "pt1", "pt1")
+const pipeAttrGates = await readJson(join(pipeAttrDir, ".opencode", "dejavu", "gates.json"))
+const tailGate = pipeAttrGates.find((g) => g.key === patternKey(TAIL_SIG))
+check("pipe-tail formatter gate is not inflated by the producer's failure", tailGate?.count === 1 && tailGate?.snippet === "seeded tail evidence")
 
 // --- 87. evidence quality: failureSnippet must never surface a success-shaped
 // tail as the failure evidence (the "17 passed" gate). ---

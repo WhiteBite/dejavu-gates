@@ -13,7 +13,7 @@
  * callId always null (Copilot exposes no per-call id); exitCode null, channel "text".
  */
 import type { HarnessAdapter, NormalizedEvent } from "../types"
-import { internalTool, internalArgs, str, rec, UNKNOWN_SESSION, makeOutbound, errorSignalled, genericToolOutput } from "./shared"
+import { internalTool, internalArgs, str, rec, UNKNOWN_SESSION, makeOutbound, errorSignalled, extractOutput, genericToolOutput } from "./shared"
 
 /** Parse toolArgs JSON string → object; returns {} on any parse failure. */
 function parseToolArgs(raw: unknown): Record<string, unknown> {
@@ -26,25 +26,6 @@ function parseToolArgs(raw: unknown): Record<string, unknown> {
   catch {
     return {}
   }
-}
-
-/** Extract output text from a camelCase toolResult or PascalCase tool_response. */
-function extractOutput(value: unknown): string | null {
-  if (typeof value === "string") return value || null
-  if (Array.isArray(value)) {
-    return value.map(String).join("\n") || null
-  }
-  if (typeof value === "object" && value !== null) {
-    const obj = value as Record<string, unknown>
-    const stdout = str(obj, "stdout")
-    const stderr = str(obj, "stderr")
-    const parts: string[] = []
-    if (stdout) parts.push(stdout)
-    if (stderr) parts.push(stderr)
-    if (parts.length > 0) return parts.join("\n")
-    return JSON.stringify(obj)
-  }
-  return null
 }
 
 export const copilotAdapter: HarnessAdapter = {
@@ -85,6 +66,7 @@ export const copilotAdapter: HarnessAdapter = {
 
       if (phase === "post") {
         const toolResult = rec(r, "toolResult")
+        const errored = errorSignalled(r, toolResult)
         let output = extractOutput(toolResult?.textResultForLlm)
         // Append error string when present (failure event)
         const errorText = str(r, "error")
@@ -99,9 +81,10 @@ export const copilotAdapter: HarnessAdapter = {
           sessionId,
           callId: null,
           cwd,
-          output: genericToolOutput(toolMapped, output, errorSignalled(r, toolResult)),
+          output: genericToolOutput(toolMapped, output, errored),
           exitCode: null,
           channel: "text",
+          errored,
           raw,
         }
       }
@@ -133,6 +116,7 @@ export const copilotAdapter: HarnessAdapter = {
       }
 
       if (phase === "post") {
+        const errored = errorSignalled(r, r.tool_response)
         let output = extractOutput(r.tool_response)
         // Append error string when present (failure event)
         const errorText = str(r, "error")
@@ -147,9 +131,10 @@ export const copilotAdapter: HarnessAdapter = {
           sessionId,
           callId: null,
           cwd,
-          output: genericToolOutput(toolMapped, output, errorSignalled(r, r.tool_response)),
+          output: genericToolOutput(toolMapped, output, errored),
           exitCode: null,
           channel: "text",
+          errored,
           raw,
         }
       }

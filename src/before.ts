@@ -15,11 +15,11 @@ const REVIEW_FIRES = 10
 const REMINDER_RACE_WINDOW_MS = 500
 
 function allowOutcome(): BeforeOutcome {
-  return { verdict: { action: "allow", reason: null, annotation: null, degraded: false }, signalKind: null }
+  return { verdict: { action: "allow", reason: null, annotation: null }, signalKind: null }
 }
 
 function denyOutcome(reason: string, signalKind: BeforeOutcome["signalKind"]): BeforeOutcome {
-  return { verdict: { action: "deny", reason, annotation: null, degraded: false }, signalKind }
+  return { verdict: { action: "deny", reason, annotation: null }, signalKind }
 }
 
 /**

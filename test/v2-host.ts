@@ -120,6 +120,7 @@ try {
   check('tool.hook registered "execute.before"', registrations.some((r) => r.kind === "tool" && r.name === "execute.before"))
   check('tool.hook registered "execute.after"', registrations.some((r) => r.kind === "tool" && r.name === "execute.after"))
   check('session.hook registered "compaction"', registrations.some((r) => r.kind === "session" && r.name === "compaction"))
+  check('session.hook registered "generate"', registrations.some((r) => r.kind === "session" && r.name === "generate"))
   check("event.subscribe was called once", subscribeCalls === 1)
 
   const baseEvent = { tool: "bash", sessionID: "s1", agent: "build", messageID: "m1", id: "c1", input: { command: "echo hi" } }
@@ -160,6 +161,53 @@ try {
   }
   const shellGate = gateDoc.gates.find((gate) => (gate.signature ?? "").includes("obs-fail-cmd"))
   check("the failing shell call records under the bash vocabulary", shellGate !== undefined && shellGate.tool === "bash")
+
+  // --- repeat channel over the V2 generate hook (V1 transform parity) ---
+  const REPEAT_MARKER_KEY = "_dejavu_repeat"
+  const v2Call = (id: string): object => ({ type: "tool-call", id, name: "background_output", input: { task_id: "t1" } })
+  const v2Result = (id: string): object => ({
+    type: "tool-result",
+    id,
+    name: "background_output",
+    result: { type: "content", value: [{ type: "text", text: "ok" }] },
+  })
+  const v2User = (): object => ({ role: "user", content: [{ type: "text", text: "go" }] })
+  const v2Assistant = (id: string): object => ({ role: "assistant", content: [v2Call(id)] })
+  const v2Tool = (id: string): object => ({ role: "tool", content: [v2Result(id)] })
+  const generateEvent = (messages: object[]): object => ({
+    sessionID: "r99v2",
+    model: { providerID: "p", modelID: "m" },
+    system: [],
+    messages,
+    options: {},
+    tools: {},
+    agent: "build",
+  })
+  const v2Msgs: object[] = [v2User(), v2Assistant("c1"), v2Tool("c1"), v2Assistant("c2"), v2Tool("c2"), v2Assistant("c3"), v2Tool("c3")]
+  check("generate callback does not throw", (await invokeHook("generate", generateEvent(v2Msgs))) === null)
+  const callInput = (i: number): Record<string, unknown> =>
+    ((v2Msgs[i] as { content: Array<{ input?: Record<string, unknown> }> }).content[0]?.input ?? {}) as Record<string, unknown>
+  check(
+    "generate: series of 3 gets markers on calls 2+3 only",
+    callInput(1)[REPEAT_MARKER_KEY] === undefined && callInput(3)[REPEAT_MARKER_KEY] === 1 && callInput(5)[REPEAT_MARKER_KEY] === 2,
+  )
+  const lastResultValue = (v2Msgs[6] as { content: Array<{ result?: { value?: Array<{ text?: string }> } }> }).content[0]?.result?.value ?? []
+  const lastResultText = lastResultValue.map((part) => part.text ?? "").join("")
+  check("generate: REPETITION note appended to the last tool result", lastResultText.includes("[dejavu] REPETITION"))
+  check("generate: no injection below the block threshold", !v2Msgs.some((m) => (m as { role?: string }).role === "user" && JSON.stringify(m).includes("loop protection")))
+  const v2Block = async (callID: string): Promise<unknown> =>
+    invokeHook("execute.before", { tool: "background_output", sessionID: "r99v2", agent: "build", messageID: "m1", id: callID, input: { task_id: "t1" } })
+  await v2Block("r1")
+  await v2Block("r2")
+  await v2Block("r3")
+  const v2Msgs2: object[] = [v2User(), v2Assistant("d1"), v2Tool("d1"), v2Assistant("d2"), v2Tool("d2"), v2Assistant("d3"), v2Tool("d3")]
+  check("generate: stop-blocked loop callback does not throw", (await invokeHook("generate", generateEvent(v2Msgs2))) === null)
+  const injected = v2Msgs2.find((m) => (m as { role?: string }).role === "user" && JSON.stringify(m).includes("loop protection"))
+  check("generate: a stop-blocked loop injects an automated user message", injected !== undefined)
+  check(
+    "generate: the injected message is marked synthetic",
+    (injected as { metadata?: { synthetic?: boolean } } | undefined)?.metadata?.synthetic === true,
+  )
 
   check("v2Setup returns a function", typeof cleanup === "function")
   let cleanupThrew: unknown = null

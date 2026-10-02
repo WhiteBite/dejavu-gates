@@ -16,6 +16,7 @@ jobs:
       - run: bun test/enforce.ts
       - run: bun test/adapters.ts
       - run: bun test/cli.ts
+      - run: bun test/store.ts
       - run: bun test/language-gaps.ts
       - run: bun test/guards.ts
       - run: bun test/messages.ts
@@ -24,7 +25,7 @@ jobs:
       - run: bun test/install.ts
       - run: bun test/v2-host.ts
       - run: bun test/cline-plugin.ts
-      - run: bun test/cline-plugin.ts
+      - run: bun test/env.ts
       - run: bun test/recurrence.ts
       - name: Install ast-grep
         run: npm install -g @ast-grep/cli@0.45

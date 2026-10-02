@@ -63,11 +63,16 @@ const pre1 = s1.hooks?.PreToolUse ?? []
 check("settings.json parses, exactly one dejavu PreToolUse entry", Array.isArray(pre1) && pre1.length === 1)
 const cmd1 = JSON.stringify(pre1)
 check("hook command carries src/cli.ts and --harness claude", cmd1.includes("src/cli.ts") && cmd1.includes("--harness claude"))
+const end1 = s1.hooks?.SessionEnd ?? []
+check("install wrote exactly one dejavu SessionEnd entry", Array.isArray(end1) && end1.length === 1)
+const endCmd1 = JSON.stringify(end1)
+check("SessionEnd command runs session-event --harness claude", endCmd1.includes("session-event") && endCmd1.includes("--harness claude"))
 
 const inst2 = run(["install", "--harness", "claude", "--project", "--yes"], a.cwd, a.home)
 check("re-install exits 0", inst2.code === 0)
 const s2 = JSON.parse(await readFile(settingsA, "utf8")) as Settings
 check("re-install stays idempotent (still one PreToolUse entry)", (s2.hooks?.PreToolUse ?? []).length === 1)
+check("re-install stays idempotent (still one SessionEnd entry)", (s2.hooks?.SessionEnd ?? []).length === 1)
 check("re-install rotated a .dejavu-bak backup", existsSync(`${settingsA}.dejavu-bak`))
 
 // --- S3+S4: foreign hook survives install AND uninstall ---
@@ -75,12 +80,15 @@ const b = await world("b")
 await mkdir(join(b.cwd, ".claude"), { recursive: true })
 const settingsB = join(b.cwd, ".claude", "settings.json")
 const foreignEntry = { matcher: "Bash", hooks: [{ type: "command", command: "echo foreign" }] }
-await writeFile(settingsB, JSON.stringify({ hooks: { PreToolUse: [foreignEntry] } }, null, 2), "utf8")
+const foreignEnd = { hooks: [{ type: "command", command: "echo foreign-end" }] }
+await writeFile(settingsB, JSON.stringify({ hooks: { PreToolUse: [foreignEntry], SessionEnd: [foreignEnd] } }, null, 2), "utf8")
 run(["install", "--harness", "claude", "--project", "--yes"], b.cwd, b.home)
 const sB1 = JSON.parse(await readFile(settingsB, "utf8")) as Settings
 const preB1 = JSON.stringify(sB1.hooks?.PreToolUse ?? [])
 check("install preserves the foreign hook entry", preB1.includes("echo foreign"))
 check("install adds dejavu alongside foreign", preB1.includes("--harness claude"))
+const endB1 = JSON.stringify(sB1.hooks?.SessionEnd ?? [])
+check("install adds dejavu SessionEnd alongside the foreign one", endB1.includes("--harness claude") && endB1.includes("echo foreign-end"))
 
 const un = run(["uninstall", "--harness", "claude", "--project", "--yes"], b.cwd, b.home)
 check("uninstall exits 0", un.code === 0)
@@ -88,6 +96,9 @@ const sB2 = JSON.parse(await readFile(settingsB, "utf8")) as Settings
 const preB2 = JSON.stringify(sB2.hooks?.PreToolUse ?? [])
 check("uninstall strips dejavu entries", !preB2.includes("--harness claude"))
 check("uninstall keeps the foreign entry", preB2.includes("echo foreign"))
+const endB2 = JSON.stringify(sB2.hooks?.SessionEnd ?? [])
+check("uninstall strips the dejavu SessionEnd entry", !endB2.includes("--harness claude"))
+check("uninstall keeps the foreign SessionEnd hook", endB2.includes("echo foreign-end"))
 
 // --- S5: auto-detect from user-scope markers (no --harness) ---
 const c = await world("c")

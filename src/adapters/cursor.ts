@@ -9,23 +9,7 @@
  * Unknown shape or session-event phase → null.
  */
 import type { HarnessAdapter, NormalizedEvent } from "../types"
-import { internalTool, internalArgs, str, rec, UNKNOWN_SESSION, makeOutbound, errorSignalled, genericToolOutput } from "./shared"
-
-/** Extract text from a tool_output value (string | object | null). */
-function extractOutput(value: unknown): string | null {
-  if (typeof value === "string") return value || null
-  if (typeof value === "object" && value !== null) {
-    const obj = value as Record<string, unknown>
-    const stdout = str(obj, "stdout")
-    const stderr = str(obj, "stderr")
-    const parts: string[] = []
-    if (stdout) parts.push(stdout)
-    if (stderr) parts.push(stderr)
-    if (parts.length > 0) return parts.join("\n")
-    return JSON.stringify(obj)
-  }
-  return null
-}
+import { internalTool, internalArgs, str, rec, UNKNOWN_SESSION, makeOutbound, errorSignalled, extractOutput, genericToolOutput } from "./shared"
 
 export const cursorAdapter: HarnessAdapter = {
   name: "cursor",
@@ -108,6 +92,7 @@ export const cursorAdapter: HarnessAdapter = {
       }
 
       if (phase === "post") {
+        const errored = errorSignalled(r, r.tool_output)
         let output = extractOutput(r.tool_output)
         // postToolUseFailure carries an `error` field - append after the output text
         const errorText = str(r, "error")
@@ -120,9 +105,10 @@ export const cursorAdapter: HarnessAdapter = {
           sessionId,
           callId,
           cwd,
-          output: genericToolOutput(toolMapped, output, errorSignalled(r, r.tool_output)),
+          output: genericToolOutput(toolMapped, output, errored),
           exitCode: null,
           channel: "text",
+          errored,
           raw,
         }
       }

@@ -1,5 +1,29 @@
 # Changelog
 
+## 2.48.0 - 2026-10-01
+
+### Fixed
+- **Chain attribution no longer feeds a producer's failure to a transparent segment's gate** — attribution iterates only non-transparent producer segments (`producerSegmentSignatures`, residual-identity guarded). Previously a single historical `cd` failure made every `cd X && real-command` failure land on the `bash:cd <path>` gate (count + snippet overwritten) while the real producer's gate starved below the promotion bar; pipe-tail formatters (`… | tail -5`) absorbed failures the same way.
+- **One-liner identity is quote-spelling-independent** — `python -c "print(1)"`, `'print(1)'` and bare `print(1)` now hash to ONE `<code:…>` key (the quote layer is stripped before fingerprinting; trailing arguments ride after the token instead of being swallowed into the hash). An agent switching quote style on retry now converges on the same gate. Existing quoted-one-liner gates keep their old keys and fade by TTL — the fingerprint is one-way, so no migration is possible; re-promotion is mechanical.
+- **Only a LANDED edit/write moves the workspace version** — a failed edit (structural `errored` signal, or a non-zero exit) no longer lifts the same-session hard block via iteration grace and no longer marks the next failure "iterated" (which starved promotion). Adapters and the Cline host now pass their `errorSignalled` verdict through the contract (`NormalizedEvent.errored`); OpenCode V2 already routed errors to the event channel, and V1 tool failures never reach the after-hook.
+- **"Subset additions still consolidate" is now true** — a strict flag addition onto an identical base (`gradlew test` → `gradlew test --no-daemon`, `git push` → `git push --force`) merges on an absolute distance budget (`SUBSET_ADD_MAX_DISTANCE`) when the 30% relative length band rejects; short commands no longer fragment into independently-counted flag variants. Disjoint flag sets still never merge; the O(1) band still rejects first (hot path under the gates lock).
+
+### Changed
+- **Repeat/loop-break channel extracted into the engine and wired into OpenCode V2** — `src/repeat-channel.ts` owns the transform-channel orchestration (marker sanitization, REPETITION/windowed/shape notes, loop-break injection); V1 keeps `experimental.chat.messages.transform`, V2 gains the equivalent via its `generate` session hook. V2 sessions now get the DashScope repetitive-call 400 protection that was previously V1-only, and a future host wires one engine call instead of copying ~200 lines.
+- **Host boot unified (`src/host-init.ts`)** — the reconcile→migrate→expire order, the jittered TTL sweep (with disposer) and the rate-limited hook-error sink exist once; per-host reduction is explicit options (the CLI declares no init event / no rotation / no health log instead of being a copy with deletions).
+- **CLI hook-init is multiple times cheaper per event** — `reconcile()` skips the gates.json rewrite on a no-op heal, log excise pre-filters by `{…}` envelope before JSON-parsing (doctor remains the full-parse pass), `expireAll` peeks the TTL cache before taking locks, and index `lastSeen`-only refreshes defer to the exit flush (structural index changes — new key, new project — still write immediately).
+- **Claude Code session cleanup is live** — the installer template registers `SessionEnd` → `dejavu session-event --harness claude`, and the Claude adapter maps it to `forgetSession`: `remindedSessions`/`failedSessions` no longer rot by 24h TTL alone. Other CLI harnesses stay TTL-only until their session-end surface is verified.
+- **Adapter output extraction unified** — one shared `extractOutput` (empty stdout/stderr parts no longer contribute a stray newline; kiro/devin and claude/codex previously rendered the same payload differently); post events carry the structural `errored` signal.
+- **Forensics and hygiene** — `detected` log events record the producing `harness`; the write-only `Verdict.degraded` contract field is removed (Crush degradation is expressed by `adapter.postChannel`); `atomicWrite`/`ntPath` live in `src/fs.ts` shared with the installer (which gains NT long-path safety); internal-only exports (`isDiagnosticText`, `isUnixViewerSignature`, `signCallShape`, `FailureDetection`, `isLongRunningCommand`, demotion/orphan tunables, installer internals, `num`) are no longer public; duplicated repeat-window/shape-loop scan skeletons unified.
+
+## 2.47.0 - 2026-10-01
+
+### Added
+- **`dejavu lesson`** — user-facing gate surface: `lesson list` shows enforced gates and whether each `correction` is still machine-generated, `lesson show <key>` prints one gate's evidence, and `lesson set <key> "<one-line fix>"` writes a human correction onto an EXISTING gate (sanitized, 200-char capped, under the store lock). It cannot create gates — promotion stays mechanical (3 failures across 2 sessions).
+
+### Changed
+- The hard-block message now points the agent at recording the root cause as a one-line `correction` on that gate.
+
 ## 2.46.2 - 2026-10-01
 
 ### Fixed

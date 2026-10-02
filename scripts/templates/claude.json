@@ -23,6 +23,14 @@
           { "type": "command", "command": "{{CLI}} post --harness claude", "timeout": 30 }
         ]
       }
+    ],
+    "SessionEnd": [
+      {
+        "matcher": "*",
+        "hooks": [
+          { "type": "command", "command": "{{CLI}} session-event --harness claude", "timeout": 30 }
+        ]
+      }
     ]
   }
 }

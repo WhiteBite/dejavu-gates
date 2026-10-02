@@ -5,23 +5,7 @@
  * hookSpecificOutput for annotation).
  */
 import type { HarnessAdapter, NormalizedEvent } from "../types"
-import { internalTool, internalArgs, str, rec, UNKNOWN_SESSION, denyDecision, makeOutbound, errorSignalled, genericToolOutput } from "./shared"
-
-/** Extract tool output text from a PostToolUse response payload. */
-function extractToolText(response: unknown): string | null {
-  if (typeof response === "string") return response
-  if (typeof response === "object" && response !== null) {
-    const obj = response as Record<string, unknown>
-    const stdout = str(obj, "stdout")
-    const stderr = str(obj, "stderr")
-    const parts: string[] = []
-    if (stdout) parts.push(stdout)
-    if (stderr) parts.push(stderr)
-    if (parts.length > 0) return parts.join("\n")
-    return JSON.stringify(obj)
-  }
-  return null
-}
+import { internalTool, internalArgs, str, rec, UNKNOWN_SESSION, denyDecision, makeOutbound, errorSignalled, extractOutput, genericToolOutput } from "./shared"
 
 export const claudeAdapter: HarnessAdapter = {
   name: "claude",
@@ -32,6 +16,27 @@ export const claudeAdapter: HarnessAdapter = {
     if (typeof raw !== "object" || raw === null) return null
 
     const r = raw as Record<string, unknown>
+
+    // SessionEnd is session teardown, not a tool call — cleanup-only, nothing to record
+    if (phase === "session-event") {
+      if (str(r, "hook_event_name") !== "SessionEnd") return null
+      const sessionId = str(r, "session_id")
+      if (sessionId === null || sessionId === "") return null
+      return {
+        harness: "claude",
+        phase,
+        tool: "session",
+        args: {},
+        sessionId,
+        callId: null,
+        cwd: str(r, "cwd"),
+        output: null,
+        exitCode: null,
+        channel: "event",
+        raw,
+      }
+    }
+
     const toolName = str(r, "tool_name")
 
     // tool_name missing or non-string → unrecognized payload
@@ -61,7 +66,8 @@ export const claudeAdapter: HarnessAdapter = {
 
     if (phase === "post") {
       const toolResponse = r.tool_response
-      let output = extractToolText(toolResponse) ?? null
+      const errored = errorSignalled(r, toolResponse)
+      let output = extractOutput(toolResponse)
 
       // PostToolUseFailure carries an `error` field — append after response text
       const errorText = str(r, "error")
@@ -77,14 +83,14 @@ export const claudeAdapter: HarnessAdapter = {
         sessionId,
         callId,
         cwd,
-        output: genericToolOutput(toolMapped, output, errorSignalled(r, toolResponse)),
+        output: genericToolOutput(toolMapped, output, errored),
         exitCode: null,
         channel: "text",
+        errored,
         raw,
       }
     }
 
-    // session-event: Claude has no such channel
     return null
   },
 

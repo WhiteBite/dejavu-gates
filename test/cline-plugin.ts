@@ -68,6 +68,17 @@ try {
   const noted = (await afterTool(post("s3", "c8", "execute_command", { command: grepCmd }, boom) as never)) as AfterResult | undefined
   check("a reminding gate annotates the failing output", (noted?.appendContext ?? "").includes("[dejavu] NOTE"))
 
+  const graceCmd = "cline-grace-tool --run"
+  const graceBoom = "Error: grace exploded\n"
+  await afterTool(post("g1", "gc1", "execute_command", { command: graceCmd }, graceBoom) as never)
+  await afterTool(post("g1", "gc2", "execute_command", { command: graceCmd }, graceBoom) as never)
+  await afterTool(post("g2", "gc3", "execute_command", { command: graceCmd }, graceBoom) as never)
+  await beforeTool(ctx("g3", "gc4", "execute_command", { command: graceCmd }) as never)
+  await afterTool(post("g3", "gc5", "execute_command", { command: graceCmd }, graceBoom) as never)
+  await afterTool(post("g3", "gc6", "write_to_file", { path: "src/x.ts", content: "x" }, "Error: write failed") as never)
+  const stillBlocked = (await beforeTool(ctx("g3", "gc7", "execute_command", { command: graceCmd }) as never)) as BeforeResult | undefined
+  check("a failed cline edit does not lift the block (errored wiring)", stillBlocked?.skip === true)
+
   const ok = (await afterTool(post("s3", "c9", "execute_command", { command: "echo hi" }, "hi\n") as never)) as AfterResult | undefined
   check("afterTool on a successful call returns undefined", ok === undefined)
 

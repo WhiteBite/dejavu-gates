@@ -23,7 +23,7 @@ export const crushAdapter: HarnessAdapter = {
 
     const r = raw as Record<string, unknown>
 
-    // tool_name must be present and non-string → null (unrecognized)
+    // tool_name missing or non-string → null (unrecognized)
     const toolName = str(r, "tool_name")
     if (toolName === null) return null
 

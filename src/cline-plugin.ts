@@ -1,6 +1,7 @@
 import { errorSignalled, extractOutput, genericToolOutput, internalArgs, internalTool, rec, str, UNKNOWN_SESSION } from "./adapters/shared"
 import { createEphemeralState, enforceAfter, enforceBefore, type EnforceContext } from "./enforce"
-import { createStores, GLOBAL_PROJECTS, NOISE_TTL_DAYS, PLUGIN_VERSION, TTL_DAYS } from "./store"
+import { initStores, rateLimitedErrorSink, scheduleSweep } from "./host-init"
+import { createStores } from "./store"
 import type { NormalizedEvent } from "./types"
 
 /** Narrow structural mirror of the Cline hook context (@cline/shared agent.ts) — no SDK dependency. */
@@ -24,10 +25,6 @@ interface ClineAfterResult {
   appendContext?: string
 }
 
-/** how often a long-lived process re-runs expiry */
-const TTL_INTERVAL_MS = 6 * 60 * 60 * 1000
-const HOOK_ERROR_LOG_INTERVAL_MS = 60_000
-
 // the Cline plugin sandbox subprocess runs with cwd = the project directory
 const projectDir = process.cwd()
 const stores = createStores(projectDir)
@@ -41,13 +38,7 @@ const log = (service: string, level: string, message: string): void => {
   }
 }
 
-let lastHookErrorLogMs = 0
-const onHookError = (where: string, error: unknown): void => {
-  const now = Date.now()
-  if (now - lastHookErrorLogMs < HOOK_ERROR_LOG_INTERVAL_MS) return
-  lastHookErrorLogMs = now
-  process.stderr.write(`[dejavu] ${where} hook error: ${error instanceof Error ? error.message : String(error)}\n`)
-}
+const onHookError = rateLimitedErrorSink((line) => process.stderr.write(`[dejavu] ${line}\n`))
 
 const enforceCtx: EnforceContext = {
   stores,
@@ -59,42 +50,15 @@ const enforceCtx: EnforceContext = {
 }
 
 // long-lived host: init once at module load; hooks await it before enforcing
-const initPromise = (async (): Promise<void> => {
-  try {
-    await stores.reconcileAll(GLOBAL_PROJECTS)
-    await stores.migrate()
-    await stores.expireAll(TTL_DAYS, NOISE_TTL_DAYS)
-    await stores.rotateLogs()
-    await stores.logAll({ type: "init", key: "dejavu", version: PLUGIN_VERSION })
-    const enforced = await stores.enforcedGates()
-    const notTeaching = enforced.filter((g) => g.recurredAfterGate >= 3).length
-    const review = enforced.filter((g) => g.review === true).length
-    if (notTeaching > 0 || review > 0) {
-      await stores.logAll({ type: "health", key: "dejavu", snippet: `not-teaching ${notTeaching}, review ${review}` })
-    }
-    log("dejavu", "info", `dejavu initialized v${PLUGIN_VERSION}`)
-  } catch (error) {
-    // init failures must not prevent hook registration — but must be visible
-    log("dejavu", "error", `dejavu init failed: ${error instanceof Error ? error.message : String(error)}`)
-  }
-})()
+const initPromise = initStores(stores, {
+  logInitEvent: true,
+  rotateLogs: true,
+  healthLog: true,
+  log: (level, message) => log("dejavu", level, `dejavu ${message}`),
+})
 
 // jittered sweep; the sandbox idle-reclaim is the cleanup, so no dispose export
-const scheduleTtl = (): void => {
-  const jitter = TTL_INTERVAL_MS * (0.75 + Math.random() * 0.5)
-  const timer = setTimeout(async () => {
-    try {
-      await stores.expireAll(TTL_DAYS, NOISE_TTL_DAYS)
-      await stores.rotateLogs()
-      await stores.flushDeferredAll()
-    } catch {
-      // sweep failures must not stop the timer
-    }
-    scheduleTtl()
-  }, jitter)
-  ;(timer as { unref?: () => void }).unref?.()
-}
-scheduleTtl()
+void scheduleSweep(stores)
 
 const beforeTool = async (context: ClineHookContext): Promise<ClineBeforeResult | undefined> => {
   try {
@@ -131,6 +95,7 @@ const afterTool = async (context: ClineAfterContext): Promise<ClineAfterResult |
     if (toolName === null) return undefined
     const tool = internalTool("cline", toolName)
     const result = rec(context, "result")
+    const errored = result !== null && errorSignalled(result, result)
     const event: NormalizedEvent = {
       harness: "cline",
       phase: "post",
@@ -139,8 +104,9 @@ const afterTool = async (context: ClineAfterContext): Promise<ClineAfterResult |
       sessionId: str(context.snapshot, "conversationId") ?? UNKNOWN_SESSION,
       callId: str(context.toolCall, "toolCallId"),
       cwd: projectDir,
-      output: result === null ? null : genericToolOutput(tool, extractOutput(result.output), errorSignalled(result, result)),
+      output: result === null ? null : genericToolOutput(tool, extractOutput(result.output), errored),
       exitCode: null,
+      errored,
       channel: "text",
       raw: context,
     }

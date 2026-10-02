@@ -70,27 +70,20 @@ export function rec(obj: unknown, key: string): Record<string, unknown> | null {
   return typeof value === "object" && value !== null ? (value as Record<string, unknown>) : null
 }
 
-/** Safe integer field extraction (exit codes, when a harness ever provides one). */
-export function num(obj: unknown, key: string): number | null {
-  if (typeof obj !== "object" || obj === null) return null
-  const value = (obj as Record<string, unknown>)[key]
-  return typeof value === "number" && Number.isInteger(value) ? value : null
-}
-
 /** session id fallback — the engine keys session state on this string */
 export const UNKNOWN_SESSION = "unknown"
 
-/** Extract output text from a post-hook payload field: string, array of lines, or {stdout,stderr} object. */
+/** Extract output text from a post-hook payload field: string, array of lines, or {stdout,stderr} object. Empty parts contribute nothing. */
 export function extractOutput(value: unknown): string | null {
-  if (typeof value === "string") return value === "" ? null : value
+  if (typeof value === "string") return value || null
   if (Array.isArray(value)) return value.map(String).join("\n") || null
   if (typeof value === "object" && value !== null) {
     const obj = value as Record<string, unknown>
     const parts: string[] = []
     const stdout = str(obj, "stdout")
     const stderr = str(obj, "stderr")
-    if (stdout !== null) parts.push(stdout)
-    if (stderr !== null) parts.push(stderr)
+    if (stdout) parts.push(stdout)
+    if (stderr) parts.push(stderr)
     if (parts.length > 0) return parts.join("\n")
     return JSON.stringify(value)
   }

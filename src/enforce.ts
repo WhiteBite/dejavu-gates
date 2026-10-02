@@ -25,6 +25,18 @@ export {
 export { blockMessage, remindMessage, remindNote } from "./messages"
 export { guardBypassWarnings, proactiveGuardMessage } from "./guards"
 export { REPEAT_BLOCK_AT, REPEAT_STOP_AFTER, repeatSeriesDecision, type RepeatDecision } from "./repeat"
+export {
+  applyRepeatChannel,
+  REPEAT_REMIND_AT,
+  REPEAT_WINDOW_MIN,
+  REPEAT_WINDOW_ROUNDS,
+  SHAPE_LOOP_MIN,
+  type LoopBreakInjection,
+  type RepeatChannelMessage,
+  type RepeatChannelPart,
+  type RepeatChannelResult,
+  type RepeatChannelState,
+} from "./repeat-channel"
 export { enforceBefore } from "./before"
 export { enforceAfter } from "./after"
 export { cleanupSession, recordEventFailure } from "./event"

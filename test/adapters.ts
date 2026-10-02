@@ -47,18 +47,41 @@ check("claude pre non-object payload → null", claudeAdapter.mapInbound("pre", 
 const claudeSessionEvent = { tool_name: "Bash" }
 check("claude session-event → null", claudeAdapter.mapInbound("session-event", claudeSessionEvent) === null)
 
+// --- claude: mapInbound session-event (SessionEnd cleanup channel) ---
+const claudeSessionEnd = { hook_event_name: "SessionEnd", session_id: "cs-end-1", cwd: "/tmp", transcript_path: "/tmp/t.jsonl", reason: "clear" }
+const ceEnd = claudeAdapter.mapInbound("session-event", claudeSessionEnd)
+check("claude SessionEnd → phase session-event", ceEnd?.phase === "session-event")
+check("claude SessionEnd → tool 'session'", ceEnd?.tool === "session")
+check("claude SessionEnd → sessionId", ceEnd?.sessionId === "cs-end-1")
+check("claude SessionEnd → callId null", ceEnd?.callId === null)
+check("claude SessionEnd → output null (cleanup-only, nothing to record)", ceEnd?.output === null)
+check("claude SessionEnd → exitCode null", ceEnd?.exitCode === null)
+check("claude SessionEnd → channel 'event'", ceEnd?.channel === "event")
+check("claude SessionEnd → harness", ceEnd?.harness === "claude")
+
+check("claude SessionEnd without session_id → null", claudeAdapter.mapInbound("session-event", { hook_event_name: "SessionEnd" }) === null)
+check("claude session-event with a non-SessionEnd hook event → null", claudeAdapter.mapInbound("session-event", { hook_event_name: "SessionStart", session_id: "s" }) === null)
+check("claude session-event non-object payload → null", claudeAdapter.mapInbound("session-event", 42) === null)
+
 // --- claude: mapInbound post ---
 const claudePostOk = { tool_name: "Bash", tool_input: { command: "echo hi" }, session_id: "cs-5", tool_use_id: "tu-cla-5", tool_response: "hello world" }
 const ce5 = claudeAdapter.mapInbound("post", claudePostOk)
 check("claude post tool_response string → output", ce5?.output === "hello world")
+check("claude post clean event → errored falsy", !ce5?.errored)
+check("claude pre event → errored not set", ce1?.errored === undefined)
 
 const claudePostObj = { tool_name: "Bash", tool_input: { command: "echo hi" }, session_id: "cs-6", tool_use_id: "tu-cla-6", tool_response: { stdout: "out", stderr: "err" } }
 const ce6 = claudeAdapter.mapInbound("post", claudePostObj)
 check("claude post tool_response object{stdout,stderr} → joined output", ce6?.output === "out\nerr")
 
+const claudePostEmptyStdout = { tool_name: "Bash", tool_input: { command: "x" }, session_id: "cs-6b", tool_use_id: "tu-cla-6b", tool_response: { stdout: "", stderr: "err" } }
+const ce6b = claudeAdapter.mapInbound("post", claudePostEmptyStdout)
+check("claude post empty stdout skipped → no leading newline", ce6b?.output === "err")
+
 const claudePostFailure = { tool_name: "Bash", tool_input: { command: "x" }, session_id: "cs-7", tool_use_id: "tu-cla-7", tool_response: "resp", error: "boom" }
 const ce7 = claudeAdapter.mapInbound("post", claudePostFailure)
 check("claude post PostToolUseFailure appends error after response text", ce7?.output === "resp\nboom")
+check("claude post error-field payload → errored true", ce7?.errored === true)
 
 const claudePostGenericOk = { hook_event_name: "PostToolUse", tool_name: "mcp__srv__reboot", tool_input: { action: "status" }, session_id: "cs-8", tool_use_id: "tu-cla-8", tool_response: "TypeError: boom" }
 const ce8 = claudeAdapter.mapInbound("post", claudePostGenericOk)
@@ -67,33 +90,34 @@ check("claude post successful generic result → output null (content is not fai
 const claudePostGenericErr = { hook_event_name: "PostToolUseFailure", tool_name: "mcp__srv__reboot", tool_input: {}, session_id: "cs-9", tool_use_id: "tu-cla-9", error: "Error: boom" }
 const ce9 = claudeAdapter.mapInbound("post", claudePostGenericErr)
 check("claude post failed generic result → error text is the output", ce9?.output === "Error: boom")
+check("claude post PostToolUseFailure hook event → errored true", ce9?.errored === true)
 
 // --- claude: mapOutbound allow ---
-const ao1 = claudeAdapter.mapOutbound("pre", { action: "allow", reason: null, annotation: null, degraded: false })
+const ao1 = claudeAdapter.mapOutbound("pre", { action: "allow", reason: null, annotation: null })
 check("claude mapOutbound allow → json={}, exitCode 0, stderr null", Object.keys(ao1.json as object).length === 0 && ao1.exitCode === 0 && ao1.stderr === null)
 
 // --- claude: mapOutbound deny (exit-2 dialect) ---
-const do1 = claudeAdapter.mapOutbound("pre", { action: "deny", reason: "[dejavu] BLOCKED", annotation: null, degraded: false })
+const do1 = claudeAdapter.mapOutbound("pre", { action: "deny", reason: "[dejavu] BLOCKED", annotation: null })
 check("claude deny → exitCode 2", do1.exitCode === 2)
 check("claude deny → stderr = reason", do1.stderr === "[dejavu] BLOCKED")
 check("claude deny → json empty", Object.keys(do1.json as object).length === 0)
 
 // --- claude: post never blocks — annotation rides on the already-run call ---
-const do2 = claudeAdapter.mapOutbound("post", { action: "deny", reason: "blocked", annotation: null, degraded: false })
+const do2 = claudeAdapter.mapOutbound("post", { action: "deny", reason: "blocked", annotation: null })
 check("claude post with no annotation → allowDecision (post never denies)", do2.exitCode === 0 && Object.keys(do2.json as object).length === 0)
 
-const an1 = claudeAdapter.mapOutbound("post", { action: "deny", reason: "block", annotation: "NOTE: this is a reminder", degraded: false })
+const an1 = claudeAdapter.mapOutbound("post", { action: "deny", reason: "block", annotation: "NOTE: this is a reminder" })
 check("claude post annotation wins over deny → additionalContext exit 0", an1.exitCode === 0 && ((an1.json as Record<string, unknown>).hookSpecificOutput as Record<string, unknown>).additionalContext === "NOTE: this is a reminder")
 
 // the real CLI contract: a post verdict is action:"allow" + annotation
-const claudeCli = claudeAdapter.mapOutbound("post", { action: "allow", reason: null, annotation: "[dejavu] NOTE: x", degraded: false })
+const claudeCli = claudeAdapter.mapOutbound("post", { action: "allow", reason: null, annotation: "[dejavu] NOTE: x" })
 check("claude post allow+annotation (CLI contract) → additionalContext exit 0", claudeCli.exitCode === 0 && ((claudeCli.json as Record<string, unknown>).hookSpecificOutput as Record<string, unknown>).additionalContext === "[dejavu] NOTE: x")
 
-const claudeTrunc = claudeAdapter.mapOutbound("post", { action: "allow", reason: null, annotation: "z".repeat(11000), degraded: false })
+const claudeTrunc = claudeAdapter.mapOutbound("post", { action: "allow", reason: null, annotation: "z".repeat(11000) })
 check("claude post annotation truncated to 10000", (((claudeTrunc.json as Record<string, unknown>).hookSpecificOutput as Record<string, unknown>).additionalContext as string).length === 10000)
 
 // --- claude: pre deny → exit-2 dialect ---
-const fbPre = claudeAdapter.mapOutbound("pre", { action: "deny", reason: "reason", annotation: null, degraded: false })
+const fbPre = claudeAdapter.mapOutbound("pre", { action: "deny", reason: "reason", annotation: null })
 check("claude pre deny → denyDecision exit 2 + stderr", fbPre.exitCode === 2 && fbPre.stderr === "reason")
 
 // --- codex: mapInbound pre ---
@@ -132,23 +156,23 @@ const xe6 = codexAdapter.mapInbound("post", codexPostObj)
 check("codex post tool_response object{stdout,stderr} → joined", xe6?.output === "so\nse")
 
 // --- codex: mapOutbound allow ---
-const cao = codexAdapter.mapOutbound("pre", { action: "allow", reason: null, annotation: null, degraded: false })
+const cao = codexAdapter.mapOutbound("pre", { action: "allow", reason: null, annotation: null })
 check("codex allow → exitCode 0", cao.exitCode === 0)
 
 // --- codex: mapOutbound deny (exit-2 dialect) ---
-const cdo = codexAdapter.mapOutbound("pre", { action: "deny", reason: "[dejavu] BLOCKED", annotation: null, degraded: false })
+const cdo = codexAdapter.mapOutbound("pre", { action: "deny", reason: "[dejavu] BLOCKED", annotation: null })
 check("codex deny → exitCode 2", cdo.exitCode === 2)
 check("codex deny → stderr = reason", cdo.stderr === "[dejavu] BLOCKED")
 
 // --- codex: post annotation rides on the already-run call ---
-const can = codexAdapter.mapOutbound("post", { action: "deny", reason: "block", annotation: "annotated", degraded: false })
+const can = codexAdapter.mapOutbound("post", { action: "deny", reason: "block", annotation: "annotated" })
 check("codex post annotation wins over deny → additionalContext", ((can.json as Record<string, unknown>)?.hookSpecificOutput as Record<string, unknown>)?.additionalContext === "annotated")
 check("codex post annotation → exitCode 0", can.exitCode === 0)
 
-const codexCli = codexAdapter.mapOutbound("post", { action: "allow", reason: null, annotation: "[dejavu] NOTE", degraded: false })
+const codexCli = codexAdapter.mapOutbound("post", { action: "allow", reason: null, annotation: "[dejavu] NOTE" })
 check("codex post allow+annotation (CLI contract) → additionalContext exit 0", codexCli.exitCode === 0 && ((codexCli.json as Record<string, unknown>).hookSpecificOutput as Record<string, unknown>).additionalContext === "[dejavu] NOTE")
 
-const codexPostNoAnnot = codexAdapter.mapOutbound("post", { action: "allow", reason: null, annotation: null, degraded: false })
+const codexPostNoAnnot = codexAdapter.mapOutbound("post", { action: "allow", reason: null, annotation: null })
 check("codex post no annotation → allowDecision (post never denies)", codexPostNoAnnot.exitCode === 0 && Object.keys(codexPostNoAnnot.json as object).length === 0)
 
 // --- gemini: mapInbound pre ---
@@ -182,6 +206,11 @@ check("gemini session-event → null", geminiAdapter.mapInbound("session-event",
 const gemPostErr = { tool_name: "run_shell_command", tool_input: { command: "x" }, session_id: "gs-7", tool_response: { error: "fail", returnDisplay: "disp", llmContent: "lc" } }
 const ge7 = geminiAdapter.mapInbound("post", gemPostErr)
 check("gemini post tool_response.error takes priority", ge7?.output === "fail")
+check("gemini post error-field ladder hit → errored true", ge7?.errored === true)
+
+const gemPostDisplayObj = { tool_name: "run_shell_command", tool_input: { command: "x" }, session_id: "gs-7b", tool_response: { returnDisplay: { text: "disp" } } }
+const ge7b = geminiAdapter.mapInbound("post", gemPostDisplayObj)
+check("gemini post structured returnDisplay → JSON stringified (ladder keeps per-field stringify)", ge7b?.output === '{"text":"disp"}')
 
 const gemPostDisplay = { tool_name: "run_shell_command", tool_input: { command: "x" }, session_id: "gs-8", tool_response: { returnDisplay: "display text" } }
 const ge8 = geminiAdapter.mapInbound("post", gemPostDisplay)
@@ -196,22 +225,22 @@ const ge10 = geminiAdapter.mapInbound("post", gemPostNull)
 check("gemini post empty tool_response → output null", ge10?.output === null)
 
 // --- gemini: mapOutbound allow ---
-const gao = geminiAdapter.mapOutbound("pre", { action: "allow", reason: null, annotation: null, degraded: false })
+const gao = geminiAdapter.mapOutbound("pre", { action: "allow", reason: null, annotation: null })
 check("gemini allow → exitCode 0", gao.exitCode === 0)
 
 // --- gemini: mapOutbound deny (exit-2 dialect) ---
-const gdo = geminiAdapter.mapOutbound("pre", { action: "deny", reason: "[dejavu] BLOCKED", annotation: null, degraded: false })
+const gdo = geminiAdapter.mapOutbound("pre", { action: "deny", reason: "[dejavu] BLOCKED", annotation: null })
 check("gemini deny → exitCode 2", gdo.exitCode === 2)
 check("gemini deny → stderr = reason", gdo.stderr === "[dejavu] BLOCKED")
 
 // --- gemini: post annotation rides on the already-run call ---
-const gan = geminiAdapter.mapOutbound("post", { action: "deny", reason: "block", annotation: "note here", degraded: false })
+const gan = geminiAdapter.mapOutbound("post", { action: "deny", reason: "block", annotation: "note here" })
 check("gemini post annotation wins over deny → additionalContext exit 0", gan.exitCode === 0 && ((gan.json as Record<string, unknown>).hookSpecificOutput as Record<string, unknown>).additionalContext === "note here")
 
-const geminiCli = geminiAdapter.mapOutbound("post", { action: "allow", reason: null, annotation: "[dejavu] NOTE", degraded: false })
+const geminiCli = geminiAdapter.mapOutbound("post", { action: "allow", reason: null, annotation: "[dejavu] NOTE" })
 check("gemini post allow+annotation (CLI contract) → additionalContext exit 0", geminiCli.exitCode === 0 && ((geminiCli.json as Record<string, unknown>).hookSpecificOutput as Record<string, unknown>).additionalContext === "[dejavu] NOTE")
 
-const geminiPostNoAnnot = geminiAdapter.mapOutbound("post", { action: "allow", reason: null, annotation: null, degraded: false })
+const geminiPostNoAnnot = geminiAdapter.mapOutbound("post", { action: "allow", reason: null, annotation: null })
 check("gemini post no annotation → allowDecision (post never denies)", geminiPostNoAnnot.exitCode === 0 && Object.keys(geminiPostNoAnnot.json as object).length === 0)
 
 // --- cursor: mapInbound pre Family A (shell events) ---
@@ -255,24 +284,24 @@ const curSessionEvent = { command: "ls" }
 check("cursor session-event → null", cursorAdapter.mapInbound("session-event", curSessionEvent) === null)
 
 // --- cursor: mapOutbound allow ---
-const cau = cursorAdapter.mapOutbound("pre", { action: "allow", reason: null, annotation: null, degraded: false })
+const cau = cursorAdapter.mapOutbound("pre", { action: "allow", reason: null, annotation: null })
 check("cursor allow → exitCode 0", cau.exitCode === 0)
 
 // --- cursor: mapOutbound deny (native JSON exit-0 dialect) ---
-const cdu = cursorAdapter.mapOutbound("pre", { action: "deny", reason: "[dejavu] BLOCKED", annotation: null, degraded: false })
+const cdu = cursorAdapter.mapOutbound("pre", { action: "deny", reason: "[dejavu] BLOCKED", annotation: null })
 check("cursor deny → exitCode 0 (native JSON)", cdu.exitCode === 0)
 check("cursor deny → json.permission = 'deny'", (cdu.json as Record<string, unknown>)?.permission === "deny")
 check("cursor deny → json.agent_message = reason", (cdu.json as Record<string, unknown>)?.agent_message === "[dejavu] BLOCKED")
 check("cursor deny → json.user_message present", typeof (cdu.json as Record<string, unknown>)?.user_message === "string")
 
 // --- cursor: post annotation rides on the already-run call ---
-const can2 = cursorAdapter.mapOutbound("post", { action: "deny", reason: "block", annotation: "cursor note", degraded: false })
+const can2 = cursorAdapter.mapOutbound("post", { action: "deny", reason: "block", annotation: "cursor note" })
 check("cursor post annotation wins over deny → additional_context exit 0", can2.exitCode === 0 && (can2.json as Record<string, unknown>)?.additional_context === "cursor note")
 
-const cursorCli = cursorAdapter.mapOutbound("post", { action: "allow", reason: null, annotation: "[dejavu] NOTE", degraded: false })
+const cursorCli = cursorAdapter.mapOutbound("post", { action: "allow", reason: null, annotation: "[dejavu] NOTE" })
 check("cursor post allow+annotation (CLI contract) → additional_context exit 0", cursorCli.exitCode === 0 && (cursorCli.json as Record<string, unknown>)?.additional_context === "[dejavu] NOTE")
 
-const cursorPostNoAnnot = cursorAdapter.mapOutbound("post", { action: "allow", reason: null, annotation: null, degraded: false })
+const cursorPostNoAnnot = cursorAdapter.mapOutbound("post", { action: "allow", reason: null, annotation: null })
 check("cursor post no annotation → allowDecision (post never denies)", cursorPostNoAnnot.exitCode === 0 && Object.keys(cursorPostNoAnnot.json as object).length === 0)
 
 // --- copilot: mapInbound pre camelCase casing ---
@@ -325,6 +354,10 @@ const cpPostPascalErr = { tool_name: "Bash", tool_input: { command: "x" }, sessi
 const co10 = copilotAdapter.mapInbound("post", cpPostPascalErr)
 check("copilot post PascalCase appends error to output", co10?.output === "resp\nfailure text")
 
+const cpPostEmptyStdout = { tool_name: "Bash", tool_input: { command: "x" }, session_id: "cp-s-11", tool_response: { stdout: "", stderr: "err" } }
+const co11 = copilotAdapter.mapInbound("post", cpPostEmptyStdout)
+check("copilot post empty stdout skipped → no leading newline", co11?.output === "err")
+
 // --- copilot: unrecognized → null ---
 const cpUnknown = { randomField: true }
 check("copilot unrecognized shape → null", copilotAdapter.mapInbound("pre", cpUnknown) === null)
@@ -333,27 +366,27 @@ const cpSessionEvent = { toolName: "Bash" }
 check("copilot session-event → null", copilotAdapter.mapInbound("session-event", cpSessionEvent) === null)
 
 // --- copilot: mapOutbound allow ---
-const cpo = copilotAdapter.mapOutbound("pre", { action: "allow", reason: null, annotation: null, degraded: false })
+const cpo = copilotAdapter.mapOutbound("pre", { action: "allow", reason: null, annotation: null })
 check("copilot allow → exitCode 0", cpo.exitCode === 0)
 
 // --- copilot: mapOutbound deny (native JSON exit-0 dialect) ---
-const cpd = copilotAdapter.mapOutbound("pre", { action: "deny", reason: "[dejavu] BLOCKED", annotation: null, degraded: false })
+const cpd = copilotAdapter.mapOutbound("pre", { action: "deny", reason: "[dejavu] BLOCKED", annotation: null })
 check("copilot deny → exitCode 0 (native JSON)", cpd.exitCode === 0)
 check("copilot deny → permissionDecision='deny'", (cpd.json as Record<string, unknown>)?.permissionDecision === "deny")
 check("copilot deny → permissionDecisionReason = reason", (cpd.json as Record<string, unknown>)?.permissionDecisionReason === "[dejavu] BLOCKED")
 
 // --- copilot: post annotation rides on the already-run call ---
-const cpa = copilotAdapter.mapOutbound("post", { action: "deny", reason: "block", annotation: "copilot note", degraded: false })
+const cpa = copilotAdapter.mapOutbound("post", { action: "deny", reason: "block", annotation: "copilot note" })
 check("copilot post annotation wins over deny → additionalContext exit 0", cpa.exitCode === 0 && (cpa.json as Record<string, unknown>)?.additionalContext === "copilot note")
 
 const cpLongAnnot = "z".repeat(11000)
-const cpTrunc = copilotAdapter.mapOutbound("post", { action: "deny", reason: "block", annotation: cpLongAnnot, degraded: false })
+const cpTrunc = copilotAdapter.mapOutbound("post", { action: "deny", reason: "block", annotation: cpLongAnnot })
 check("copilot post annotation truncated to 10000", ((cpTrunc.json as Record<string, unknown>)?.additionalContext as string).length === 10000)
 
-const copilotCli = copilotAdapter.mapOutbound("post", { action: "allow", reason: null, annotation: "[dejavu] NOTE", degraded: false })
+const copilotCli = copilotAdapter.mapOutbound("post", { action: "allow", reason: null, annotation: "[dejavu] NOTE" })
 check("copilot post allow+annotation (CLI contract) → additionalContext exit 0", copilotCli.exitCode === 0 && (copilotCli.json as Record<string, unknown>)?.additionalContext === "[dejavu] NOTE")
 
-const cpaAbsent = copilotAdapter.mapOutbound("post", { action: "deny", reason: "block", annotation: null, degraded: false })
+const cpaAbsent = copilotAdapter.mapOutbound("post", { action: "deny", reason: "block", annotation: null })
 check("copilot post no annotation → allowDecision (post never denies)", cpaAbsent.exitCode === 0 && Object.keys(cpaAbsent.json as object).length === 0)
 
 // --- crush: mapInbound pre ---
@@ -379,11 +412,11 @@ check("crush mapInbound('post', anyObject) → null", crushAdapter.mapInbound("p
 check("crush mapInbound('session-event', anyObject) → null", crushAdapter.mapInbound("session-event", crPostAny) === null)
 
 // --- crush: mapOutbound allow ---
-const cro = crushAdapter.mapOutbound("pre", { action: "allow", reason: null, annotation: null, degraded: false })
+const cro = crushAdapter.mapOutbound("pre", { action: "allow", reason: null, annotation: null })
 check("crush allow → exitCode 0", cro.exitCode === 0)
 
 // --- crush: mapOutbound pre deny (native JSON dialect) ---
-const crd = crushAdapter.mapOutbound("pre", { action: "deny", reason: "[dejavu] BLOCKED", annotation: null, degraded: false })
+const crd = crushAdapter.mapOutbound("pre", { action: "deny", reason: "[dejavu] BLOCKED", annotation: null })
 check("crush pre deny → exitCode 0 (native JSON)", crd.exitCode === 0)
 check("crush pre deny → version: 1", (crd.json as Record<string, unknown>)?.version === 1)
 check("crush pre deny → decision: 'deny'", (crd.json as Record<string, unknown>)?.decision === "deny")
@@ -391,12 +424,12 @@ check("crush pre deny → halt: false", (crd.json as Record<string, unknown>)?.h
 check("crush pre deny → reason = verdict.reason", (crd.json as Record<string, unknown>)?.reason === "[dejavu] BLOCKED")
 
 // --- crush: mapOutbound post → degraded no-op (always allowDecision regardless of verdict) ---
-const crdp = crushAdapter.mapOutbound("post", { action: "deny", reason: "should not matter", annotation: null, degraded: true })
+const crdp = crushAdapter.mapOutbound("post", { action: "deny", reason: "should not matter", annotation: null })
 check("crush post deny → allowDecision (degraded no-op)", crdp.exitCode === 0)
 check("crush post deny → json={}", Object.keys(crdp.json as object).length === 0)
 
 // --- crush: mapOutbound session-event → degraded no-op ---
-const crdse = crushAdapter.mapOutbound("session-event", { action: "deny", reason: "x", annotation: null, degraded: true })
+const crdse = crushAdapter.mapOutbound("session-event", { action: "deny", reason: "x", annotation: null })
 check("crush session-event → allowDecision (degraded no-op)", crdse.exitCode === 0)
 
 // --- crush: non-object inbound → null ---
@@ -435,25 +468,32 @@ check("devin post tool_response {stdout,stderr} → joined", dvPostObj?.output =
 const dvPostErr = devinAdapter.mapInbound("post", { hook_event_name: "PostToolUse", tool_name: "exec", tool_input: { command: "x" }, session_id: "dv-7", tool_response: "resp", error: "boom" })
 check("devin post appends error after response text", dvPostErr?.output === "resp\nboom")
 
+const dvPostEmptyStdout = devinAdapter.mapInbound("post", { hook_event_name: "PostToolUse", tool_name: "exec", tool_input: { command: "x" }, session_id: "dv-7b", tool_response: { stdout: "", stderr: "err" } })
+check("devin post empty stdout skipped → no leading newline (shared extractor consumer)", dvPostEmptyStdout?.output === "err")
+
+const dvPostIsError = devinAdapter.mapInbound("post", { hook_event_name: "PostToolUse", tool_name: "exec", tool_input: { command: "x" }, session_id: "dv-7c", tool_response: { stdout: "so", is_error: true } })
+check("devin post tool_response{is_error} → errored true", dvPostIsError?.errored === true)
+check("devin post clean object response → errored falsy", !dvPostObj?.errored)
+
 // --- devin: mapOutbound (claude wire dialect) ---
-const dvAllow = devinAdapter.mapOutbound("pre", { action: "allow", reason: null, annotation: null, degraded: false })
+const dvAllow = devinAdapter.mapOutbound("pre", { action: "allow", reason: null, annotation: null })
 check("devin allow → json {} exit 0", dvAllow.exitCode === 0 && Object.keys(dvAllow.json as object).length === 0)
 
-const dvDeny = devinAdapter.mapOutbound("pre", { action: "deny", reason: "[dejavu] BLOCKED", annotation: null, degraded: false })
+const dvDeny = devinAdapter.mapOutbound("pre", { action: "deny", reason: "[dejavu] BLOCKED", annotation: null })
 check("devin deny → exit 2 + stderr reason + json {}", dvDeny.exitCode === 2 && dvDeny.stderr === "[dejavu] BLOCKED" && Object.keys(dvDeny.json as object).length === 0)
 
-const dvAnnote = devinAdapter.mapOutbound("post", { action: "allow", reason: null, annotation: "[dejavu] NOTE: x", degraded: false })
+const dvAnnote = devinAdapter.mapOutbound("post", { action: "allow", reason: null, annotation: "[dejavu] NOTE: x" })
 const dvHso = (dvAnnote.json as Record<string, unknown>).hookSpecificOutput as Record<string, unknown>
 check("devin post annotate → hookSpecificOutput.additionalContext exit 0", dvAnnote.exitCode === 0 && dvHso.additionalContext === "[dejavu] NOTE: x")
 check("devin post annotate → hookEventName PostToolUse", dvHso.hookEventName === "PostToolUse")
 
-const dvTrunc = devinAdapter.mapOutbound("post", { action: "allow", reason: null, annotation: "z".repeat(11000), degraded: false })
+const dvTrunc = devinAdapter.mapOutbound("post", { action: "allow", reason: null, annotation: "z".repeat(11000) })
 check("devin post annotation truncated to 10000", (((dvTrunc.json as Record<string, unknown>).hookSpecificOutput as Record<string, unknown>).additionalContext as string).length === 10000)
 
-const dvPostDeny = devinAdapter.mapOutbound("post", { action: "deny", reason: "block", annotation: "note wins", degraded: false })
+const dvPostDeny = devinAdapter.mapOutbound("post", { action: "deny", reason: "block", annotation: "note wins" })
 check("devin post annotation wins over deny (post never blocks)", dvPostDeny.exitCode === 0 && ((dvPostDeny.json as Record<string, unknown>).hookSpecificOutput as Record<string, unknown>).additionalContext === "note wins")
 
-const dvPostNone = devinAdapter.mapOutbound("post", { action: "allow", reason: null, annotation: null, degraded: false })
+const dvPostNone = devinAdapter.mapOutbound("post", { action: "allow", reason: null, annotation: null })
 check("devin post no annotation → allowDecision", dvPostNone.exitCode === 0 && Object.keys(dvPostNone.json as object).length === 0)
 
 // --- kiro: mapInbound pre ---
@@ -488,23 +528,23 @@ const krPostErr = kiroAdapter.mapInbound("post", { hook_event_name: "postToolUse
 check("kiro post appends error after output", krPostErr?.output === "resp\nerr tail")
 
 // --- kiro: mapOutbound (stdout IS the context channel) ---
-const krAllow = kiroAdapter.mapOutbound("pre", { action: "allow", reason: null, annotation: null, degraded: false })
+const krAllow = kiroAdapter.mapOutbound("pre", { action: "allow", reason: null, annotation: null })
 check("kiro pre allow → stdoutRaw '' exit 0 (writes nothing)", krAllow.exitCode === 0 && krAllow.stdoutRaw === "")
 
-const krDeny = kiroAdapter.mapOutbound("pre", { action: "deny", reason: "[dejavu] BLOCKED", annotation: null, degraded: false })
+const krDeny = kiroAdapter.mapOutbound("pre", { action: "deny", reason: "[dejavu] BLOCKED", annotation: null })
 check("kiro pre deny → exit 2 + stderr reason", krDeny.exitCode === 2 && krDeny.stderr === "[dejavu] BLOCKED")
 
-const krAnnote = kiroAdapter.mapOutbound("post", { action: "allow", reason: null, annotation: "[dejavu] NOTE: raw", degraded: false })
+const krAnnote = kiroAdapter.mapOutbound("post", { action: "allow", reason: null, annotation: "[dejavu] NOTE: raw" })
 check("kiro post annotate → stdoutRaw IS the note, exit 0, stderr null", krAnnote.stdoutRaw === "[dejavu] NOTE: raw" && krAnnote.exitCode === 0 && krAnnote.stderr === null)
 check("kiro post annotate → json stays {}", Object.keys(krAnnote.json as object).length === 0)
 
-const krTrunc = kiroAdapter.mapOutbound("post", { action: "allow", reason: null, annotation: "z".repeat(11000), degraded: false })
+const krTrunc = kiroAdapter.mapOutbound("post", { action: "allow", reason: null, annotation: "z".repeat(11000) })
 check("kiro post annotation truncated to 10000", (krTrunc.stdoutRaw ?? "").length === 10000)
 
-const krPostAllow = kiroAdapter.mapOutbound("post", { action: "allow", reason: null, annotation: null, degraded: false })
+const krPostAllow = kiroAdapter.mapOutbound("post", { action: "allow", reason: null, annotation: null })
 check("kiro post no annotation → stdoutRaw '' exit 0", krPostAllow.stdoutRaw === "" && krPostAllow.exitCode === 0)
 
-const krPostDeny = kiroAdapter.mapOutbound("post", { action: "deny", reason: "block", annotation: "wins", degraded: false })
+const krPostDeny = kiroAdapter.mapOutbound("post", { action: "deny", reason: "block", annotation: "wins" })
 check("kiro post annotation wins over deny (post never blocks)", krPostDeny.stdoutRaw === "wins" && krPostDeny.exitCode === 0)
 
 // --- makeOutbound: optional allow override in the dialect ---
@@ -514,11 +554,11 @@ const customDialect = makeOutbound({
   annotate: null,
   allow: customAllow,
 })
-const preAllow = customDialect("pre", { action: "allow", reason: null, annotation: null, degraded: false })
+const preAllow = customDialect("pre", { action: "allow", reason: null, annotation: null })
 check("makeOutbound allow override: pre-allow uses custom allow", (preAllow.json as Record<string, unknown>)?.custom === "allow")
 check("makeOutbound allow override: pre-allow exitCode 0", preAllow.exitCode === 0)
 
-const postNoAnnot = customDialect("post", { action: "allow", reason: null, annotation: null, degraded: false })
+const postNoAnnot = customDialect("post", { action: "allow", reason: null, annotation: null })
 check("makeOutbound allow override: post-no-annotation uses custom allow", (postNoAnnot.json as Record<string, unknown>)?.custom === "allow")
 
 const annotatedDialect = makeOutbound({
@@ -526,14 +566,14 @@ const annotatedDialect = makeOutbound({
   annotate: (ann) => ({ json: { note: ann }, exitCode: 0, stderr: null }),
   allow: customAllow,
 })
-const postAnnot = annotatedDialect("post", { action: "deny", reason: "block", annotation: "remember this", degraded: false })
+const postAnnot = annotatedDialect("post", { action: "deny", reason: "block", annotation: "remember this" })
 check("makeOutbound allow override: post-annotation still uses annotate path", (postAnnot.json as Record<string, unknown>)?.note === "remember this")
 
 const defaultDialect = makeOutbound({ deny: (reason) => ({ json: { denied: reason }, exitCode: 2, stderr: reason }), annotate: null })
-const defaultPreAllow = defaultDialect("pre", { action: "allow", reason: null, annotation: null, degraded: false })
+const defaultPreAllow = defaultDialect("pre", { action: "allow", reason: null, annotation: null })
 check("makeOutbound no override: pre-allow uses allowDecision", Object.keys(defaultPreAllow.json as object).length === 0 && defaultPreAllow.exitCode === 0)
 
-const defaultPostNoAnnot = defaultDialect("post", { action: "allow", reason: null, annotation: null, degraded: false })
+const defaultPostNoAnnot = defaultDialect("post", { action: "allow", reason: null, annotation: null })
 check("makeOutbound no override: post-no-annotation uses allowDecision", Object.keys(defaultPostNoAnnot.json as object).length === 0 && defaultPostNoAnnot.exitCode === 0)
 
 report()

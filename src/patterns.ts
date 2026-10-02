@@ -117,22 +117,37 @@ function hashInterpreterPayload(command: string): string {
   // markers survived normalization and the quoted body collapsed to <str>,
   // leaving raw code tokens leaking into signatures when quotes unbalanced.
   const payload = command.slice(match.index + match[0].length)
-  if (payload.trim() === "") return command
+  // trailing whitespace (a stripped override marker) is not part of the code's identity
+  const p = payload.trim()
+  if (p === "") return command
   // Already fingerprinted (re-normalization) — keep the existing token so
   // normalizeCommand stays idempotent.
-  if (/^<code:[0-9a-f]+>$/.test(payload.trim())) return command
+  if (/^<code:[0-9a-f]+>(?:\s\S.*)?$/.test(p)) return command
   // Already-parameterized placeholders are data, not code — never hash them
   // (idempotency: a second pass must not fingerprint a <str>).
-  if (/^(?:<(?:str|path|n|hash|uuid|sha|md5|ip|url|email|date)>\s*)+$/.test(payload.trim())) return command
-  // For whole (unchained) commands the payload runs to end of string; chain
-  // segments are normalized separately, so segment keys stay exact.
-  // Trim before hashing: trailing whitespace (e.g. a stripped override marker)
-  // is not part of the code's identity.
-  const fingerprint = createHash("sha1").update(scrubSecrets(payload.trim())).digest("hex").slice(0, 8)
+  if (/^(?:<(?:str|path|n|hash|uuid|sha|md5|ip|url|email|date)>\s*)+$/.test(p)) return command
+  // the quote layer is not identity — strip it so "x", 'x' and bare x share one key
+  let code = p
+  let rest = ""
+  if (p.startsWith('"') || p.startsWith("'")) {
+    const quote = p.charAt(0)
+    let close = -1
+    for (let i = 1; i < p.length; i++) {
+      if (p.charAt(i) === quote && p.charAt(i - 1) !== "\\") {
+        close = i
+        break
+      }
+    }
+    if (close > 0) {
+      code = p.slice(1, close)
+      rest = p.slice(close + 1).trim()
+    }
+  }
+  const fingerprint = createHash("sha1").update(scrubSecrets(code)).digest("hex").slice(0, 8)
   // Long PowerShell flags converge to -c: `-command`/`-encodedcommand` are
   // spellings of the same one-liner call — one identity, not three families.
   const prefix = command.slice(0, match.index + match[0].length).replace(/-(?:command|encodedcommand)(\s*)$/i, "-c$1")
-  return `${prefix}<code:${fingerprint}>`
+  return rest === "" ? `${prefix}<code:${fingerprint}>` : `${prefix}<code:${fingerprint}> ${rest}`
 }
 
 /**
@@ -356,7 +371,7 @@ const DIAGNOSTIC_VERBS: RegExp[] = [
   /\b(?:test-path|resolve-path|measure-object)\b/i,
 ]
 
-export function isDiagnosticText(text: string): boolean {
+function isDiagnosticText(text: string): boolean {
   return DIAGNOSTIC_VERBS.some((rule) => rule.test(text))
 }
 
@@ -504,6 +519,14 @@ function splitChainTagged(command: string): Array<{ text: string; pipeTail: bool
   return segments
 }
 
+// cannot be the failing producer: pure nav, env assignment, inert verb, pipe-tail formatter
+function isTransparentSegment(text: string, pipeTail: boolean): boolean {
+  if (NAVIGATION_VERBS.test(text) && !isDiagnosticText(text)) return true
+  if (ENV_ASSIGNMENT_SEGMENT.test(text)) return true
+  if (INERT_VERBS.test(text)) return true
+  return pipeTail && PIPE_FORMATTERS.test(text)
+}
+
 /**
  * OpenCode normalizes non-zero exits to 1 in metadata, so discriminate by
  * command shape. Exit-1 immunity requires EVERY producer segment to be
@@ -527,16 +550,7 @@ export function isIntendedNonzero(command: string, exitCode: number): boolean {
   if (exitCode !== 1) return false
   let sawProducer = false
   for (const { text, pipeTail } of splitChainTagged(flattenSubshellParens(command))) {
-    // Navigation is transparent only when it is PURE navigation. A segment that
-    // pairs a navigation verb with a diagnostic and no separator between them
-    // (`cd <path> npx vitest run ...`) must keep that diagnostic — dropping the
-    // whole segment as navigation would hide the command and break immunity.
-    if (NAVIGATION_VERBS.test(text) && !isDiagnosticText(text)) continue
-    // Session prep that cannot be the failing producer: a pure `$env:X=...` /
-    // `FOO=bar` assignment, and start-sleep.
-    if (ENV_ASSIGNMENT_SEGMENT.test(text)) continue
-    if (INERT_VERBS.test(text)) continue
-    if (pipeTail && PIPE_FORMATTERS.test(text)) continue
+    if (isTransparentSegment(text, pipeTail)) continue
     if (!isDiagnosticText(text)) return false
     sawProducer = true
   }
@@ -555,10 +569,7 @@ export function isIntendedNonzero(command: string, exitCode: number): boolean {
 export function nonTransparentProducers(command: string): number {
   let count = 0
   for (const { text, pipeTail } of splitChainTagged(flattenSubshellParens(command))) {
-    if (NAVIGATION_VERBS.test(text) && !isDiagnosticText(text)) continue
-    if (ENV_ASSIGNMENT_SEGMENT.test(text)) continue
-    if (INERT_VERBS.test(text)) continue
-    if (pipeTail && PIPE_FORMATTERS.test(text)) continue
+    if (isTransparentSegment(text, pipeTail)) continue
     count += 1
   }
   return count
@@ -724,7 +735,7 @@ const UNIX_VIEWER_VERBS: RegExp[] = [
   /(^|[\s|;&(:])(?:head|tail|more)\b(?!:)/i,
 ]
 
-export function isUnixViewerSignature(signature: string): boolean {
+function isUnixViewerSignature(signature: string): boolean {
   return UNIX_VIEWER_VERBS.some((rule) => rule.test(signature))
 }
 
@@ -927,23 +938,39 @@ function extractSubstitutions(text: string): string[] {
  * Depth-bounded: nested wrappers/substitutions are pathological.
  */
 export function bashSegmentSignatures(command: string): string[] {
-  const clean = command.replace(OVERRIDE_MARKER, "")
   const signatures: string[] = []
-  const expand = (text: string, depth: number): void => {
-    for (const segment of splitChain(text)) {
-      const payload = depth < 3 ? cmdWrapperPayload(segment) : null
-      if (payload !== null) {
-        expand(payload, depth + 1)
-        continue
-      }
-      signatures.push(`bash:${normalizeCommand(segment)}`)
-      if (depth < 3) {
-        for (const sub of extractSubstitutions(segment)) expand(sub, depth + 1)
-      }
+  expandSegmentSignatures(command.replace(OVERRIDE_MARKER, ""), 0, signatures)
+  return signatures
+}
+
+/**
+ * Signatures of the PRODUCER segments only (chain attribution): transparent
+ * segments — pure navigation, env assignments, inert verbs, pipe-tail
+ * formatters — can never be the failing producer, so a failure must never
+ * land on their gates. Each producer segment expands exactly as
+ * bashSegmentSignatures expands it (cmd /c and $(...) unfolding included).
+ */
+export function producerSegmentSignatures(command: string): string[] {
+  const signatures: string[] = []
+  for (const { text, pipeTail } of splitChainTagged(flattenSubshellParens(command.replace(OVERRIDE_MARKER, "")))) {
+    if (isTransparentSegment(text, pipeTail)) continue
+    expandSegmentSignatures(text, 0, signatures)
+  }
+  return signatures
+}
+
+function expandSegmentSignatures(text: string, depth: number, signatures: string[]): void {
+  for (const segment of splitChain(text)) {
+    const payload = depth < 3 ? cmdWrapperPayload(segment) : null
+    if (payload !== null) {
+      expandSegmentSignatures(payload, depth + 1, signatures)
+      continue
+    }
+    signatures.push(`bash:${normalizeCommand(segment)}`)
+    if (depth < 3) {
+      for (const sub of extractSubstitutions(segment)) expandSegmentSignatures(sub, depth + 1, signatures)
     }
   }
-  expand(clean, 0)
-  return signatures
 }
 
 /** Repo-relative file signature; out-of-repo or projectDir-less paths fall back to the basename. */
@@ -1092,10 +1119,35 @@ function flagSubset(a: string[], b: string[]): boolean {
   return a.every((token) => set.has(token))
 }
 
+function flagSetEqual(a: string[], b: string[]): boolean {
+  const setB = new Set(b)
+  return new Set(a).size === setB.size && a.every((token) => setB.has(token))
+}
+
+function nonFlagText(signature: string): string {
+  return signature
+    .split(/\s+/)
+    .filter((token) => !token.startsWith("-"))
+    .join(" ")
+}
+
 /** Signatures longer than this match exactly only: a 300-char normalized
  * command is already specific enough that "30% near" is meaningless, and
  * Levenshtein on long signatures is the hot-path cost cliff. */
 export const FUZZY_MAX_LEN = 300
+
+// absolute budget because short commands fail the relative band
+const SUBSET_ADD_MAX_DISTANCE = 24
+
+/** subset-add rescue: identical non-flag text + a strict flag addition merges
+ *  on an absolute budget — the only verdict that may override the length band */
+function strictFlagAddition(a: string, b: string): boolean {
+  const flagsA = flagTokens(a)
+  const flagsB = flagTokens(b)
+  if (flagSetEqual(flagsA, flagsB)) return false
+  if (!flagSubset(flagsA, flagsB) && !flagSubset(flagsB, flagsA)) return false
+  return nonFlagText(a) === nonFlagText(b)
+}
 
 /**
  * Near-duplicate match: normalized edit distance <= 30% AND absolute distance
@@ -1110,35 +1162,39 @@ export const FUZZY_MAX_LEN = 300
  */
 export function fuzzySimilar(a: string, b: string): boolean {
   if (a === b) return true
-  // Cheapest rejects FIRST: the length band is O(1) with zero allocation and
-  // zero false negatives — it must run before any regex/flag work, because
-  // the flood path calls this per gate under the gates lock.
   const maxLen = Math.max(a.length, b.length)
   if (maxLen === 0) return true
   if (maxLen > FUZZY_MAX_LEN) return false
   // Triangle inequality: distance >= |lenA - lenB|. If even that floor
   // exceeds the ratio threshold, no Levenshtein result can pass — an O(1)
   // pre-filter with zero false negatives that skips most DP computations.
-  if (Math.abs(a.length - b.length) / maxLen > 0.3) return false
+  // The flood path runs this per gate under the gates lock — the band must reject before any flag work.
+  let strictFlagAdd = false
+  if (Math.abs(a.length - b.length) / maxLen > 0.3) {
+    strictFlagAdd = strictFlagAddition(a, b)
+    if (!strictFlagAdd) return false
+  }
+  const flagsA = flagTokens(a)
+  const flagsB = flagTokens(b)
+  if (!flagSubset(flagsA, flagsB) && !flagSubset(flagsB, flagsA)) return false
+  if (!strictFlagAdd) strictFlagAdd = !flagSetEqual(flagsA, flagsB) && nonFlagText(a) === nonFlagText(b)
   const codesA = a.match(CODE_FINGERPRINTS)
   const codesB = b.match(CODE_FINGERPRINTS)
   if (codesA !== null || codesB !== null) {
     if (codesA === null || codesB === null || codesA.join("\u0000") !== codesB.join("\u0000")) return false
   }
-  const flagsA = flagTokens(a)
-  const flagsB = flagTokens(b)
-  if (!flagSubset(flagsA, flagsB) && !flagSubset(flagsB, flagsA)) return false
   // distance/maxLen <= 0.3 ⟺ distance <= floor(0.3*maxLen) for integer
   // distances; below 3 the ratio bar and the absolute floor cannot both hold.
-  const cutoff = Math.floor(maxLen * 0.3)
-  if (cutoff < 3) return false
+  const ratioCutoff = Math.floor(maxLen * 0.3)
+  if (!strictFlagAdd && ratioCutoff < 3) return false
+  const cutoff = strictFlagAdd ? Math.max(ratioCutoff, SUBSET_ADD_MAX_DISTANCE) : ratioCutoff
   const distance = levenshteinCapped(a, b, cutoff)
   return distance >= 3 && distance <= cutoff
 }
 
 // --- Failure detection -------------------------------------------------------
 
-export interface FailureDetection {
+interface FailureDetection {
   matched: boolean
   snippet: string
 }
@@ -1404,7 +1460,7 @@ function isDetached(command: string): boolean {
   return false
 }
 
-export function isLongRunningCommand(command: string): boolean {
+function isLongRunningCommand(command: string): boolean {
   return SERVER_STARTERS.some((rule) => rule.test(command))
 }
 
@@ -1643,7 +1699,7 @@ export function signRepeatedCall(tool: string, args: Record<string, unknown>): s
 }
 
 /** Shape identity: cosmetic variation (trailing comments, numeric offsets) collapses. */
-export function signCallShape(tool: string, args: Record<string, unknown>): string {
+function signCallShape(tool: string, args: Record<string, unknown>): string {
   if (tool === "bash" && typeof args.command === "string") {
     return `bash:${shapeNormalizeCommand(args.command)}`
   }
@@ -1709,21 +1765,17 @@ export interface RepeatWindowScan {
   windows: RepeatWindow[]
 }
 
-/** Windowed repeats: the same call ≥ min times across the last `window`
- * assistant rounds, regardless of adjacency — interleaved loops (analysis
- * rounds between retries) never form a consecutive series but burn rounds just
- * the same. Tail-anchored: the last occurrence must sit in the last assistant
- * round (the model just did it again). Detection only — the caller decides
- * what failure-form stability means. */
-export function detectRepeatWindows(
+/** Shared window-scan skeleton: backward walk over the last `window` assistant
+ *  rounds (first part wins per round), min-count filter, tail-anchored windows
+ *  out. `sign` picks the identity (byte-exact vs shape); `skipEditRounds`
+ *  drops rounds that landed an edit/write — iteration work, not a stuck loop. */
+function scanTailWindows(
   messages: ReadonlyArray<{
     info: { role: string; sessionID?: string }
-    parts: ReadonlyArray<{ type: string; tool?: string; state?: { input?: Record<string, unknown> } }>
+    parts: ReadonlyArray<{ type: string; tool?: string; state?: { input?: Record<string, unknown>; status?: string } }>
   }>,
-  opts?: { window?: number; min?: number },
+  opts: { window: number; min: number; sign: (tool: string, input: Record<string, unknown>) => string; skipEditRounds: boolean },
 ): RepeatWindowScan {
-  const window = opts?.window ?? 12
-  const min = opts?.min ?? 3
   let lastAssistant = -1
   for (let i = messages.length - 1; i >= 0; i--) {
     if (messages[i]?.info.role === "assistant") {
@@ -1739,15 +1791,18 @@ export function detectRepeatWindows(
     if (msg === undefined) continue
     if (msg.info.role !== "assistant") continue
     roundsSeen += 1
-    if (roundsSeen > window) break
+    if (roundsSeen > opts.window) break
     // parallel duplicates inside one message are one round — first part wins
+    let roundLandedEdit = false
     const roundKeys = new Map<string, { tool: string; partIndex: number }>()
     for (let p = 0; p < msg.parts.length; p++) {
       const part = msg.parts[p]
       if (part?.type !== "tool" || typeof part.tool !== "string" || part.state?.input == null) continue
-      const key = signRepeatedCall(part.tool, part.state.input)
+      if ((part.tool === "edit" || part.tool === "write") && part.state.status === "completed") roundLandedEdit = true
+      const key = opts.sign(part.tool, part.state.input)
       if (!roundKeys.has(key)) roundKeys.set(key, { tool: part.tool, partIndex: p })
     }
+    if (opts.skipEditRounds && roundLandedEdit) continue
     for (const [key, found] of roundKeys) {
       const entry = counts.get(key) ?? { tool: found.tool, occurrences: [] }
       entry.occurrences.push({ messageIndex: i, partIndex: found.partIndex })
@@ -1756,13 +1811,29 @@ export function detectRepeatWindows(
   }
   const windows: RepeatWindow[] = []
   for (const [key, entry] of counts) {
-    if (entry.occurrences.length < min) continue
+    if (entry.occurrences.length < opts.min) continue
     entry.occurrences.sort((a, b) => a.messageIndex - b.messageIndex || a.partIndex - b.partIndex)
     const lastOcc = entry.occurrences[entry.occurrences.length - 1]
     if (lastOcc === undefined || lastOcc.messageIndex !== lastAssistant) continue
     windows.push({ key, tool: entry.tool, count: entry.occurrences.length, lastOccurrence: lastOcc, prevOccurrence: entry.occurrences[entry.occurrences.length - 2] ?? null })
   }
   return { sessionID: messages[0]?.info.sessionID ?? null, windows }
+}
+
+/** Windowed repeats: the same call ≥ min times across the last `window`
+ *  assistant rounds, regardless of adjacency — interleaved loops (analysis
+ *  rounds between retries) never form a consecutive series but burn rounds just
+ *  the same. Tail-anchored: the last occurrence must sit in the last assistant
+ *  round (the model just did it again). Detection only — the caller decides
+ *  what failure-form stability means. */
+export function detectRepeatWindows(
+  messages: ReadonlyArray<{
+    info: { role: string; sessionID?: string }
+    parts: ReadonlyArray<{ type: string; tool?: string; state?: { input?: Record<string, unknown> } }>
+  }>,
+  opts?: { window?: number; min?: number },
+): RepeatWindowScan {
+  return scanTailWindows(messages, { window: opts?.window ?? 12, min: opts?.min ?? 3, sign: signRepeatedCall, skipEditRounds: false })
 }
 
 export interface ShapeWindow {
@@ -1780,9 +1851,9 @@ export interface ShapeWindowScan {
 }
 
 /** Shape-level repeats: the same call with cosmetic variation (trailing
- * comments, numeric offsets) — evades the byte-identical channels. Windowed,
- * tail-anchored like detectRepeatWindows. A round that also lands an
- * edit/write is iteration work, not a stuck loop — its shapes don't count. */
+ *  comments, numeric offsets) — evades the byte-identical channels. Windowed,
+ *  tail-anchored like detectRepeatWindows. A round that also lands an
+ *  edit/write is iteration work, not a stuck loop — its shapes don't count. */
 export function detectShapeLoops(
   messages: ReadonlyArray<{
     info: { role: string; sessionID?: string }
@@ -1790,49 +1861,7 @@ export function detectShapeLoops(
   }>,
   opts?: { window?: number; min?: number },
 ): ShapeWindowScan {
-  const window = opts?.window ?? 12
-  const min = opts?.min ?? 4
-  let lastAssistant = -1
-  for (let i = messages.length - 1; i >= 0; i--) {
-    if (messages[i]?.info.role === "assistant") {
-      lastAssistant = i
-      break
-    }
-  }
-  if (lastAssistant < 0) return { sessionID: messages[0]?.info.sessionID ?? null, windows: [] }
-  const counts = new Map<string, { tool: string; occurrences: RepeatOccurrence[] }>()
-  let roundsSeen = 0
-  for (let i = lastAssistant; i >= 0; i--) {
-    const msg = messages[i]
-    if (msg === undefined) continue
-    if (msg.info.role !== "assistant") continue
-    roundsSeen += 1
-    if (roundsSeen > window) break
-    let roundLandedEdit = false
-    const roundKeys = new Map<string, { tool: string; partIndex: number }>()
-    for (let p = 0; p < msg.parts.length; p++) {
-      const part = msg.parts[p]
-      if (part?.type !== "tool" || typeof part.tool !== "string" || part.state?.input == null) continue
-      if ((part.tool === "edit" || part.tool === "write") && part.state.status === "completed") roundLandedEdit = true
-      const key = signCallShape(part.tool, part.state.input)
-      if (!roundKeys.has(key)) roundKeys.set(key, { tool: part.tool, partIndex: p })
-    }
-    if (roundLandedEdit) continue
-    for (const [key, found] of roundKeys) {
-      const entry = counts.get(key) ?? { tool: found.tool, occurrences: [] }
-      entry.occurrences.push({ messageIndex: i, partIndex: found.partIndex })
-      counts.set(key, entry)
-    }
-  }
-  const windows: ShapeWindow[] = []
-  for (const [key, entry] of counts) {
-    if (entry.occurrences.length < min) continue
-    entry.occurrences.sort((a, b) => a.messageIndex - b.messageIndex || a.partIndex - b.partIndex)
-    const lastOcc = entry.occurrences[entry.occurrences.length - 1]
-    if (lastOcc === undefined || lastOcc.messageIndex !== lastAssistant) continue
-    windows.push({ key, tool: entry.tool, count: entry.occurrences.length, lastOccurrence: lastOcc, prevOccurrence: entry.occurrences[entry.occurrences.length - 2] ?? null })
-  }
-  return { sessionID: messages[0]?.info.sessionID ?? null, windows }
+  return scanTailWindows(messages, { window: opts?.window ?? 12, min: opts?.min ?? 4, sign: signCallShape, skipEditRounds: true })
 }
 
 /** Detect series of byte-identical tool calls across consecutive assistant
@@ -1845,7 +1874,8 @@ export function detectRepeatSeries(
     info: { role: string; sessionID?: string }
     parts: ReadonlyArray<{ type: string; tool?: string; state?: { input?: Record<string, unknown> } }>
   }>,
-): RepeatScan {  let lastAssistant = -1
+): RepeatScan {
+  let lastAssistant = -1
   for (let i = messages.length - 1; i >= 0; i--) {
     if (messages[i]?.info.role === "assistant") {
       lastAssistant = i
