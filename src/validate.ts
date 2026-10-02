@@ -116,6 +116,9 @@ export function coerceGateShape(raw: unknown): Gate | null {
     const overrides = typeof b.overrides === "number" && Number.isFinite(b.overrides) && b.overrides >= 0 ? Math.floor(b.overrides) : null
     if (recurred !== null && reminded !== null && overrides !== null) gate.correctionBaseline = { recurred, reminded, overrides }
   }
+  if (typeof r.correctionsProven === "number" && Number.isFinite(r.correctionsProven) && r.correctionsProven >= 0) {
+    gate.correctionsProven = Math.floor(r.correctionsProven)
+  }
   if (r.review === true) gate.review = true
   if (r.feedbackDemoted === true) gate.feedbackDemoted = true
   if (Array.isArray(r.reoffenseSessions)) {

@@ -828,7 +828,7 @@ const healRetireDir = join(tmp, "heal-retire-project")
 const healSig = callSignature("bash", { command: "healed cmd" }) ?? ""
 const sixtyOneDaysAgo = new Date(Date.now() - 61 * 24 * 60 * 60 * 1000).toISOString()
 await seedGates(healRetireDir, [
-  seedGate({ key: patternKey(healSig), signature: healSig, count: 5, correction: "use the other flag", lastSeen: sixtyOneDaysAgo, firstSeen: sixtyOneDaysAgo }),
+  seedGate({ key: patternKey(healSig), signature: healSig, count: 5, promotionCount: 1, correction: "use the other flag", lastSeen: sixtyOneDaysAgo, firstSeen: sixtyOneDaysAgo }),
 ])
 await Dejavu({ directory: healRetireDir, client: { app: { log: async () => ({}) } } } as unknown as Ctx)
 const healLog = await readFile(join(healRetireDir, ".opencode", "dejavu", "log.jsonl"), "utf8")
@@ -1338,64 +1338,62 @@ check("bare marker without '#' is data — no gate match, no override counted", 
 check("comment-form marker still bypasses", (await attempt(`${CMD} # dejavu:proceed`, "sm3", "sm3")) === null)
 
 // --- 64. exit-1 immunity requires every chain segment to be diagnostic ---
-check("mixed chain loses exit-1 immunity (deploy failure not hidden by grep)", !isIntendedNonzero("deploy --broken && grep done log.txt", 1))
-check("all-diagnostic chain keeps exit-1 immunity", isIntendedNonzero("grep a file && grep b file", 1))
-check("single diagnostic command keeps exit-1 immunity", isIntendedNonzero("grep foo bar.txt", 1))
-check("exit 2 is never intended", !isIntendedNonzero("grep foo bar.txt", 2))
+check("mixed chain loses exit-1 immunity (deploy failure not hidden by grep)", !isIntendedNonzero("deploy --broken && grep done log.txt"))
+check("all-diagnostic chain keeps exit-1 immunity", isIntendedNonzero("grep a file && grep b file"))
+check("single diagnostic command keeps exit-1 immunity", isIntendedNonzero("grep foo bar.txt"))
 // Pipe-formatter and navigation transparency: a formatter/navigation segment can
 // never be the failing producer, so it must not break a diagnostic's immunity.
-check("pipe to Select-Object keeps the diagnostic's immunity", isIntendedNonzero("flutter test --no-pub 2>&1 | Select-Object -Last 5", 1))
-check("pipe to Tee-Object keeps the diagnostic's immunity", isIntendedNonzero("npx tsc --noEmit 2>&1 | Tee-Object -filepath out.txt", 1))
-check("leading cd does not break the diagnostic's immunity", isIntendedNonzero("cd D:\\proj && npx tsc --noEmit 2>&1", 1))
-check("npm test is a diagnostic (tests failing = the work)", isIntendedNonzero("npm test", 1))
-check("npm run test:bdd is a diagnostic", isIntendedNonzero("npm run test:bdd 2>&1 | Select-Object -Last 5", 1))
-check("yarn/pnpm test are diagnostics", isIntendedNonzero("yarn test", 1) && isIntendedNonzero("pnpm test", 1))
+check("pipe to Select-Object keeps the diagnostic's immunity", isIntendedNonzero("flutter test --no-pub 2>&1 | Select-Object -Last 5"))
+check("pipe to Tee-Object keeps the diagnostic's immunity", isIntendedNonzero("npx tsc --noEmit 2>&1 | Tee-Object -filepath out.txt"))
+check("leading cd does not break the diagnostic's immunity", isIntendedNonzero("cd D:\\proj && npx tsc --noEmit 2>&1"))
+check("npm test is a diagnostic (tests failing = the work)", isIntendedNonzero("npm test"))
+check("npm run test:bdd is a diagnostic", isIntendedNonzero("npm run test:bdd 2>&1 | Select-Object -Last 5"))
+check("yarn/pnpm test are diagnostics", isIntendedNonzero("yarn test") && isIntendedNonzero("pnpm test"))
 // Transparency must not hide a real non-diagnostic producer: npm install piped
 // to a formatter still counts (npm install is not a diagnostic).
-check("non-diagnostic piped to a formatter still counts", !isIntendedNonzero("npm install | Select-Object -Last 5", 1))
-check("non-diagnostic after cd still counts", !isIntendedNonzero("cd D:\\proj && npm install", 1))
-check("npm run build is not a test runner (build failures gate)", !isIntendedNonzero("npm run build", 1))
+check("non-diagnostic piped to a formatter still counts", !isIntendedNonzero("npm install | Select-Object -Last 5"))
+check("non-diagnostic after cd still counts", !isIntendedNonzero("cd D:\\proj && npm install"))
+check("npm run build is not a test runner (build failures gate)", !isIntendedNonzero("npm run build"))
 // Unix output shapers are formatters too — piping a diagnostic into one must
 // keep immunity (real data: `npx vitest … | head -5`, `git show … | head`).
-check("pipe to unix head keeps the diagnostic's immunity", isIntendedNonzero("npx vitest run 2>&1 | head - 5", 1))
-check("pipe to unix tail keeps the diagnostic's immunity", isIntendedNonzero("pytest -q 2>&1 | tail -n 5", 1))
-check("cd + vitest piped to head keeps immunity", isIntendedNonzero("cd D:\\proj && npx vitest run src/tests/x.test.ts 2>&1 | head - 5", 1))
-check("non-diagnostic piped to head still counts", !isIntendedNonzero("npm install | head - 5", 1))
+check("pipe to unix head keeps the diagnostic's immunity", isIntendedNonzero("npx vitest run 2>&1 | head - 5"))
+check("pipe to unix tail keeps the diagnostic's immunity", isIntendedNonzero("pytest -q 2>&1 | tail -n 5"))
+check("cd + vitest piped to head keeps immunity", isIntendedNonzero("cd D:\\proj && npx vitest run src/tests/x.test.ts 2>&1 | head - 5"))
+check("non-diagnostic piped to head still counts", !isIntendedNonzero("npm install | head - 5"))
 // Formatter transparency is PIPE-POSITION only: a formatter as the TERMINAL
 // producer of a sequence is the failing producer — its exit must still count
 // (kimi3-verifier counterexample: `npm test` exits 0 under &&, the exit 1 is
 // tail's file-not-found, a real recurring mistake).
-check("formatter as terminal producer still counts (&&)", !isIntendedNonzero("npm test && tail -5 missing.log", 1))
-check("formatter as terminal producer still counts (;)", !isIntendedNonzero("pytest -q; head -5 missing.log", 1))
-check("formatter after || is a producer, not a pipe tail", !isIntendedNonzero("npm test || tail -5 missing.log", 1))
+check("formatter as terminal producer still counts (&&)", !isIntendedNonzero("npm test && tail -5 missing.log"))
+check("formatter as terminal producer still counts (;)", !isIntendedNonzero("pytest -q; head -5 missing.log"))
+check("formatter after || is a producer, not a pipe tail", !isIntendedNonzero("npm test || tail -5 missing.log"))
 
 // Navigation is transparent only when PURE: a navigation verb paired with a
 // diagnostic and NO separator between them must keep the diagnostic — dropping
 // the whole segment as navigation hid the command and broke immunity (prod:
 // `cd <path> npx vitest run ...` was being gated).
-check("cd + diagnostic in one segment keeps immunity", isIntendedNonzero("cd packages/sourcesiphon npx vitest run src/tests/walker.test.ts 2>&1 | Select-Object -Last 5", 1))
-check("pure cd alone still counts (not immune)", !isIntendedNonzero("cd /nonexistent/path", 1))
-check("cd && diagnostic keeps immunity (separator form)", isIntendedNonzero("cd packages/foo && npx vitest run 2>&1 | Select-Object -Last 5", 1))
+check("cd + diagnostic in one segment keeps immunity", isIntendedNonzero("cd packages/sourcesiphon npx vitest run src/tests/walker.test.ts 2>&1 | Select-Object -Last 5"))
+check("pure cd alone still counts (not immune)", !isIntendedNonzero("cd /nonexistent/path"))
+check("cd && diagnostic keeps immunity (separator form)", isIntendedNonzero("cd packages/foo && npx vitest run 2>&1 | Select-Object -Last 5"))
 
 // Subshell-paren flattening must NOT break PowerShell script blocks: the () in
 // a method call inside { } (e.g. ForEach-Object { $_.trim() }) is part of that
 // segment, not a chain separator (prod: select-string | ForEach-Object was gated).
-check("script-block method-call parens keep immunity", isIntendedNonzero("Select-String -path tests\\foo.test.ts -pattern bar | ForEach-Object { $_.line.trim() }", 1))
-check("(deploy && grep) still splits — non-diagnostic not hidden", !isIntendedNonzero("(deploy --broken && grep done log.txt)", 1))
+check("script-block method-call parens keep immunity", isIntendedNonzero("Select-String -path tests\\foo.test.ts -pattern bar | ForEach-Object { $_.line.trim() }"))
+check("(deploy && grep) still splits — non-diagnostic not hidden", !isIntendedNonzero("(deploy --broken && grep done log.txt)"))
 
 // npm/pnpm/yarn typecheck + lint are iteration work (the typecheck gap: prod
 // `npm run typecheck` reminded 20+ times because only `npm test` was a
 // diagnostic). Includes the `--filter <pkg>` form.
-check("npm run typecheck is a diagnostic", isIntendedNonzero("npm run typecheck 2>&1", 1))
-check("npm run lint is a diagnostic", isIntendedNonzero("npm run lint 2>&1 | Select-Object -Last 3", 1))
-check("pnpm --filter typecheck is a diagnostic", isIntendedNonzero("pnpm --filter @midasai/midas-ui typecheck 2>&1 | Select-Object -Last 5", 1))
+check("npm run typecheck is a diagnostic", isIntendedNonzero("npm run typecheck 2>&1"))
+check("npm run lint is a diagnostic", isIntendedNonzero("npm run lint 2>&1 | Select-Object -Last 3"))
+check("pnpm --filter typecheck is a diagnostic", isIntendedNonzero("pnpm --filter @midasai/midas-ui typecheck 2>&1 | Select-Object -Last 5"))
 // Read-only git inspectors: exit 1 is a downstream filter finding nothing
 // (`git show … | Select-String` no-match), not a mistake (the Muffin case).
-check("git show piped to Select-String keeps immunity", isIntendedNonzero("git show head:file.cs | Select-String -Pattern x", 1))
-check("git show --stat piped to head keeps immunity", isIntendedNonzero("git show --stat abc123 | head - 5", 1))
-check("git log piped to Select-String keeps immunity", isIntendedNonzero("git log --oneline -5 | Select-String -Pattern fix", 1))
-check("git show with real error (exit 2) still counts", !isIntendedNonzero("git show badref", 2))
-check("npm run build is NOT a diagnostic (real failure)", !isIntendedNonzero("npm run build 2>&1", 1))
+check("git show piped to Select-String keeps immunity", isIntendedNonzero("git show head:file.cs | Select-String -Pattern x"))
+check("git show --stat piped to head keeps immunity", isIntendedNonzero("git show --stat abc123 | head - 5"))
+check("git log piped to Select-String keeps immunity", isIntendedNonzero("git log --oneline -5 | Select-String -Pattern fix"))
+check("npm run build is NOT a diagnostic (real failure)", !isIntendedNonzero("npm run build 2>&1"))
 
 // --- 65. taught retirement: clean reminders retire the gate softly ---
 const taughtDir = join(tmp, "taught-project")
@@ -1466,9 +1464,9 @@ check("demoted gate is not anti-nag-retired on the previous tier's evidence", st
 
 // --- 65e. bash `|&` (pipe stdout+stderr) is a pipe, and unix `tee` is a
 // formatter — both were kimi3-verifier blind spots. ---
-check("bash |& keeps the diagnostic's immunity", isIntendedNonzero("npm test |& head -5", 1))
-check("diagnostic piped to tee keeps immunity", isIntendedNonzero("npm test 2>&1 | tee out.log", 1))
-check("non-diagnostic piped to tee still counts", !isIntendedNonzero("npm install | tee out.log", 1))
+check("bash |& keeps the diagnostic's immunity", isIntendedNonzero("npm test |& head -5"))
+check("diagnostic piped to tee keeps immunity", isIntendedNonzero("npm test 2>&1 | tee out.log"))
+check("non-diagnostic piped to tee still counts", !isIntendedNonzero("npm install | tee out.log"))
 
 // --- 65f. anti-nag for reminding gates accrues in the after-hook: notes the
 // session keeps ignoring retire the gate. ---
@@ -1600,9 +1598,9 @@ check("first-encounter failures count as recurrences", firstGate?.recurredAfterG
 check("first-encounter failures do not demote (the gate never spoke)", firstGate?.status === "blocking" && firstGate?.feedbackDemoted !== true)
 
 // --- 75. paren-wrapped chains must not blanket-grant exit-1 immunity ---
-check("paren-wrapped chain flattens for immunity (non-diagnostic failure not hidden)", !isIntendedNonzero("(deploy --broken && grep done log.txt)", 1))
-check("paren-wrapped all-diagnostic chain keeps immunity", isIntendedNonzero("(grep a f && grep b f)", 1))
-check("plain all-diagnostic chain keeps immunity", isIntendedNonzero("grep a f && grep b f", 1))
+check("paren-wrapped chain flattens for immunity (non-diagnostic failure not hidden)", !isIntendedNonzero("(deploy --broken && grep done log.txt)"))
+check("paren-wrapped all-diagnostic chain keeps immunity", isIntendedNonzero("(grep a f && grep b f)"))
+check("plain all-diagnostic chain keeps immunity", isIntendedNonzero("grep a f && grep b f"))
 
 // --- 76. re-promotion clears stale session chains (no skipped reminder) ---
 const rePromoDir = join(tmp, "repromo-project")
@@ -1678,9 +1676,9 @@ check("stale lock of a dead pid is stolen (init+failure proceed)", !existsSync(s
 check("stale-steal is logged", (await readFile(join(stealDir, ".opencode", "dejavu", "log.jsonl"), "utf8")).includes("stale lock stolen"))
 
 // --- 80. paren sub-expressions do NOT blanket-immunize the outer command ---
-check("diagnostic nested as sub-expression does not immunize outer verb", !isIntendedNonzero("deploy (grep x)", 1))
-check("paren-wrapped single diagnostic keeps immunity", isIntendedNonzero("(grep a f)", 1))
-check("nested diagnostic chain keeps immunity", isIntendedNonzero("(grep a f && grep b f)", 1))
+check("diagnostic nested as sub-expression does not immunize outer verb", !isIntendedNonzero("deploy (grep x)"))
+check("paren-wrapped single diagnostic keeps immunity", isIntendedNonzero("(grep a f)"))
+check("nested diagnostic chain keeps immunity", isIntendedNonzero("(grep a f && grep b f)"))
 
 // --- 81. migration stamp survives reconcile (init-storm killer stays alive) ---
 const stampSurviveDir = join(tmp, "stamp-survive-project")
@@ -1979,10 +1977,10 @@ check("isNoiseError does not classify a client-side ENOENT", !isNoiseError("ENOE
 
 // --- 87g. immunity holes closed: env assignments and start-sleep are
 // transparent, npm run check:* is diagnostic. ---
-check("env-assignment prefix does not break diagnostic immunity", isIntendedNonzero('$env:CI="true"; npx vitest run 2>&1', 1))
-check("start-sleep prefix does not break diagnostic immunity", isIntendedNonzero("start-sleep -seconds 5; npx playwright test 2>&1", 1))
-check("npm run check:* is a diagnostic", isIntendedNonzero("npm run check:bdd-parity 2>&1", 1))
-check("env-assignment + non-diagnostic still counts", !isIntendedNonzero('$env:CI="true"; deploy-tool --broken', 1))
+check("env-assignment prefix does not break diagnostic immunity", isIntendedNonzero('$env:CI="true"; npx vitest run 2>&1'))
+check("start-sleep prefix does not break diagnostic immunity", isIntendedNonzero("start-sleep -seconds 5; npx playwright test 2>&1"))
+check("npm run check:* is a diagnostic", isIntendedNonzero("npm run check:bdd-parity 2>&1"))
+check("env-assignment + non-diagnostic still counts", !isIntendedNonzero('$env:CI="true"; deploy-tool --broken'))
 
 // --- 87h. flag-only wrapper shapes lose residual identity (over-generic). ---
 check("flag-only wrapper loses residual identity and cannot block", !hasResidualIdentity("bash:cmd <path> <str> -f") && !canBlock("bash", "bash:cmd <path> <str> -f"))
@@ -2250,7 +2248,7 @@ check("timeoutkill: the gate teaches the spawn/redirect + timeout correction", (
 // DEJAVU_HOME, but the rest touch the shared global store that 86 corrupts. ---
 
 // 87a. git status is a read-only diagnostic: exit 1 is intended, never blocking
-check("git status is a diagnostic (exit 1 intended)", isIntendedNonzero("git status --short", 1))
+check("git status is a diagnostic (exit 1 intended)", isIntendedNonzero("git status --short"))
 check("git status gate cannot block", !canBlock("bash", "bash:git status --short"))
 
 // 87b. index orphan candidacy: invisible keys get a candidacy timestamp, live
@@ -2467,12 +2465,12 @@ check("get-process cannot block", !canBlock("bash", "bash:get-process -name <str
 check("get-process can remind", canRemind("bash", "bash:get-process -name <str>"))
 check("get-item/get-childitem cannot block", !canBlock("bash", "bash:get-item <str> -erroraction silentlycontinue") && !canBlock("bash", "bash:get-childitem -path <str> -directory"))
 check("get-content/test-path/resolve-path cannot block", !canBlock("bash", "bash:get-content <str>") && !canBlock("bash", "bash:test-path <str>") && !canBlock("bash", "bash:resolve-path <str>"))
-check("probe exit 1 is intended (empty result set)", isIntendedNonzero("get-process -name dart -erroraction silentlycontinue", 1))
+check("probe exit 1 is intended (empty result set)", isIntendedNonzero("get-process -name dart -erroraction silentlycontinue"))
 // Unix viewers: never block, always remindable — but their exit 1 stays RECORDABLE
 // (a missing file / not-recognized is teachable, unlike a diagnostic's empty result).
 check("cat|head cannot block but can remind", !canBlock("bash", "bash:cat <str> | head - <n>") && canRemind("bash", "bash:cat <str> | head - <n>"))
 check("wc/head/tail cannot block", !canBlock("bash", "bash:wc -l <str> <str>") && !canBlock("bash", "bash:head - <n> <str>") && !canBlock("bash", "bash:tail - <n> <str>"))
-check("viewer exit 1 still counts (teachable, not intended)", !isIntendedNonzero("cat missing.txt", 1) && !isIntendedNonzero("npm test && tail -5 missing.log", 1))
+check("viewer exit 1 still counts (teachable, not intended)", !isIntendedNonzero("cat missing.txt") && !isIntendedNonzero("npm test && tail -5 missing.log"))
 check("head:refs refspec is not a viewer (git push stays blockable)", canBlock("bash", "bash:git push origin head:refs/heads/feat/x <n> >& <n>"))
 // Family shapes: verb phrase + fully parameterized args = watching only.
 check("npx tsx <str> is a family (no identity)", !hasResidualIdentity("bash:npx tsx <str>") && !canBlock("bash", "bash:npx tsx <str>"))

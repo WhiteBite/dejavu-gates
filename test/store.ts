@@ -331,6 +331,18 @@ const bareAdopt = makeGate({})
 mergeGate(bareAdopt, makeGate({ correction: "adopted", correctionOrigin: "machine", correctionAt: 700 }))
 check("merge: a target with no correction adopts the source's", bareAdopt.correction === "adopted" && bareAdopt.correctionOrigin === "machine" && bareAdopt.correctionAt === 700)
 
+const humanNewer = makeGate({ correction: "older human fix", correctionOrigin: "human", correctionAt: 200, correctionBaseline: { recurred: 4, reminded: 5, overrides: 6 } })
+mergeGate(humanNewer, makeGate({ correction: "newer human fix", correctionOrigin: "human", correctionAt: 300, correctionBaseline: { recurred: 7, reminded: 8, overrides: 9 } }))
+check("merge: two human corrections pick the newer correctionAt", humanNewer.correction === "newer human fix" && humanNewer.correctionAt === 300 && humanNewer.correctionBaseline?.recurred === 7 && humanNewer.correctionBaseline?.reminded === 8 && humanNewer.correctionBaseline?.overrides === 9)
+
+const humanOlder = makeGate({ correction: "newer human fix", correctionOrigin: "human", correctionAt: 300, correctionBaseline: { recurred: 7, reminded: 8, overrides: 9 } })
+mergeGate(humanOlder, makeGate({ correction: "older human fix", correctionOrigin: "human", correctionAt: 200, correctionBaseline: { recurred: 4, reminded: 5, overrides: 6 } }))
+check("merge: an older human source correction loses to the newer target", humanOlder.correction === "newer human fix" && humanOlder.correctionAt === 300 && humanOlder.correctionBaseline?.recurred === 7)
+
+const provenSum = makeGate({ correctionsProven: 2 })
+mergeGate(provenSum, makeGate({ correctionsProven: 3 }))
+check("merge: correctionsProven sums across records", provenSum.correctionsProven === 5)
+
 const unixSig = "bash:tail -5 missing.log"
 const unixSnippet = "exit code 1"
 const linuxDerived = suggestCorrection(unixSig, unixSnippet, "linux")
@@ -343,12 +355,50 @@ const absentOrigin = coerceGateShape(seedGate({ key: "123400000002", correction:
 check("an absent correctionOrigin stays undefined", absentOrigin?.correctionOrigin === undefined && absentOrigin !== null)
 const stampedParse = coerceGateShape(seedGate({ key: "123400000003", correction: "text", correctionAt: 123.7, correctionBaseline: { recurred: 1, reminded: 2.9, overrides: 3 } }))
 check("correctionAt floors and correctionBaseline parses", stampedParse?.correctionAt === 123 && stampedParse?.correctionBaseline?.reminded === 2)
+const provenParse = coerceGateShape(seedGate({ key: "123400000005", correction: "text", correctionOrigin: "human", correctionsProven: 2.7 }))
+check("correctionsProven floors at the parse boundary", provenParse?.correctionsProven === 2)
 const badBaseline = coerceGateShape(seedGate({ key: "123400000004", correction: "text", correctionBaseline: { recurred: 1, reminded: -2, overrides: 3 } }))
 check("an invalid correctionBaseline is dropped at the parse boundary", badBaseline !== null && badBaseline.correctionBaseline === undefined)
 
 const templateGate = makeGate({ correction: `Last error: "Error: boom" — address that specific error before retrying this exact call.` })
 repairGate(templateGate)
 check("repairGate stamps machine origin on a template correction", templateGate.correctionOrigin === "machine")
+
+// --- 15. retired-healed requires promotion: a never-enforced corrected gate expires plainly ---
+const rhGlobal = join(tmp, "rh-global")
+const rhProjectStore = join(tmp, "rh-project", ".opencode", "dejavu")
+await mkdir(rhGlobal, { recursive: true })
+await mkdir(rhProjectStore, { recursive: true })
+const rhStale = new Date(Date.now() - 90 * 24 * 60 * 60 * 1000).toISOString()
+await writeFile(join(rhProjectStore, "gates.json"), JSON.stringify({ version: 1, gates: [
+  seedGate({ key: "a1b200000001", signature: "bash:never-promoted cmd", count: 3, correction: "human fix", correctionOrigin: "human", firstSeen: rhStale, lastSeen: rhStale }),
+  seedGate({ key: "b2c300000001", signature: "bash:promoted cmd", count: 3, correction: "human fix", correctionOrigin: "human", promotionCount: 1, firstSeen: rhStale, lastSeen: rhStale }),
+] }), "utf8")
+const rhStores = new Stores(new GateStore(rhGlobal), new GateStore(rhProjectStore))
+await rhStores.expireAll(TTL_DAYS, NOISE_TTL_DAYS)
+await rhStores.flushDeferredAll()
+const rhEvents = (await readFile(join(rhProjectStore, "log.jsonl"), "utf8")).split("\n").filter((l) => l !== "").map((l) => JSON.parse(l) as { type: string; key: string })
+check("a never-promoted corrected gate expires as expired", rhEvents.some((e) => e.key === "a1b200000001" && e.type === "expired"))
+check("a never-promoted corrected gate never claims retired-healed", !rhEvents.some((e) => e.key === "a1b200000001" && e.type === "retired-healed"))
+check("a promoted corrected gate with zero recurrence still logs retired-healed", rhEvents.some((e) => e.key === "b2c300000001" && e.type === "retired-healed"))
+
+// --- 16. recordSuccess proves human corrections ---
+const rsGlobal = join(tmp, "rs-global")
+const rsProjectStore = join(tmp, "rs-project", ".opencode", "dejavu")
+await mkdir(rsGlobal, { recursive: true })
+await mkdir(rsProjectStore, { recursive: true })
+const rsHumanSig = callSignature("bash", { command: "proven-lesson-tool --run" }) ?? ""
+const rsMachineSig = callSignature("bash", { command: "machine-lesson-tool --run" }) ?? ""
+await writeFile(join(rsProjectStore, "gates.json"), JSON.stringify({ version: 1, gates: [
+  seedGate({ key: patternKey(rsHumanSig), signature: rsHumanSig, status: "blocking", count: 3, correction: "human fix", correctionOrigin: "human" }),
+  seedGate({ key: patternKey(rsMachineSig), signature: rsMachineSig, status: "blocking", count: 3, correction: "machine default", correctionOrigin: "machine" }),
+] }), "utf8")
+const rsStores = new Stores(new GateStore(rsGlobal), new GateStore(rsProjectStore))
+await rsStores.recordSuccess({ key: patternKey(rsHumanSig), signature: rsHumanSig, tool: "bash", sessionID: "rs1" })
+await rsStores.recordSuccess({ key: patternKey(rsMachineSig), signature: rsMachineSig, tool: "bash", sessionID: "rs1" })
+const rsRows = await readGates(rsProjectStore)
+check("a success on a human-corrected enforced gate increments correctionsProven", rsRows.find((g) => g.key === patternKey(rsHumanSig))?.correctionsProven === 1)
+check("a success on a machine-corrected gate leaves correctionsProven unset", rsRows.find((g) => g.key === patternKey(rsMachineSig))?.correctionsProven === undefined)
 
 if (process.env.BENCH === "1") {
   const benchProject = join(tmp, "bench-project")

@@ -524,13 +524,13 @@ check(
 check("node --eval canonicalizes onto -e", normalizeCommand("node --eval X") === normalizeCommand("node -e X"))
 check(
   "$(…) substitutions keep exit-1 immunity while subshells still split",
-  isIntendedNonzero("grep -r TODO $(find src -name '*.ts')", 1) === true && isIntendedNonzero("tsc $(cat files.txt)", 1) === true && isIntendedNonzero("(deploy --prod && grep ok log.txt)", 1) === false,
+  isIntendedNonzero("grep -r TODO $(find src -name '*.ts')") === true && isIntendedNonzero("tsc $(cat files.txt)") === true && isIntendedNonzero("(deploy --prod && grep ok log.txt)") === false,
 )
 check(
   "cmd /c wrappers delegate exit-1 immunity and count expanded producers",
-  isIntendedNonzero('cmd /c "grep foo bar.txt"', 1) === true && isIntendedNonzero('pwsh -Command "Select-String foo bar.txt"', 1) === true && nonTransparentProducers('cmd /c "grep foo bar.txt && deploy.sh"') === 2,
+  isIntendedNonzero('cmd /c "grep foo bar.txt"') === true && isIntendedNonzero('pwsh -Command "Select-String foo bar.txt"') === true && nonTransparentProducers('cmd /c "grep foo bar.txt && deploy.sh"') === 2,
 )
-check("bun and deno test are diagnostics", isIntendedNonzero("bun test", 1) === true && isIntendedNonzero("deno test", 1) === true)
+check("bun and deno test are diagnostics", isIntendedNonzero("bun test") === true && isIntendedNonzero("deno test") === true)
 check("a success-shaped line is never failure evidence", detectFailure("All tests passed - panic: none").matched === false)
 check(
   "client-side HTTP and MCP errors stay teachable, server-side stay noise",

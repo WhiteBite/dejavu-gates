@@ -587,15 +587,14 @@ function isTransparentSegment(text: string, pipeTail: boolean): boolean {
  * while method-call parens inside a script block (`ForEach-Object { $_.trim()
  * }`) stay part of their segment and don't split it.
  */
-export function isIntendedNonzero(command: string, exitCode: number): boolean {
-  if (exitCode !== 1) return false
+export function isIntendedNonzero(command: string): boolean {
   let sawProducer = false
   for (const { text, pipeTail } of splitChainTagged(flattenSubshellParens(command))) {
     if (isTransparentSegment(text, pipeTail)) continue
     // cmd /c wrappers and interpreter one-liners DELEGATE the exit code to their payload
     const wrapper = cmdWrapperPayload(text)
     if (wrapper !== null) {
-      if (!isIntendedNonzero(wrapper, exitCode)) return false
+      if (!isIntendedNonzero(wrapper)) return false
       sawProducer = true
       continue
     }
@@ -606,7 +605,7 @@ export function isIntendedNonzero(command: string, exitCode: number): boolean {
         payload.length >= 2 && ((payload.startsWith('"') && payload.endsWith('"')) || (payload.startsWith("'") && payload.endsWith("'")))
           ? payload.slice(1, -1)
           : payload
-      if (payload === "" || !isIntendedNonzero(code, exitCode)) return false
+      if (payload === "" || !isIntendedNonzero(code)) return false
       sawProducer = true
       continue
     }

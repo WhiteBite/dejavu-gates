@@ -57,6 +57,8 @@ export interface Gate {
   correctionAt?: number
   /** the gate's counters at lesson-write time, so recurrence-since-correction stays computable */
   correctionBaseline?: { recurred: number; reminded: number; overrides: number }
+  /** lifetime successes on a gate carrying a human correction — the "lesson proven" signal */
+  correctionsProven?: number
   remindedCount: number
   blockedCount: number
   recurredAfterReminder: number
@@ -1000,16 +1002,20 @@ export function mergeGate(target: Gate, source: Gate): void {
   }
   if (source.movedOn !== undefined) target.movedOn = (target.movedOn ?? 0) + source.movedOn
   if (source.iteratedVersion !== undefined) target.iteratedVersion = Math.max(target.iteratedVersion ?? 0, source.iteratedVersion)
-  // human beats machine: a human correction replaces a machine default, never the reverse
+  // human beats machine; two human edits pick the newer one
   if (
     source.correction !== undefined &&
-    (target.correction === undefined || (source.correctionOrigin === "human" && target.correctionOrigin !== "human"))
+    (target.correction === undefined ||
+      (source.correctionOrigin === "human" &&
+        (target.correctionOrigin !== "human" ||
+          (source.correctionAt ?? Number.NEGATIVE_INFINITY) > (target.correctionAt ?? Number.NEGATIVE_INFINITY))))
   ) {
     target.correction = source.correction
     target.correctionOrigin = source.correctionOrigin
     target.correctionAt = source.correctionAt
     target.correctionBaseline = source.correctionBaseline
   }
+  if (source.correctionsProven !== undefined) target.correctionsProven = (target.correctionsProven ?? 0) + source.correctionsProven
   if (source.review === true) target.review = true
   // A demotion is earned behavior — merging must never launder it away.
   if (source.feedbackDemoted === true) target.feedbackDemoted = true
@@ -1233,7 +1239,7 @@ export class Stores {
           // promotion means the pattern died out — the mechanical signal that
           // the teaching worked. Deferred: logging under the gates lock
           // extends the critical section (a big sweep = N log-lock takes).
-          if (gate.correction !== undefined && gate.recurredAfterGate === 0) {
+          if (gate.correction !== undefined && gate.recurredAfterGate === 0 && (gate.promotionCount ?? 0) > 0) {
             store.deferEvent({ type: "retired-healed", key: gate.key, tool: gate.tool, snippet: gate.correction.slice(0, 200) })
           } else {
             store.deferEvent({ type: "expired", key: gate.key, tool: gate.tool })
@@ -1957,6 +1963,7 @@ export class Stores {
       const fresh = (await store.loadForMutation()).find((g) => g.key === gateKey)
       if (fresh === undefined || fresh.status === "watching") return
       fresh.succeededAfterGate = (fresh.succeededAfterGate ?? 0) + 1
+      if (fresh.correctionOrigin === "human") fresh.correctionsProven = (fresh.correctionsProven ?? 0) + 1
       if (fresh.remindedSessions !== undefined && fresh.remindedSessions[input.sessionID] !== undefined) {
         delete fresh.remindedSessions[input.sessionID]
         if (Object.keys(fresh.remindedSessions).length === 0) delete fresh.remindedSessions

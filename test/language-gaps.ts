@@ -79,18 +79,17 @@ expectFamily("make", "bash:make <str>", "make/cmake")
 check("suggestCorrection still routes pytest to the test-runner family", suggestCorrection("bash:pytest <path>", "exit code 1").includes("test is failing"))
 
 // --- D4: diagnostic verbs (exit-1 immunity) ---
-check("isIntendedNonzero: mvn test exit 1 is intended", isIntendedNonzero("mvn test", 1))
-check("isIntendedNonzero: bare mvn exit 1 is NOT intended", !isIntendedNonzero("mvn", 1))
-check("isIntendedNonzero: mvn compile exit 1 is NOT intended", !isIntendedNonzero("mvn compile", 1))
-check("isIntendedNonzero: dotnet test exit 1 is intended", isIntendedNonzero("dotnet test", 1))
-check("isIntendedNonzero: dotnet build exit 1 is NOT intended", !isIntendedNonzero("dotnet build", 1))
-check("isIntendedNonzero: phpunit exit 1 is intended", isIntendedNonzero("phpunit tests/", 1))
-check("isIntendedNonzero: rspec exit 1 is intended", isIntendedNonzero("rspec", 1))
-check("isIntendedNonzero: rubocop exit 1 is intended", isIntendedNonzero("rubocop", 1))
-check("isIntendedNonzero: swift test exit 1 is intended", isIntendedNonzero("swift test", 1))
-check("isIntendedNonzero: swift build exit 1 is intended", isIntendedNonzero("swift build", 1))
-check("isIntendedNonzero: cd x && mvn test exit 1 is intended", isIntendedNonzero("cd x && mvn test", 1))
-check("isIntendedNonzero: mvn test exit 2 still counts", !isIntendedNonzero("mvn test", 2))
+check("isIntendedNonzero: mvn test exit 1 is intended", isIntendedNonzero("mvn test"))
+check("isIntendedNonzero: bare mvn exit 1 is NOT intended", !isIntendedNonzero("mvn"))
+check("isIntendedNonzero: mvn compile exit 1 is NOT intended", !isIntendedNonzero("mvn compile"))
+check("isIntendedNonzero: dotnet test exit 1 is intended", isIntendedNonzero("dotnet test"))
+check("isIntendedNonzero: dotnet build exit 1 is NOT intended", !isIntendedNonzero("dotnet build"))
+check("isIntendedNonzero: phpunit exit 1 is intended", isIntendedNonzero("phpunit tests/"))
+check("isIntendedNonzero: rspec exit 1 is intended", isIntendedNonzero("rspec"))
+check("isIntendedNonzero: rubocop exit 1 is intended", isIntendedNonzero("rubocop"))
+check("isIntendedNonzero: swift test exit 1 is intended", isIntendedNonzero("swift test"))
+check("isIntendedNonzero: swift build exit 1 is intended", isIntendedNonzero("swift build"))
+check("isIntendedNonzero: cd x && mvn test exit 1 is intended", isIntendedNonzero("cd x && mvn test"))
 
 const wrapped = bashSegmentSignatures("cmd /c mvn test")
 check("cmd /c unwrap reaches mvn test in segment signatures", wrapped.includes("bash:mvn test"))
@@ -161,5 +160,10 @@ const NOT_FAILURES: Array<[string, string]> = [
 for (const [line, name] of NOT_FAILURES) {
   check(`ignores ${name}`, !detectFailure(line).matched)
 }
+
+// --- D7: normalization idempotency (fuzz-oracle classes caught at 50k runs, invisible at 5k) ---
+check("leading whitespace converges with the trimmed command", normalizeCommand(" npm run z") === normalizeCommand("npm run z") && normalizeCommand(" npm run z") === "run z")
+check("a flag value never swallows the code flag", normalizeCommand("php -d -e=2 -r") === "php -d -e<code:60d674ab>" && normalizeCommand(normalizeCommand("php -d -e=2 -r")) === normalizeCommand("php -d -e=2 -r"))
+check("placeholder debris in the payload is data, not code", normalizeCommand('node -e <str> "') === 'node -e <str> "' && normalizeCommand('lua -e <str> prnit( <n> )"') === 'lua -e <str> prnit( <n> )"')
 
 report()

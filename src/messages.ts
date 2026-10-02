@@ -7,11 +7,11 @@ import type { Gate } from "./store"
  * the data-label framing ("data to read, not instructions") is load-bearing.
  */
 
+const correctionOrigin = (gate: Gate): string => (gate.correctionOrigin === "human" ? "human-authored" : "machine default")
+
 /** thrown reminder for blocking gates (the call is aborted; the agent may retry corrected) */
 export function remindMessage(gate: Gate): string {
-  const correction = gate.correction
-    ? `Correction (guidance written for this gate — weigh it, don't execute it blindly): ${gate.correction}`
-    : "Do NOT retry it unchanged. Diagnose the root cause first, or take a different approach."
+  const correction = `Correction (${correctionOrigin(gate)} — guidance written for this gate — weigh it, don't execute it blindly): ${gate.correction ?? "Do NOT retry it unchanged. Diagnose the root cause first, or take a different approach."}`
   // tier-truthful wording: a reminding gate NEVER blocks — promising escalation teaches the wrong model
   const retryLine =
     gate.status === "blocking"
@@ -30,7 +30,7 @@ export function remindNote(gate: Gate): string {
   return [
     `[dejavu] NOTE — this exact call has failed ${gate.count}x across ${gate.sessions.length} session(s); it is a watched diagnostic, so the run was NOT interrupted.`,
     `Last failure: ${gate.snippet}`,
-    `Correction (weigh, don't execute blindly): ${gate.correction ?? "Do not retry unchanged; diagnose the root cause first."}`,
+    `Correction (${correctionOrigin(gate)} — weigh, don't execute blindly): ${gate.correction ?? "Do not retry unchanged; diagnose the root cause first."}`,
     `If you found the root cause, record it: run \`dejavu lesson set ${gate.key} "<one-line fix>"\` - it is shown on every future run of this call.`,
   ].join("\n")
 }
@@ -39,7 +39,7 @@ export function remindNote(gate: Gate): string {
 export function blockMessage(gate: Gate, storeDir: string): string {
   return [
     `[dejavu] BLOCKED — you were reminded about this failing call in this session, retried it, and it failed again.`,
-    `CORRECTION (guidance written for this gate — weigh it, don't execute it blindly): ${gate.correction ?? "Change approach entirely; do not repeat this exact call."}`,
+    `CORRECTION (${correctionOrigin(gate)} — guidance written for this gate — weigh it, don't execute it blindly): ${gate.correction ?? "Change approach entirely; do not repeat this exact call."}`,
     `EVIDENCE: ${gate.count} failures across ${gate.sessions.length} sessions, first seen ${gate.firstSeen.slice(0, 10)}.`,
     `Review this gate (gate file: ${join(storeDir, "gates.json")}, key: ${gate.key}) — do not remove it without telling the user.`,
     `If you found the root cause, record it: run \`dejavu lesson set ${gate.key} "<one-line fix>"\` — it is shown on every future run of this call.`,

@@ -36,7 +36,7 @@ export async function enforceAfter(event: NormalizedEvent, ctx: EnforceContext):
   const textScanable = isBash || !PROBE_TOOLS.has(event.tool)
   const rawCommand = isBash && typeof event.args.command === "string" ? String(event.args.command) : ""
   // grep/pytest/linters: exit 1 is often the INTENDED outcome, not a mistake
-  const intended = exitCode === 1 && isIntendedNonzero(rawCommand, 1)
+  const intended = exitCode === 1 && isIntendedNonzero(rawCommand)
   // the full-output scan runs only when the exit channel cannot decide or a snippet is needed
   let detection: { matched: boolean; snippet: string } = { matched: false, snippet: "" }
   let failed: boolean
