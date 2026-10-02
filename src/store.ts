@@ -49,6 +49,10 @@ export interface Gate {
   snippet: string
   /** optional human/agent-written guidance shown in reminder/block messages */
   correction?: string
+  /** who wrote the correction: machine (suggestCorrection at promotion/backfill)
+   * or human (lesson set / gates.json edit). Gates the machine/human label and
+   * protects human text from template re-derivation; absent on legacy records. */
+  correctionOrigin?: "machine" | "human"
   remindedCount: number
   blockedCount: number
   recurredAfterReminder: number
@@ -951,7 +955,10 @@ export function mergeGate(target: Gate, source: Gate): void {
   }
   if (source.movedOn !== undefined) target.movedOn = (target.movedOn ?? 0) + source.movedOn
   if (source.iteratedVersion !== undefined) target.iteratedVersion = Math.max(target.iteratedVersion ?? 0, source.iteratedVersion)
-  if (target.correction === undefined && source.correction !== undefined) target.correction = source.correction
+  if (target.correction === undefined && source.correction !== undefined) {
+    target.correction = source.correction
+    target.correctionOrigin = source.correctionOrigin
+  }
   if (source.review === true) target.review = true
   // A demotion is earned behavior — merging must never launder it away.
   if (source.feedbackDemoted === true) target.feedbackDemoted = true
@@ -1352,6 +1359,7 @@ export class Stores {
           // default so it teaches immediately instead of sitting "NOT TEACHING".
           if (gate.status !== "watching" && gate.correction === undefined) {
             gate.correction = suggestCorrection(gate.signature, gate.snippet)
+            gate.correctionOrigin = "machine"
             changed = true
           }
           // Feedback catch-up: gates that already crossed the demotion
@@ -1710,6 +1718,7 @@ export class Stores {
         // default, overridable) so it never sits "NOT TEACHING" awaiting a human.
         if (promoted && gate.correction === undefined) {
           gate.correction = suggestCorrection(gate.signature, gate.snippet)
+          gate.correctionOrigin = "machine"
         }
         // Fresh enforcement lifecycle: re-promotion (after heal/taught
         // retirement) must not inherit the previous round's counters — stale

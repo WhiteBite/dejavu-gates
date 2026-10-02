@@ -15,14 +15,30 @@ export const SNIPPET_MAX = 200
 const SESSION_STATE_TTL_MS = 24 * 60 * 60 * 1000
 /** bound per-gate session state so long-lived gates cannot bloat */
 const SESSION_STATE_CAP = 50
-/** The auto-correction template is a FIXED shape — a correction matching it
- * byte-for-byte around its quoted snippet is machine-generated; anything else
- * is a human/agent edit and must never be re-derived. */
+/** fixed machine template shape — a byte-equal match around the quoted snippet is machine-generated, never a human edit */
 const AUTO_TEMPLATE_CORRECTION = /^Last error: "(.*)" — address that specific error before retrying this exact call\.$/
 
-/** True when the correction is absent or the machine-generated auto template — anything else is a human edit. */
-export function isAutoCorrection(correction: string | undefined): boolean {
-  return correction === undefined || AUTO_TEMPLATE_CORRECTION.test(correction)
+/** Truncate at a UTF-16 code-unit boundary without splitting a surrogate pair:
+ * ending on a lone high surrogate would persist invalid JSON escapes. */
+export function sliceSafe(text: string, max: number): string {
+  if (text.length <= max) return text
+  const last = text.charCodeAt(max - 1)
+  if (last >= 0xd800 && last <= 0xdbff) {
+    const next = text.charCodeAt(max)
+    if (next >= 0xdc00 && next <= 0xdfff) return text.slice(0, max - 1)
+  }
+  return text.slice(0, max)
+}
+
+/** True when the correction is machine-made: absent, origin-tagged machine, or
+ * (legacy records with no origin) byte-equal to the current derivation —
+ * anything else is a human edit. */
+export function isAutoCorrection(gate: Gate): boolean {
+  return (
+    gate.correction === undefined ||
+    gate.correctionOrigin === "machine" ||
+    (gate.correctionOrigin !== "human" && gate.correction === suggestCorrection(gate.signature, gate.snippet))
+  )
 }
 
 /** Fail time (ms) of a failedSessions entry regardless of shape — legacy bare
@@ -85,6 +101,7 @@ export function coerceGateShape(raw: unknown): Gate | null {
     gate.movedOn = Math.floor(r.movedOn)
   }
   if (typeof r.correction === "string") gate.correction = r.correction
+  if (r.correctionOrigin === "machine" || r.correctionOrigin === "human") gate.correctionOrigin = r.correctionOrigin
   if (r.review === true) gate.review = true
   if (r.feedbackDemoted === true) gate.feedbackDemoted = true
   if (Array.isArray(r.reoffenseSessions)) {
@@ -160,7 +177,7 @@ export function repairGate(gate: Gate): boolean {
     changed = true
   }
   if (gate.snippet.length > SNIPPET_MAX) {
-    gate.snippet = gate.snippet.slice(0, SNIPPET_MAX)
+    gate.snippet = sliceSafe(gate.snippet, SNIPPET_MAX)
     changed = true
   }
   // A success-shaped snippet is not failure evidence — clear it so the next
@@ -170,7 +187,7 @@ export function repairGate(gate: Gate): boolean {
     changed = true
   }
   // AUTO_TEMPLATE corrections are machine-made, so re-derive from current evidence on every repair: success-shaped quotes and stale platform advice reach old gates; human edits never match the template byte-for-byte and are untouched.
-  if (gate.correction !== undefined && AUTO_TEMPLATE_CORRECTION.test(gate.correction)) {
+  if (gate.correction !== undefined && gate.correctionOrigin !== "human" && AUTO_TEMPLATE_CORRECTION.test(gate.correction)) {
     const rederived = suggestCorrection(gate.signature, gate.snippet)
     if (rederived !== gate.correction) {
       gate.correction = rederived
@@ -192,7 +209,7 @@ export function repairGate(gate: Gate): boolean {
     if (correction.length > SNIPPET_MAX) {
       // Unbounded corrections are a context-pollution vector; the companion
       // skill mandates one actionable line anyway.
-      correction = correction.slice(0, SNIPPET_MAX)
+      correction = sliceSafe(correction, SNIPPET_MAX)
     }
     if (correction !== gate.correction) {
       gate.correction = correction

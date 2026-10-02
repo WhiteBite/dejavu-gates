@@ -6,15 +6,15 @@
 import { join } from "node:path"
 import { sanitizeForStore } from "./patterns"
 import { createStores, type Gate, type GateStore, type Stores } from "./store"
-import { isAutoCorrection, SNIPPET_MAX } from "./validate"
+import { isAutoCorrection, sliceSafe, SNIPPET_MAX } from "./validate"
 
 const KEY_SHAPE = /^[0-9a-f]{12}$/
 
-const USAGE = `usage: dejavu lesson <command> [args] [--store <dir>]
+const USAGE = `usage: dejavu lesson [--store <dir>] <command> [args]
   list                    enforced gates, highest count first
   show <key>              one gate's evidence and correction
   set <key> <text...>     write a human correction (sanitized, capped at ${SNIPPET_MAX} chars)
-  --store <dir>           project dir to read (default: cwd)`
+  --store <dir>           project dir to read (default: cwd); must precede <command>`
 
 function scopes(stores: Stores): GateStore[] {
   return stores.projectStore !== null ? [stores.projectStore, stores.globalStore] : [stores.globalStore]
@@ -31,16 +31,21 @@ async function locateGate(stores: Stores, key: string): Promise<{ gate: Gate; st
 
 async function runList(projectDir: string): Promise<number> {
   const stores = createStores(projectDir)
-  const enforced: Gate[] = []
+  // a key can sit in both scopes until migrate heals the duplicate — list it once, project copy first
+  const seen = new Set<string>()
+  const enforced: { gate: Gate; scope: string }[] = []
   for (const store of scopes(stores)) {
+    const scope = store === stores.projectStore ? "project" : "global"
     for (const gate of await store.load()) {
-      if (gate.status !== "watching") enforced.push(gate)
+      if (gate.status === "watching" || seen.has(gate.key)) continue
+      seen.add(gate.key)
+      enforced.push({ gate, scope })
     }
   }
-  enforced.sort((a, b) => b.count - a.count)
-  for (const gate of enforced) {
-    const correction = gate.correction === undefined ? "none" : isAutoCorrection(gate.correction) ? "machine" : "human"
-    process.stdout.write(`${gate.key}  ${gate.status}  count=${gate.count}  sessions=${gate.sessions.length}  correction=${correction}  ${gate.signature}\n`)
+  enforced.sort((a, b) => b.gate.count - a.gate.count)
+  for (const { gate, scope } of enforced) {
+    const correction = gate.correction === undefined ? "none" : isAutoCorrection(gate) ? "machine" : "human"
+    process.stdout.write(`${gate.key}  ${gate.status}  count=${gate.count}  sessions=${gate.sessions.length}  correction=${correction}  scope=${scope}  ${gate.signature}\n`)
   }
   return 0
 }
@@ -57,7 +62,7 @@ async function runShow(projectDir: string, args: readonly string[]): Promise<num
     return 1
   }
   const { gate, store } = found
-  const correction = gate.correction === undefined ? "(none)" : isAutoCorrection(gate.correction) ? "(machine default)" : gate.correction
+  const correction = gate.correction === undefined ? "(none)" : isAutoCorrection(gate) ? "(machine default)" : gate.correction
   process.stdout.write(`${gate.key}  ${gate.status}  ${gate.tool}\n`)
   process.stdout.write(`signature: ${gate.signature}\n`)
   process.stdout.write(`evidence: ${gate.count} failures across ${gate.sessions.length} sessions, first seen ${gate.firstSeen.slice(0, 10)}, recurred-after-gate ${gate.recurredAfterGate}\n`)
@@ -78,46 +83,81 @@ async function runSet(projectDir: string, args: readonly string[]): Promise<numb
     process.stderr.write(`error: set requires correction text\n${USAGE}\n`)
     return 1
   }
-  let clean = sanitizeForStore(text)
-  if (clean.length > SNIPPET_MAX) {
-    process.stderr.write(`[dejavu] warning: correction exceeds ${SNIPPET_MAX} chars — truncated\n`)
-    clean = clean.slice(0, SNIPPET_MAX)
+  const stores = createStores(projectDir)
+  const owners: GateStore[] = []
+  let display: { tool: string; signature: string } | null = null
+  for (const store of scopes(stores)) {
+    await store.load()
+    const gate = store.byKey(key)
+    if (gate !== undefined) {
+      owners.push(store)
+      if (display === null) display = { tool: gate.tool, signature: gate.signature }
+    }
   }
-  const found = await locateGate(createStores(projectDir), key)
-  if (found === null) {
+  if (owners.length === 0 || display === null) {
     process.stderr.write(`[dejavu] no gate with key ${key} — promotion is mechanical (3 failures across 2 sessions). See \`dejavu report\` for near-promotion candidates.\n`)
     return 1
   }
-  const store = found.store
-  const before = await store.runLocked(async (): Promise<string | undefined | null> => {
-    const gates = await store.loadForMutation()
-    const gate = gates.find((g) => g.key === key)
-    if (gate === undefined) return null
-    const previous = gate.correction
-    gate.correction = clean
-    await store.save()
-    return previous
-  })
-  if (before === null) {
+  let clean = sanitizeForStore(text)
+  if (clean.length > SNIPPET_MAX) {
+    process.stderr.write(`[dejavu] warning: correction exceeds ${SNIPPET_MAX} chars — truncated\n`)
+    clean = sliceSafe(clean, SNIPPET_MAX)
+  }
+  // a duplicate key in the other scope must not keep teaching the old text — write every copy
+  const written: GateStore[] = []
+  let before: string | undefined | null = null
+  for (const store of owners) {
+    const previous = await store.runLocked(async (): Promise<string | undefined | null> => {
+      const gates = await store.loadForMutation()
+      const gate = gates.find((g) => g.key === key)
+      if (gate === undefined) return null
+      const prior = gate.correction
+      gate.correction = clean
+      gate.correctionOrigin = "human"
+      await store.save()
+      return prior
+    })
+    if (previous === null) continue
+    if (before === null) before = previous
+    written.push(store)
+  }
+  if (written.length === 0) {
     process.stderr.write(`[dejavu] no gate with key ${key}\n`)
     return 1
   }
-  process.stdout.write(`[dejavu] correction written to gate ${key} (${found.gate.tool}: ${found.gate.signature})\n`)
+  process.stdout.write(`[dejavu] correction written to gate ${key} (${display.tool}: ${display.signature})\n`)
   process.stdout.write(`  before: ${before ?? "(none)"}\n`)
   process.stdout.write(`  after:  ${clean}\n`)
-  process.stdout.write(`  stored: ${join(store.dir, "gates.json")}\n`)
+  for (const store of written) {
+    process.stdout.write(`  stored: ${join(store.dir, "gates.json")}\n`)
+  }
   return 0
 }
 
 export async function runLesson(argv: readonly string[]): Promise<number> {
+  // flags only before the subcommand: correction text may contain "--store" verbatim
   let storeDir: string | null = null
-  const positional: string[] = []
-  for (let i = 0; i < argv.length; i++) {
+  let i = 0
+  while (i < argv.length) {
     const arg = argv[i]
     if (arg === undefined) break
+    if (arg === "--") {
+      i += 1
+      break
+    }
     if (arg === "--store") {
       const value = argv[i + 1]
-      if (value === undefined) {
+      if (value === undefined || value === "") {
+        process.stderr.write(`error: --store requires a directory\n${USAGE}\n`)
+        return 1
+      }
+      storeDir = value
+      i += 2
+      continue
+    }
+    if (arg.startsWith("--store=")) {
+      const value = arg.slice("--store=".length)
+      if (value === "") {
         process.stderr.write(`error: --store requires a directory\n${USAGE}\n`)
         return 1
       }
@@ -125,14 +165,10 @@ export async function runLesson(argv: readonly string[]): Promise<number> {
       i += 1
       continue
     }
-    if (arg.startsWith("--store=")) {
-      storeDir = arg.slice("--store=".length)
-      continue
-    }
-    positional.push(arg)
+    break
   }
   const projectDir = storeDir ?? process.cwd()
-  const [sub, ...args] = positional
+  const [sub, ...args] = argv.slice(i)
   if (sub === "list") return runList(projectDir)
   if (sub === "show") return runShow(projectDir, args)
   if (sub === "set") return runSet(projectDir, args)

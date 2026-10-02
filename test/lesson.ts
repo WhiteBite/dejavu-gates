@@ -4,7 +4,7 @@
  * Run: bun test/lesson.ts
  */
 import { spawnSync } from "node:child_process"
-import { mkdir, mkdtemp, readFile } from "node:fs/promises"
+import { copyFile, mkdir, mkdtemp, readFile } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { fileURLToPath } from "node:url"
@@ -29,10 +29,20 @@ const signature = callSignature("bash", { command })
 if (signature === null) throw new Error(`no signature for ${command}`)
 const key = patternKey(signature)
 
+const familyCommand = "npm test"
+const familySignature = callSignature("bash", { command: familyCommand })
+if (familySignature === null) throw new Error(`no signature for ${familyCommand}`)
+const familyKey = patternKey(familySignature)
+
 const stores = createStores(projectDir)
-for (const [sessionID, times] of [["s1", 2], ["s2", 1]] as [string, number][]) {
-  for (let i = 0; i < times; i++) {
-    await stores.recordFailure({ key, signature, tool: "bash", sessionID, projectDir, snippet: "Error: boom", globalProjects: GLOBAL_PROJECTS })
+for (const [gateKey, sig, snippet] of [
+  [key, signature, "Error: boom"],
+  [familyKey, familySignature, "Error: assertion failed"],
+] as [string, string, string][]) {
+  for (const [sessionID, times] of [["s1", 2], ["s2", 1]] as [string, number][]) {
+    for (let i = 0; i < times; i++) {
+      await stores.recordFailure({ key: gateKey, signature: sig, tool: "bash", sessionID, projectDir, snippet, globalProjects: GLOBAL_PROJECTS })
+    }
   }
 }
 
@@ -52,40 +62,86 @@ function runLesson(args: string[], cwd: string = repoRoot): LessonResult {
 }
 
 const gatesPath = join(projectDir, ".opencode", "dejavu", "gates.json")
+const globalGatesPath = join(home, "gates.json")
 
-async function persistedCorrection(): Promise<string | undefined> {
-  const file = JSON.parse(await readFile(gatesPath, "utf8")) as { gates: Array<{ key: string; correction?: string }> }
-  return file.gates.find((g) => g.key === key)?.correction
+async function correctionIn(file: string, gateKey: string): Promise<string | undefined> {
+  const parsed = JSON.parse(await readFile(file, "utf8")) as { gates: Array<{ key: string; correction?: string }> }
+  return parsed.gates.find((g) => g.key === gateKey)?.correction
 }
 
-const machineList = runLesson(["list", "--store", projectDir])
-check("list before any set → exit 0", machineList.exitCode === 0)
-check("list shows the promoted gate with correction=machine", machineList.stdout.includes(key) && machineList.stdout.includes("correction=machine"))
+async function persistedCorrection(): Promise<string | undefined> {
+  return correctionIn(gatesPath, key)
+}
 
-const written = runLesson(["set", key, "Use npm ci in CI", "--store", projectDir])
+function lineFor(stdout: string, gateKey: string): string | undefined {
+  return stdout.split("\n").find((l) => l.includes(gateKey))
+}
+
+const machineList = runLesson(["--store", projectDir, "list"])
+check("list before any set → exit 0", machineList.exitCode === 0)
+check("list shows the promoted gate with correction=machine", lineFor(machineList.stdout, key)?.includes("correction=machine") === true)
+check("family-correction gate (npm test) lists as correction=machine", lineFor(machineList.stdout, familyKey)?.includes("correction=machine") === true)
+check("family gate persisted a non-template machine correction", (await correctionIn(gatesPath, familyKey))?.startsWith("Last error:") === false)
+
+const written = runLesson(["--store", projectDir, "set", key, "Use npm ci in CI"])
 check("set writes the correction → exit 0", written.exitCode === 0)
 check("persisted correction equals the text", (await persistedCorrection()) === "Use npm ci in CI")
 
-const humanList = runLesson(["list", `--store=${projectDir}`])
-check("list after a set shows correction=human (--store= form)", humanList.exitCode === 0 && humanList.stdout.includes("correction=human"))
+const humanList = runLesson([`--store=${projectDir}`, "list"])
+check("list after a set shows correction=human (--store= form)", humanList.exitCode === 0 && lineFor(humanList.stdout, key)?.includes("correction=human") === true)
 
-const missing = runLesson(["set", "000000000000", "x", "--store", projectDir])
+const missing = runLesson(["--store", projectDir, "set", "000000000000", "x"])
 check("set on an unknown key → exit 1", missing.exitCode === 1)
 check("unknown-key stderr explains mechanical promotion", missing.stderr.includes("promotion is mechanical"))
+const missingLong = runLesson(["--store", projectDir, "set", "000000000000", "x".repeat(300)])
+check("unknown key with over-long text → exit 1, no truncation warning", missingLong.exitCode === 1 && !missingLong.stderr.includes("truncated"))
 
-const badKey = runLesson(["set", "not-a-key", "x", "--store", projectDir])
+const badKey = runLesson(["--store", projectDir, "set", "not-a-key", "x"])
 check("set with a malformed key → exit 1", badKey.exitCode === 1)
 
-const capped = runLesson(["set", key, "x".repeat(300), "--store", projectDir])
+const capped = runLesson(["--store", projectDir, "set", key, "x".repeat(300)])
 check("set over the 200-char cap → exit 0 with a truncation warning", capped.exitCode === 0 && capped.stderr.includes("truncated"))
 check("persisted correction is capped at 200 chars", (await persistedCorrection())?.length === 200)
 
-const dirty = runLesson(["set", key, "red \u001b[31mtext\u001b[0m with secret sk-ant-api03-abcdefghijklmnopqrst", "--store", projectDir])
+const dirty = runLesson(["--store", projectDir, "set", key, "red \u001b[31mtext\u001b[0m with secret sk-ant-api03-abcdefghijklmnopqrst"])
 const persistedDirty = await persistedCorrection()
 check("set with ANSI + secret → exit 0", dirty.exitCode === 0)
 check("persisted correction carries no ESC char and scrubs the secret", persistedDirty !== undefined && !persistedDirty.includes("\u001b") && !persistedDirty.includes("sk-ant") && persistedDirty.includes("red text"))
 
-const final = runLesson(["set", key, "Prefer the locked toolchain", "--store", projectDir])
+const storeTokenText = "pass --store and --store=x through to the wrapper verbatim"
+const storeToken = runLesson(["--store", projectDir, "set", key, storeTokenText])
+check("correction containing --store tokens survives verbatim", storeToken.exitCode === 0 && (await persistedCorrection()) === storeTokenText)
+
+const dashDash = runLesson(["--store", projectDir, "--", "set", key, "dash-dash text"])
+check("-- ends the option region", dashDash.exitCode === 0 && (await persistedCorrection()) === "dash-dash text")
+
+const emptyEq = runLesson(["--store=", "list"])
+check("--store= with an empty value → exit 1", emptyEq.exitCode === 1 && emptyEq.stderr.includes("--store requires a directory"))
+
+const emptySp = runLesson(["--store", "", "list"])
+check("--store with an empty value → exit 1", emptySp.exitCode === 1)
+
+await copyFile(gatesPath, globalGatesPath)
+const dupList = runLesson(["--store", projectDir, "list"])
+const dupLines = dupList.stdout.split("\n").filter((l) => l.includes(key))
+check("dual-scope duplicate lists one line", dupList.exitCode === 0 && dupLines.length === 1)
+check("dual-scope list line names the project scope", dupLines[0]?.includes("scope=project") === true)
+const dupSet = runLesson(["--store", projectDir, "set", key, "shared across scopes"])
+check("dual-scope set → exit 0", dupSet.exitCode === 0)
+check("dual-scope set reports both store files", dupSet.stdout.includes(gatesPath) && dupSet.stdout.includes(globalGatesPath))
+check("dual-scope set updates both copies", (await correctionIn(gatesPath, key)) === "shared across scopes" && (await correctionIn(globalGatesPath, key)) === "shared across scopes")
+
+const templateText = `Last error: "Error: boom" — address that specific error before retrying this exact call.`
+const templateSet = runLesson(["--store", projectDir, "set", key, templateText])
+check("human correction matching the machine template → exit 0", templateSet.exitCode === 0)
+const templateList = runLesson(["--store", projectDir, "list"])
+check("template-matching human correction stays human after load()", templateList.exitCode === 0 && lineFor(templateList.stdout, key)?.includes("correction=human") === true)
+
+const emojiSet = runLesson(["--store", projectDir, "set", key, "a".repeat(199) + "\u{1F600}"])
+check("surrogate-boundary set → exit 0 with a truncation warning", emojiSet.exitCode === 0 && emojiSet.stderr.includes("truncated"))
+check("truncated correction never ends on a lone surrogate", (await persistedCorrection()) === "a".repeat(199))
+
+const final = runLesson(["--store", projectDir, "set", key, "Prefer the locked toolchain"])
 check("final set before show → exit 0", final.exitCode === 0)
 const shown = runLesson(["show", key], projectDir)
 check("show with the cwd store default → exit 0", shown.exitCode === 0)
