@@ -4,7 +4,7 @@ import { homedir } from "node:os"
 import { dirname, join } from "node:path"
 import { atomicWrite, ntPath } from "./fs"
 import { canBlock, canRemind, fuzzySimilar, FUZZY_MAX_LEN, hasGenericResidualIdentity, hasResidualIdentity, isGenericSignature, isNoiseError, isRepoLocal, looksLikeFailure, parameterizeError, sanitizeForStore, scrubSecrets, suggestCorrection } from "./patterns"
-import { coerceGateShape, failedAtMs, repairGate } from "./validate"
+import { coerceGateShape, failedAtMs, isAutoCorrection, repairGate } from "./validate"
 
 /** Bumped on behavior changes; stamped into init log events so stale sessions are visible. */
 export const PLUGIN_VERSION = "2.49.0"
@@ -28,6 +28,14 @@ export function createStores(projectDir: string): Stores {
   const projectStore = projectDir !== "" ? new GateStore(join(projectDir, ".opencode", "dejavu")) : null
   return new Stores(new GateStore(resolveGlobalDir()), projectStore)
 }
+
+/** Declarative retirement condition: the taught error is obsolete once a
+ * dependency reaches a version, a path appears/disappears, or a git tag
+ * exists. Evaluated by doctor (report + --repair), never in the hooks. */
+export type RetireWhen =
+  | { kind: "dep"; name: string; min: string }
+  | { kind: "path"; mode: "present" | "absent"; path: string }
+  | { kind: "tag"; tag: string }
 
 export interface Gate {
   /** sha1 signature prefix — the pattern identity */
@@ -56,7 +64,7 @@ export interface Gate {
   /** epoch ms when the human correction was written */
   correctionAt?: number
   /** the gate's counters at lesson-write time, so recurrence-since-correction stays computable */
-  correctionBaseline?: { recurred: number; reminded: number; overrides: number }
+  correctionBaseline?: { recurred: number; reminded: number; overrides: number; promoted?: number }
   /** lifetime successes on a gate carrying a human correction — the "lesson proven" signal */
   correctionsProven?: number
   remindedCount: number
@@ -112,6 +120,8 @@ export interface Gate {
    * demotion vote counts only failures the gate had a chance to prevent —
    * first-encounter failures never saw a reminder and must not demote. */
   reoffenseSessions?: string[]
+  /** declarative retirement condition — doctor --repair retires the gate (retireTaught) once met */
+  retireWhen?: RetireWhen
 }
 
 interface GatesFile {
@@ -250,6 +260,8 @@ const DEMOTE_OVERRIDE_SESSIONS = 2
  * reoffended after a reminder — one bad session (or one bad model in a shared
  * store) must not be able to demote a gate for everyone else */
 const DEMOTE_REOFFENSE_SESSIONS = 2
+/** a human lesson unproven and unrecurred past this many days is dormant — the pattern died out */
+export const STALE_LESSON_DAYS = 120
 /** prune an index key absent from every scope visible to the sweeper after this many days (a live gate in an unopened project clears its own candidacy) */
 const ORPHAN_CANDIDATE_DAYS = 7
 
@@ -1152,6 +1164,25 @@ export function retireAntiNag(gate: Gate): { reminded: number; reoffended: numbe
   gate.remindedCount = 0
   gate.recurredAfterReminder = 0
   return { reminded, reoffended }
+}
+
+/**
+ * Lesson lifecycle verdict for a gate's correction (report-only signal):
+ * proven — a success followed the human correction; repromoted — the gate
+ * re-enforced since the correction was written, so the text may predate the
+ * current failure mode; stale — recurrences continued despite it; dormant —
+ * watching, quiet and past STALE_LESSON_DAYS; else fresh.
+ */
+export function lessonStaleness(gate: Gate, now: number): "fresh" | "proven" | "repromoted" | "stale" | "dormant" {
+  if ((gate.correctionsProven ?? 0) > 0) return "proven"
+  if (gate.correction !== undefined && !isAutoCorrection(gate)) {
+    if ((gate.promotionCount ?? 0) - (gate.correctionBaseline?.promoted ?? gate.promotionCount ?? 0) >= 1) return "repromoted"
+    if (Math.max(0, gate.recurredAfterGate - (gate.correctionBaseline?.recurred ?? 0)) >= DEMOTE_RECURRENCES) return "stale"
+  }
+  if (gate.status === "watching" && gate.recurredAfterGate === 0 && gate.correctionAt !== undefined && now - gate.correctionAt > STALE_LESSON_DAYS * DAY_MS) {
+    return "dormant"
+  }
+  return "fresh"
 }
 
 /**

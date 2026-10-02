@@ -4,7 +4,7 @@
  * Run: bun test/lesson.ts
  */
 import { spawnSync } from "node:child_process"
-import { copyFile, mkdir, mkdtemp, readFile } from "node:fs/promises"
+import { copyFile, mkdir, mkdtemp, readFile, writeFile } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { fileURLToPath } from "node:url"
@@ -76,7 +76,8 @@ async function persistedCorrection(): Promise<string | undefined> {
 interface LessonGateRow {
   key: string
   correctionAt?: number
-  correctionBaseline?: { recurred: number; reminded: number; overrides: number }
+  correctionBaseline?: { recurred: number; reminded: number; overrides: number; promoted?: number }
+  retireWhen?: { kind: string; name?: string; min?: string; mode?: string; path?: string; tag?: string }
   recurredAfterGate: number
   remindedCount: number
   overrideCount: number
@@ -193,5 +194,31 @@ check("list --all shows the watching gate marked enforced=no", allList.exitCode 
 check("list --all keeps enforced rows unmarked", lineFor(allList.stdout, key)?.includes("enforced=no") === false)
 const allAfterSub = runLesson(["--store", projectDir, "list", "--all"])
 check("--all after the subcommand stays a usage error", allAfterSub.exitCode === 1 && allAfterSub.stderr.includes("usage:"))
+
+// --- retire-when: set, show round-trip, clear ---
+const rwSet = runLesson(["--store", projectDir, "retire-when", key, "dep:typescript@>=5.0.0"])
+check("retire-when set → exit 0", rwSet.exitCode === 0)
+check("retire-when persists the dep condition in the project store", (await gateRow(gatesPath, key))?.retireWhen?.name === "typescript")
+check("retire-when writes every owning scope", (await gateRow(globalGatesPath, key))?.retireWhen?.min === "5.0.0")
+const rwShown = runLesson(["--store", projectDir, "show", key])
+check("show re-renders the retire-when spec", rwShown.exitCode === 0 && rwShown.stdout.includes("retire-when: dep:typescript@>=5.0.0"))
+check("show prints the lesson verdict line", rwShown.stdout.includes("lesson:"))
+const rwClear = runLesson(["--store", projectDir, "retire-when", key, "--clear"])
+check("retire-when --clear → exit 0", rwClear.exitCode === 0)
+check("retire-when --clear removes the condition from every scope", (await gateRow(gatesPath, key))?.retireWhen === undefined && (await gateRow(globalGatesPath, key))?.retireWhen === undefined)
+const rwClearedShow = runLesson(["--store", projectDir, "show", key])
+check("show omits the retire-when line after clear", rwClearedShow.exitCode === 0 && !rwClearedShow.stdout.includes("retire-when:"))
+const rwBadSpec = runLesson(["--store", projectDir, "retire-when", key, "bogus:spec"])
+check("an unknown retire-when spec → exit 1 usage error", rwBadSpec.exitCode === 1 && rwBadSpec.stderr.includes("usage:"))
+const rwMissingKey = runLesson(["--store", projectDir, "retire-when", "000000000000", "tag:v1"])
+check("retire-when on an unknown key → exit 1", rwMissingKey.exitCode === 1)
+
+// --- list appends stale= for a gate whose lesson went stale ---
+const staleFile = JSON.parse(await readFile(gatesPath, "utf8")) as { gates: LessonGateRow[] }
+const staleGate = staleFile.gates.find((g) => g.key === key)
+if (staleGate !== undefined) staleGate.recurredAfterGate = 3
+await writeFile(gatesPath, JSON.stringify(staleFile), "utf8")
+const staleList = runLesson(["--store", projectDir, "list"])
+check("list appends stale=stale for a stale gate", lineFor(staleList.stdout, key)?.includes("stale=stale") === true)
 
 report()

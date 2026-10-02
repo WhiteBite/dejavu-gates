@@ -5,7 +5,7 @@
  */
 import { join } from "node:path"
 import { sanitizeForStore } from "./patterns"
-import { createStores, type Gate, type GateStore, type Stores } from "./store"
+import { createStores, lessonStaleness, type Gate, type GateStore, type RetireWhen, type Stores } from "./store"
 import { isAutoCorrection, sliceSafe, SNIPPET_MAX } from "./validate"
 
 const KEY_SHAPE = /^[0-9a-f]{12}$/
@@ -14,6 +14,8 @@ const USAGE = `usage: dejavu lesson [--store <dir>] [--all] <command> [args]
   list                    enforced gates, highest count first
   show <key>              one gate's evidence and correction
   set <key> <text...>     write a human correction (sanitized, capped at ${SNIPPET_MAX} chars)
+  retire-when <key> <spec>   set a retirement condition: dep:<name>@>=<min> | path-present:<path> | path-absent:<path> | tag:<name>
+  retire-when <key> --clear  remove the retirement condition
   --store <dir>           project dir to read (default: cwd); must precede <command>
   --all                   list watching gates too, marked enforced=no; must precede <command>`
 
@@ -28,6 +30,42 @@ async function locateGate(stores: Stores, key: string): Promise<{ gate: Gate; st
     if (gate !== undefined) return { gate, store }
   }
   return null
+}
+
+function parseRetireSpec(spec: string): RetireWhen | undefined {
+  if (spec.startsWith("dep:")) {
+    const body = spec.slice("dep:".length)
+    const at = body.lastIndexOf("@")
+    if (at < 1) return undefined
+    const name = sanitizeForStore(body.slice(0, at))
+    let min = body.slice(at + 1)
+    if (min.startsWith(">=")) min = min.slice(2)
+    min = sanitizeForStore(min)
+    if (name === "" || min === "") return undefined
+    return { kind: "dep", name, min }
+  }
+  if (spec.startsWith("path-present:")) {
+    const path = sanitizeForStore(spec.slice("path-present:".length))
+    if (path === "") return undefined
+    return { kind: "path", mode: "present", path }
+  }
+  if (spec.startsWith("path-absent:")) {
+    const path = sanitizeForStore(spec.slice("path-absent:".length))
+    if (path === "") return undefined
+    return { kind: "path", mode: "absent", path }
+  }
+  if (spec.startsWith("tag:")) {
+    const tag = sanitizeForStore(spec.slice("tag:".length))
+    if (tag === "") return undefined
+    return { kind: "tag", tag }
+  }
+  return undefined
+}
+
+function retireSpec(cond: RetireWhen): string {
+  if (cond.kind === "dep") return `dep:${cond.name}@>=${cond.min}`
+  if (cond.kind === "path") return cond.mode === "present" ? `path-present:${cond.path}` : `path-absent:${cond.path}`
+  return `tag:${cond.tag}`
 }
 
 async function runList(projectDir: string, args: readonly string[], all: boolean): Promise<number> {
@@ -51,7 +89,9 @@ async function runList(projectDir: string, args: readonly string[], all: boolean
   for (const { gate, scope } of rows) {
     const correction = gate.correction === undefined ? "none" : isAutoCorrection(gate) ? "machine" : "human"
     const enforced = gate.status === "watching" ? "  enforced=no" : ""
-    process.stdout.write(`${gate.key}  ${gate.status}  count=${gate.count}  sessions=${gate.sessions.length}  correction=${correction}  scope=${scope}${enforced}  ${gate.signature}\n`)
+    const verdict = lessonStaleness(gate, Date.now())
+    const stale = verdict !== "fresh" ? `  stale=${verdict}` : ""
+    process.stdout.write(`${gate.key}  ${gate.status}  count=${gate.count}  sessions=${gate.sessions.length}  correction=${correction}  scope=${scope}${enforced}${stale}  ${gate.signature}\n`)
   }
   return 0
 }
@@ -78,6 +118,8 @@ async function runShow(projectDir: string, args: readonly string[]): Promise<num
   process.stdout.write(`evidence: ${gate.count} failures across ${gate.sessions.length} sessions, first seen ${gate.firstSeen.slice(0, 10)}, recurred-after-gate ${gate.recurredAfterGate}\n`)
   process.stdout.write(`snippet: ${gate.snippet}\n`)
   process.stdout.write(`correction: ${correction}\n`)
+  process.stdout.write(`lesson: ${lessonStaleness(gate, Date.now())}\n`)
+  if (gate.retireWhen !== undefined) process.stdout.write(`retire-when: ${retireSpec(gate.retireWhen)}\n`)
   process.stdout.write(`store: ${store.dir}\n`)
   return 0
 }
@@ -133,7 +175,12 @@ async function runSet(projectDir: string, args: readonly string[]): Promise<numb
       gate.correction = clean
       gate.correctionOrigin = "human"
       gate.correctionAt = Date.now()
-      gate.correctionBaseline = { recurred: gate.recurredAfterGate, reminded: gate.remindedCount, overrides: gate.overrideCount }
+      gate.correctionBaseline = {
+        recurred: gate.recurredAfterGate,
+        reminded: gate.remindedCount,
+        overrides: gate.overrideCount,
+        ...(gate.promotionCount !== undefined ? { promoted: gate.promotionCount } : {}),
+      }
       await store.save()
       return prior
     })
@@ -149,6 +196,64 @@ async function runSet(projectDir: string, args: readonly string[]): Promise<numb
   process.stdout.write(`[dejavu] correction written to gate ${key} (${display.tool}: ${display.signature})\n`)
   process.stdout.write(`  before: ${before ?? "(none)"}\n`)
   process.stdout.write(`  after:  ${clean}\n`)
+  for (const store of written) {
+    process.stdout.write(`  stored: ${join(store.dir, "gates.json")}\n`)
+  }
+  return 0
+}
+
+async function runRetireWhen(projectDir: string, args: readonly string[]): Promise<number> {
+  const key = args[0]
+  if (key === undefined || !KEY_SHAPE.test(key)) {
+    process.stderr.write(`error: retire-when requires a 12-hex gate key\n${USAGE}\n`)
+    return 1
+  }
+  if (args.length !== 2) {
+    process.stderr.write(`error: retire-when takes exactly one spec (or --clear)\n${USAGE}\n`)
+    return 1
+  }
+  const specArg = args[1] ?? ""
+  const clear = specArg === "--clear"
+  const next = clear ? undefined : parseRetireSpec(specArg)
+  if (next === undefined && !clear) {
+    process.stderr.write(`error: unknown retire-when spec "${specArg}"\n${USAGE}\n`)
+    return 1
+  }
+  const stores = createStores(projectDir)
+  const owners: GateStore[] = []
+  let display: { tool: string; signature: string } | null = null
+  for (const store of scopes(stores)) {
+    await store.load()
+    const gate = store.byKey(key)
+    if (gate !== undefined) {
+      owners.push(store)
+      if (display === null) display = { tool: gate.tool, signature: gate.signature }
+    }
+  }
+  if (owners.length === 0 || display === null) {
+    process.stderr.write(`[dejavu] no gate with key ${key}\n`)
+    return 1
+  }
+  // a duplicate key in the other scope must not keep enforcing the old condition — write every copy
+  const written: GateStore[] = []
+  for (const store of owners) {
+    const ok = await store.runLocked(async (): Promise<boolean> => {
+      const gates = await store.loadForMutation()
+      const gate = gates.find((g) => g.key === key)
+      if (gate === undefined) return false
+      if (next === undefined) delete gate.retireWhen
+      else gate.retireWhen = next
+      await store.save()
+      return true
+    })
+    if (ok) written.push(store)
+  }
+  if (written.length === 0) {
+    process.stderr.write(`[dejavu] no gate with key ${key}\n`)
+    return 1
+  }
+  process.stdout.write(`[dejavu] retire-when ${clear ? "cleared" : "set"} on gate ${key} (${display.tool}: ${display.signature})\n`)
+  if (next !== undefined) process.stdout.write(`  condition: ${retireSpec(next)}\n`)
   for (const store of written) {
     process.stdout.write(`  stored: ${join(store.dir, "gates.json")}\n`)
   }
@@ -199,6 +304,7 @@ export async function runLesson(argv: readonly string[]): Promise<number> {
   if (sub === "list") return runList(projectDir, args, all)
   if (sub === "show") return runShow(projectDir, args)
   if (sub === "set") return runSet(projectDir, args)
+  if (sub === "retire-when") return runRetireWhen(projectDir, args)
   process.stderr.write(`${USAGE}\n`)
   return 1
 }

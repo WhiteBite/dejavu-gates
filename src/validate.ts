@@ -4,7 +4,7 @@
  * and by diagnostics (doctor). Parse, don't validate: what survives
  * coerceGateShape + repairGate satisfies the data-model invariants.
  */
-import type { Gate } from "./store"
+import type { Gate, RetireWhen } from "./store"
 import { canBlock, canRemind, looksLikeSuccess, sanitizeForStore, suggestCorrection } from "./patterns"
 
 /** sha1 prefix-12, the only key shape patternKey ever emits */
@@ -114,7 +114,12 @@ export function coerceGateShape(raw: unknown): Gate | null {
     const recurred = typeof b.recurred === "number" && Number.isFinite(b.recurred) && b.recurred >= 0 ? Math.floor(b.recurred) : null
     const reminded = typeof b.reminded === "number" && Number.isFinite(b.reminded) && b.reminded >= 0 ? Math.floor(b.reminded) : null
     const overrides = typeof b.overrides === "number" && Number.isFinite(b.overrides) && b.overrides >= 0 ? Math.floor(b.overrides) : null
-    if (recurred !== null && reminded !== null && overrides !== null) gate.correctionBaseline = { recurred, reminded, overrides }
+    if (recurred !== null && reminded !== null && overrides !== null) {
+      gate.correctionBaseline = { recurred, reminded, overrides }
+      if (typeof b.promoted === "number" && Number.isFinite(b.promoted) && b.promoted >= 0) {
+        gate.correctionBaseline.promoted = Math.floor(b.promoted)
+      }
+    }
   }
   if (typeof r.correctionsProven === "number" && Number.isFinite(r.correctionsProven) && r.correctionsProven >= 0) {
     gate.correctionsProven = Math.floor(r.correctionsProven)
@@ -140,6 +145,19 @@ export function coerceGateShape(raw: unknown): Gate | null {
     const count = typeof b.count === "number" && Number.isFinite(b.count) && b.count >= 0 ? Math.floor(b.count) : 0
     const movedOn = typeof b.movedOn === "number" && Number.isFinite(b.movedOn) && b.movedOn >= 0 ? Math.floor(b.movedOn) : undefined
     if (count > 0) gate.retireBaseline = movedOn === undefined ? { count } : { count, movedOn }
+  }
+  if (r.retireWhen !== null && typeof r.retireWhen === "object" && !Array.isArray(r.retireWhen)) {
+    const w = r.retireWhen as Record<string, unknown>
+    let retireWhen: RetireWhen | undefined
+    if (w.kind === "dep" && typeof w.name === "string" && typeof w.min === "string") {
+      retireWhen = { kind: "dep", name: w.name, min: w.min }
+    } else if (w.kind === "path" && (w.mode === "present" || w.mode === "absent") && typeof w.path === "string") {
+      retireWhen = { kind: "path", mode: w.mode, path: w.path }
+    } else if (w.kind === "tag" && typeof w.tag === "string") {
+      retireWhen = { kind: "tag", tag: w.tag }
+    }
+    // malformed/unknown kind: the field is dropped, the gate survives
+    if (retireWhen !== undefined) gate.retireWhen = retireWhen
   }
   if (r.remindedSessions !== null && typeof r.remindedSessions === "object" && !Array.isArray(r.remindedSessions)) {
     const sessions: Record<string, number> = {}
@@ -191,6 +209,10 @@ export function repairGate(gate: Gate): boolean {
   // re-open the instant re-promotion the baseline exists to damp.
   if (gate.retireBaseline !== undefined && gate.retireBaseline.count > gate.count) {
     gate.retireBaseline.count = gate.count
+    changed = true
+  }
+  if (gate.retireWhen?.kind === "path" && gate.retireWhen.path.includes("\\")) {
+    gate.retireWhen.path = gate.retireWhen.path.replace(/\\/g, "/")
     changed = true
   }
   if (gate.snippet.length > SNIPPET_MAX) {

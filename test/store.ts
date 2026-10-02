@@ -12,7 +12,7 @@ import { join } from "node:path"
 import { fileURLToPath } from "node:url"
 import { atomicWrite, CORRUPT_DEFAULT_DAYS, ntPath, sweepStoreArtifacts, TMP_ORPHAN_MS } from "../src/fs"
 import { callSignature, patternKey, suggestCorrection } from "../src/patterns"
-import { createStores, GateStore, GLOBAL_PROJECTS, mergeGate, NOISE_TTL_DAYS, PLUGIN_VERSION, Stores, TTL_DAYS, type Gate } from "../src/store"
+import { createStores, GateStore, GLOBAL_PROJECTS, lessonStaleness, mergeGate, NOISE_TTL_DAYS, PLUGIN_VERSION, STALE_LESSON_DAYS, Stores, TTL_DAYS, type Gate } from "../src/store"
 import { coerceGateShape, isAutoCorrection, repairGate } from "../src/validate"
 import { makeChecker } from "./helpers"
 
@@ -399,6 +399,52 @@ await rsStores.recordSuccess({ key: patternKey(rsMachineSig), signature: rsMachi
 const rsRows = await readGates(rsProjectStore)
 check("a success on a human-corrected enforced gate increments correctionsProven", rsRows.find((g) => g.key === patternKey(rsHumanSig))?.correctionsProven === 1)
 check("a success on a machine-corrected gate leaves correctionsProven unset", rsRows.find((g) => g.key === patternKey(rsMachineSig))?.correctionsProven === undefined)
+
+// --- 17. retire_when parse boundary + lesson staleness verdicts ---
+const rwDep = coerceGateShape(seedGate({ key: "123400000011", retireWhen: { kind: "dep", name: "typescript", min: "5.0.0" } }))
+check("retireWhen dep parses at the boundary", rwDep?.retireWhen?.kind === "dep" && rwDep.retireWhen.name === "typescript" && rwDep.retireWhen.min === "5.0.0")
+const rwPath = coerceGateShape(seedGate({ key: "123400000012", retireWhen: { kind: "path", mode: "absent", path: "legacy.config" } }))
+check("retireWhen path parses at the boundary", rwPath?.retireWhen?.kind === "path" && rwPath.retireWhen.mode === "absent" && rwPath.retireWhen.path === "legacy.config")
+const rwTag = coerceGateShape(seedGate({ key: "123400000013", retireWhen: { kind: "tag", tag: "v2.0.0" } }))
+check("retireWhen tag parses at the boundary", rwTag?.retireWhen?.kind === "tag" && rwTag.retireWhen.tag === "v2.0.0")
+const rwUnknown = coerceGateShape(seedGate({ key: "123400000014", retireWhen: { kind: "env", var: "X" } }))
+check("an unknown retireWhen kind drops the field, keeps the gate", rwUnknown !== null && rwUnknown.retireWhen === undefined)
+const rwBadMode = coerceGateShape(seedGate({ key: "123400000015", retireWhen: { kind: "path", mode: "sometimes", path: "x" } }))
+check("a malformed retireWhen mode drops the field", rwBadMode !== null && rwBadMode.retireWhen === undefined)
+const rwMissingField = coerceGateShape(seedGate({ key: "123400000016", retireWhen: { kind: "dep", name: "typescript" } }))
+check("a retireWhen missing required fields drops the field", rwMissingField !== null && rwMissingField.retireWhen === undefined)
+
+const rwWinPath = makeGate({ retireWhen: { kind: "path", mode: "present", path: "src\\legacy\\old.ts" } })
+repairGate(rwWinPath)
+check("repairGate normalizes backslashes in a path condition", rwWinPath.retireWhen?.kind === "path" && rwWinPath.retireWhen.path === "src/legacy/old.ts")
+
+const promotedParse = coerceGateShape(seedGate({ key: "123400000017", correction: "text", correctionBaseline: { recurred: 1, reminded: 2, overrides: 3, promoted: 2.7 } }))
+check("correctionBaseline.promoted floors at the parse boundary", promotedParse?.correctionBaseline?.promoted === 2)
+const promotedDropped = coerceGateShape(seedGate({ key: "123400000018", correction: "text", correctionBaseline: { recurred: 1, reminded: 2, overrides: 3, promoted: -1 } }))
+check("an invalid correctionBaseline.promoted is omitted, the baseline kept", promotedDropped !== null && promotedDropped.correctionBaseline?.promoted === undefined && promotedDropped.correctionBaseline?.recurred === 1)
+
+const now = Date.now()
+check(
+  "lessonStaleness: correctionsProven wins first",
+  lessonStaleness(makeGate({ correctionsProven: 1, recurredAfterGate: 9, promotionCount: 5, correctionBaseline: { recurred: 0, reminded: 0, overrides: 0, promoted: 0 } }), now) === "proven",
+)
+check(
+  "lessonStaleness: repromoted after the human lesson",
+  lessonStaleness(makeGate({ correction: "human fix", correctionOrigin: "human", promotionCount: 2, correctionBaseline: { recurred: 0, reminded: 0, overrides: 0, promoted: 1 } }), now) === "repromoted",
+)
+check(
+  "lessonStaleness: stale on post-correction recurrences",
+  lessonStaleness(makeGate({ correction: "human fix", correctionOrigin: "human", recurredAfterGate: 4, correctionBaseline: { recurred: 1, reminded: 0, overrides: 0 } }), now) === "stale",
+)
+check(
+  "lessonStaleness: dormant past STALE_LESSON_DAYS",
+  lessonStaleness(makeGate({ status: "watching", correction: "human fix", correctionOrigin: "human", correctionAt: now - (STALE_LESSON_DAYS + 1) * DAY_MS }), now) === "dormant",
+)
+check("lessonStaleness: fresh otherwise", lessonStaleness(makeGate({ correction: "human fix", correctionOrigin: "human", correctionAt: now }), now) === "fresh")
+check(
+  "lessonStaleness: machine corrections never stale or repromoted",
+  lessonStaleness(makeGate({ correction: "machine default", correctionOrigin: "machine", recurredAfterGate: 9, promotionCount: 4 }), now) === "fresh",
+)
 
 if (process.env.BENCH === "1") {
   const benchProject = join(tmp, "bench-project")

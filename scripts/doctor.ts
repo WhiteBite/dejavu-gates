@@ -5,12 +5,13 @@
  * Usage: bun scripts/doctor.ts [--repair] [--prune-corrupt[=<days>]] [projectDir ...]
  *   --repair  heal first (reconcile + migrate), then report
  */
-import { existsSync } from "node:fs"
+import { spawnSync } from "node:child_process"
+import { existsSync, readFileSync } from "node:fs"
 import { readFile, readdir, stat } from "node:fs/promises"
 import { join } from "node:path"
 import { CORRUPT_DEFAULT_DAYS, sweepStoreArtifacts, TMP_ORPHAN_MS } from "../src/fs"
 import { canBlock, canRemind, fuzzySimilar, isRepoLocal, sanitizeForStore } from "../src/patterns"
-import { createStores, DEMOTE_RECURRENCES, GateStore, GLOBAL_PROJECTS, MAX_GATES, NOISE_TTL_DAYS, resolveGlobalDir, retireTaught, PLUGIN_VERSION, PROMOTE_SESSIONS, TTL_DAYS, type Gate } from "../src/store"
+import { createStores, DEMOTE_RECURRENCES, GateStore, GLOBAL_PROJECTS, lessonStaleness, MAX_GATES, NOISE_TTL_DAYS, resolveGlobalDir, retireTaught, PLUGIN_VERSION, PROMOTE_SESSIONS, TTL_DAYS, type Gate } from "../src/store"
 import { coerceGateShape, hasNestedTokens } from "../src/validate"
 
 const repair = process.argv.includes("--repair")
@@ -65,6 +66,61 @@ function correctionClaims(gate: Gate, roots: readonly string[]): string[] {
   return claims
 }
 
+/** Numeric lower triple of a semver-ish range: leading ^~>=< stripped,
+ * prerelease dropped. `*`/`latest`/workspace protocols are unparseable. */
+function versionTriple(range: string): [number, number, number] | null {
+  const cleaned = (range.trim().replace(/^[\s^~>=<]+/, "").split("-")[0] ?? "").trim()
+  const match = /^(\d+)(?:\.(\d+))?(?:\.(\d+))?/.exec(cleaned)
+  if (match === null) return null
+  return [Number(match[1] ?? 0), Number(match[2] ?? 0), Number(match[3] ?? 0)]
+}
+
+function tripleGte(declared: readonly [number, number, number], min: readonly [number, number, number]): boolean {
+  for (let i = 0; i < 3; i++) {
+    const d = declared[i] ?? 0
+    const m = min[i] ?? 0
+    if (d !== m) return d > m
+  }
+  return true
+}
+
+/** True when the gate's retire_when condition holds at projectRoot. Global
+ * scope (root null): met when ANY existing dir in gate.projects satisfies. */
+function retireWhenMet(gate: Gate, projectRoot: string | null): boolean {
+  const cond = gate.retireWhen
+  if (cond === undefined) return false
+  if (projectRoot === null) {
+    return gate.projects.some((p) => existsSync(p) && retireWhenMet(gate, p))
+  }
+  if (cond.kind === "dep") {
+    let raw: string
+    try {
+      raw = readFileSync(join(projectRoot, "package.json"), "utf8")
+    } catch {
+      return false
+    }
+    let declared: string | undefined
+    try {
+      const pkg = JSON.parse(raw) as { dependencies?: Record<string, string>; devDependencies?: Record<string, string>; peerDependencies?: Record<string, string> }
+      declared = [pkg.dependencies, pkg.devDependencies, pkg.peerDependencies]
+        .map((deps) => deps?.[cond.name])
+        .find((v): v is string => typeof v === "string")
+    } catch {
+      return false
+    }
+    if (declared === undefined) return false
+    const declaredTriple = versionTriple(declared)
+    const minTriple = versionTriple(cond.min)
+    if (declaredTriple === null || minTriple === null) return false
+    return tripleGte(declaredTriple, minTriple)
+  }
+  if (cond.kind === "path") {
+    const present = existsSync(join(projectRoot, cond.path))
+    return cond.mode === "present" ? present : !present
+  }
+  return spawnSync("git", ["-C", projectRoot, "rev-parse", "-q", "--verify", `refs/tags/${cond.tag}`]).status === 0
+}
+
 // Cross-store invariants need every scope visible. Without explicit args,
 // discover project dirs from the global index — it is the only registry of
 // which projects dejavu has seen. (Running global-only produced hundreds of
@@ -111,6 +167,22 @@ if (repair) {
           store.deferEvent({ type: "repaired", key: gate.key, tool: gate.tool, snippet: `stale correction retired (quoted missing-file error; ${stalePath} exists now)` })
         }
         if (staleFixed) await store.save()
+      })
+    }
+    // retire_when met means the taught error is obsolete — retire softly, damped re-promotion stays possible
+    for (const store of stores.projectStore ? [stores.projectStore, stores.globalStore] : [stores.globalStore]) {
+      const root = store === stores.projectStore ? dir : null
+      await store.runLocked(async () => {
+        const scopeGates = await store.loadForMutation()
+        let retired = false
+        for (const gate of scopeGates) {
+          if (gate.status === "watching" || gate.retireWhen === undefined) continue
+          if (!retireWhenMet(gate, root)) continue
+          retireTaught(gate)
+          retired = true
+          store.deferEvent({ type: "repaired", key: gate.key, tool: gate.tool, snippet: "retire_when met" })
+        }
+        if (retired) await store.save()
       })
     }
     // quarantine artifacts are forensic bytes — prune them only with --prune-corrupt
@@ -461,6 +533,27 @@ for (const scope of scopes) {
     issues += staleCorrections.length
     console.log(`   STALE-CORRECTION (${staleCorrections.length}) — correction teaches a file-not-found error but the quoted path EXISTS now; doctor --repair retires:`)
     for (const g of staleCorrections.slice(0, 10)) console.log(`     - reminded ${g.remindedCount} | ${g.signature}`)
+  }
+
+  const retireMet = gates.filter((g) => g.status !== "watching" && retireWhenMet(g, scopeProject.get(scope.dir) ?? null))
+  if (retireMet.length > 0) {
+    issues += retireMet.length
+    console.log(`   RETIRE-WHEN MET (${retireMet.length}) — retire_when condition satisfied; doctor --repair retires:`)
+    for (const g of retireMet.slice(0, 10)) console.log(`     - ${g.key} | ${g.signature}`)
+  }
+
+  const lessonVerdicts = gates.map((g) => ({ gate: g, verdict: lessonStaleness(g, Date.now()) }))
+  const staleLessons = lessonVerdicts.filter((v) => v.verdict === "stale").map((v) => v.gate)
+  if (staleLessons.length > 0) {
+    issues += staleLessons.length
+    console.log(`   STALE-LESSON (${staleLessons.length}) — human correction not stopping recurrences since it was written; rewrite or clear it (report-only):`)
+    for (const g of staleLessons.slice(0, 10)) console.log(`     - ${g.key} | ${g.signature}`)
+  }
+  const repromotedLessons = lessonVerdicts.filter((v) => v.verdict === "repromoted").map((v) => v.gate)
+  if (repromotedLessons.length > 0) {
+    issues += repromotedLessons.length
+    console.log(`   REPROMOTED-LESSON (${repromotedLessons.length}) — gate re-promoted since the human correction was written; the lesson may predate the current failure mode (report-only):`)
+    for (const g of repromotedLessons.slice(0, 10)) console.log(`     - ${g.key} | ${g.signature}`)
   }
 
   if (repair) {
