@@ -1,90 +1,24 @@
-# dejavu — OpenCode error-gate plugin
+<!-- rdk:generated:start -->
+# dejavu-gates
 
-> Cross-session memory prosthesis with teeth for OpenCode: mechanically detects
-> recurring tool-call failures and promotes them into enforced gates. Remind
-> first, hard-block on same-session repeat offense. TypeScript + Bun, ships as
-> source, no build step.
+> Cross-session error gates for AI coding agents: detects recurring tool-call failures and promotes them into enforced gates. Remind first, block on same-session repeat offense. Works with OpenCode, Claude Code, Codex CLI, Gemini CLI, Cursor, Copilot CLI, and Crush.
 
-## What it does
+This file follows the llms.txt convention: a short, LLM-friendly index of the project.
 
-Dejavu watches OpenCode tool calls (bash, read, edit, write, glob, grep) fail,
-normalizes each call into a stable signature (paths/numbers/hashes/secrets
-stripped), counts recurrences across sessions, and promotes a pattern into an
-enforced gate after 3 failures across 2 distinct sessions. The next attempt at
-a gated call is aborted with a REMINDER carrying the correction; retrying it
-and failing again in the same session escalates to a hard BLOCK.
+## Docs
 
-## Key properties
+- [Homepage](https://github.com/WhiteBite/dejavu-gates): project landing page
+- [Issues](https://github.com/WhiteBite/dejavu-gates/issues): roadmap and known gaps
+- [README.md](./README.md): install, run and test instructions
 
-- Two scopes: project gates in `<repo>/.opencode/dejavu/gates.json` escalate
-  to global `~/.config/opencode/dejavu/gates.json` after appearing in 2+
-  project directories.
-- Three enforcement tiers: only non-diagnostic bash with residual identity may
-  block; diagnostics/iteration commands land in `reminding` (remind, never
-  block); everything else stays `watching`. Over-generic (fully
-  parameterized) signatures never enforce at any tier.
-- Sanitization before any persistence: secret scrubbing (OpenAI/Anthropic/
-  AWS/GitHub/Slack/Stripe/JWT/PEM/DB-conn patterns) + terminal control-char
-  stripping (`sanitizeForStore`).
-- Gates expire after 60 days without recurrence; `recurredAfterGate` is the
-  health metric — and it acts: enforced gates that keep failing (3+) or keep
-  getting overridden (5+) demote themselves to watching (`feedbackDemoted`).
-  Gates that taught their lesson (reminded 5+ times, zero reoffense) retire
-  softly (`retired-taught`). `scripts/doctor.ts` reports all pathology
-  classes and discovers project stores from the global index when run
-  without arguments.
-- `DEJAVU_HOME` env var overrides the global store directory (testing,
-  custom setups).
-- Companion agent skill (skills/dejavu/SKILL.md) and `/dejavu` status command
-  (command/dejavu.md).
+## Key facts
 
-## Installation
+- Install: `npm install dejavu-gates`
+- Run: `dejavu report`
+- Test: `npm run test`
 
-npm (recommended):
+## Optional
 
-```jsonc
-// ~/.config/opencode/opencode.json
-{ "plugin": ["dejavu-gates"] }
-```
-
-From source:
-
-```bash
-git clone https://github.com/WhiteBite/dejavu-gates ~/.config/opencode/vendor/dejavu
-```
-
-```ts
-// ~/.config/opencode/plugins/dejavu.ts
-export { Dejavu } from "../vendor/dejavu/index.ts"
-```
-
-## Files
-
-- [index.ts](./index.ts): plugin entry — `Dejavu` factory, 4 hooks
-  (tool.execute.before/after, event, experimental.session.compacting)
-- [src/patterns.ts](./src/patterns.ts): signature normalization, secret
-  scrubbing, failure detection, blocking policy, fuzzy matching
-- [src/store.ts](./src/store.ts): GateStore/Stores — two-scope persistence,
-  lockfiles, promotion, TTL expiry, migration
-- [src/validate.ts](./src/validate.ts): gate parse/repair boundary
-  (strict parse + mechanical repair)
-- [test/smoke.ts](./test/smoke.ts): behavioral smoke test (`bun test/smoke.ts`)
-- [scripts/doctor.ts](./scripts/doctor.ts): pathology report
-- [scripts/analyze.ts](./scripts/analyze.ts): store summary
-- [scripts/migrate.ts](./scripts/migrate.ts): demote + scrub migration
-- [AGENTS.md](./AGENTS.md): coding-agent context for this repository
-- [skills/dejavu/SKILL.md](./skills/dejavu/SKILL.md): companion agent protocol
-- [command/dejavu.md](./command/dejavu.md): /dejavu status command
-
-## Commands
-
-```bash
-bun install
-bun run typecheck        # tsc --noEmit
-bun test/smoke.ts        # behavioral test suite
-bun scripts/doctor.ts [projectDirs...]
-```
-
-## License
-
-MIT
+- [llms-full.txt](./llms-full.txt): the full documentation in a single file
+- [AGENTS.md](./AGENTS.md): instructions for coding agents
+<!-- rdk:generated:end -->

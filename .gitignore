@@ -9,3 +9,5 @@ dist/
 build/
 .DS_Store
 .env
+.opencode/
+.codenomad/
