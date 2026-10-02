@@ -10,7 +10,7 @@ import { canBlock, canRemind, looksLikeSuccess, sanitizeForStore, suggestCorrect
 /** sha1 prefix-12, the only key shape patternKey ever emits */
 const KEY_SHAPE = /^[0-9a-f]{12}$/
 /** detection truncates snippets at 200 chars on ingest */
-const SNIPPET_MAX = 200
+export const SNIPPET_MAX = 200
 /** per-session enforcement state rots after a day — sessions do not live longer */
 const SESSION_STATE_TTL_MS = 24 * 60 * 60 * 1000
 /** bound per-gate session state so long-lived gates cannot bloat */
@@ -19,6 +19,11 @@ const SESSION_STATE_CAP = 50
  * byte-for-byte around its quoted snippet is machine-generated; anything else
  * is a human/agent edit and must never be re-derived. */
 const AUTO_TEMPLATE_CORRECTION = /^Last error: "(.*)" — address that specific error before retrying this exact call\.$/
+
+/** True when the correction is absent or the machine-generated auto template — anything else is a human edit. */
+export function isAutoCorrection(correction: string | undefined): boolean {
+  return correction === undefined || AUTO_TEMPLATE_CORRECTION.test(correction)
+}
 
 /** Fail time (ms) of a failedSessions entry regardless of shape — legacy bare
  * number or the { t, v } form that carries the workspace version at fail time. */

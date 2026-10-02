@@ -27,12 +27,15 @@ You were reminded, retried, and it failed again. The gate is now hard in this se
 - Do not attempt the same call again in any form that matches the pattern.
 - Tell the user what is blocked and why (the message contains evidence and the gate file path).
 - Choose a fundamentally different approach to reach the goal.
+- If you discover the root cause, record it as a one-line `correction` on that gate (the block message points at it): `dejavu lesson set <key> "<fix>"`.
 
 ## Improving gates (your one write privilege)
 
 Gates live in `.opencode/dejavu/gates.json` (project) and `~/.config/opencode/dejavu/gates.json` (global agent habits). The files are human- and agent-editable.
 
 When you discover the **root cause** of a gated failure, update the gate's `correction` field with a one-line actionable instruction (what to do instead, not what to avoid). Example: `"correction": "Use 'npm install --legacy-peer-deps' — this repo has conflicting peer deps"`.
+
+The supported way to review and write that field without hand-editing JSON is `dejavu lesson list` (shows which corrections are still machine-generated) and `dejavu lesson set <key> "<fix>"` — it can only write onto an existing gate, never create one.
 
 Do NOT:
 - create gates manually (promotion is mechanical: 3 failures across 2 sessions),

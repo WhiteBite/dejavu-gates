@@ -8,15 +8,18 @@ import { spawnSync } from "node:child_process"
 import { join } from "node:path"
 import { runHook } from "./cli"
 import { runInstall } from "./install"
+import { runLesson } from "./lesson"
 
 const INSTALL_SUBS = new Set(["install", "uninstall", "hooks"])
 const HOOK_SUBS = new Set(["pre", "post", "session-event"])
 const REPORT_SUBS = new Set(["report"])
+const LESSON_SUBS = new Set(["lesson"])
 
 const USAGE = `usage: dejavu <command> [args]
   install | uninstall | hooks --check   manage harness hook configs (--harness <csv> --user --yes --dry-run)
   pre | post | session-event            hook handler (--harness <name> [--store <dir>])
-  report [dirs...] [--recurrence]       gate health report (doctor) over the given project dirs or all discovered stores; --recurrence prints the per-gate recurrence verdicts (analyze), --repair heals first`
+  report [dirs...] [--recurrence]       gate health report (doctor) over the given project dirs or all discovered stores; --recurrence prints the per-gate recurrence verdicts (analyze), --repair heals first
+  lesson list|show|set                  inspect gates and edit corrections (--store <dir>)`
 
 function formatError(error: unknown): string {
   return error instanceof Error ? error.message : String(error)
@@ -38,6 +41,7 @@ async function main(): Promise<number> {
   const [sub, ...rest] = process.argv.slice(2)
   if (sub !== undefined && INSTALL_SUBS.has(sub)) return runInstall([sub, ...rest])
   if (sub !== undefined && REPORT_SUBS.has(sub)) return runReport(rest)
+  if (sub !== undefined && LESSON_SUBS.has(sub)) return runLesson(rest)
   if (sub !== undefined && HOOK_SUBS.has(sub)) {
     try {
       return await runHook(process.argv.slice(2))

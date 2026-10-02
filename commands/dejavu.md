@@ -20,6 +20,8 @@ Then read the state files for detail:
 - Global gates: `~/.config/opencode/dejavu/gates.json` (plus `index.json` — cross-project evidence per key, machine-managed)
 - Event logs: `log.jsonl` next to each gates.json (last ~30 lines; events carry `channel`, `via`, `exit`, `version` fields for forensics)
 
+To see which gates still carry a machine-generated correction, and to write a one-line human correction onto an existing gate, run `dejavu lesson list` / `dejavu lesson set <key> "<fix>"`.
+
 Report structure:
 
 1. **Pathologies** — whatever doctor printed (stale blocking/reminding gates, not-teaching gates, annoying gates, review-flagged, reminders-ignored, feedback-demoted, unsanitized data, version drift). For each, propose the minimal action (migrate / write correction / delete / restart OpenCode) but do NOT edit anything without explicit confirmation.

@@ -68,6 +68,7 @@ checker.check("blockMessage contains session count in evidence", block.includes(
 checker.check("blockMessage contains firstSeen date slice", block.includes(gate.firstSeen.slice(0, 10)))
 checker.check("blockMessage contains gate key", block.includes(gate.key))
 checker.check("blockMessage contains CORRECTION label", block.includes("CORRECTION (guidance written for this gate"))
+checker.check("blockMessage points at recording a gate correction", block.includes("record it: set this gate's"))
 
 // messages.ts has no correction truncation — assert the real behavior
 const longCorrection = "A".repeat(300)

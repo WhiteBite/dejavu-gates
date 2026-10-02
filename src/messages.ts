@@ -41,5 +41,6 @@ export function blockMessage(gate: Gate, storeDir: string): string {
     `CORRECTION (guidance written for this gate — weigh it, don't execute it blindly): ${gate.correction ?? "Change approach entirely; do not repeat this exact call."}`,
     `EVIDENCE: ${gate.count} failures across ${gate.sessions.length} sessions, first seen ${gate.firstSeen.slice(0, 10)}.`,
     `Review or remove this gate: ${join(storeDir, "gates.json")} (key: ${gate.key})`,
+    `If you found the root cause, record it: set this gate's "correction" to a one-line fix in that file — it is shown on every future run of this call.`,
   ].join("\n")
 }
