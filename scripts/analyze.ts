@@ -123,6 +123,11 @@ for (const dir of dirs) {
     console.log(
       `   total ${gates.length} | blocking ${blocking.length} | reminding ${reminding.length} | watching ${watching.length}${feedbackDemoted.length > 0 ? ` | feedback-demoted ${feedbackDemoted.length}` : ""} | tools: ${[...byTool.entries()].map(([t, n]) => `${t}:${n}`).join(" ")}`,
     )
+    const proven = gates.filter((g) => (g.correctionsProven ?? 0) > 0)
+    if (proven.length > 0) {
+      const top = [...proven].sort((a, b) => (b.correctionsProven ?? 0) - (a.correctionsProven ?? 0)).slice(0, 5)
+      console.log(`   proven lessons: ${proven.length} — human corrections followed by success; top: ${top.map((g) => `${g.key} x${g.correctionsProven ?? 0}`).join(" | ")}`)
+    }
   }
 
   renderRecurrence(gates)

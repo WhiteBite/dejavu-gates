@@ -185,4 +185,13 @@ await stores.recordFailure({ key: watchKey, signature: watchSignature, tool: "ba
 const watchSet = runLesson(["--store", projectDir, "set", watchKey, "fix the watch probe"])
 check("set on a watching gate → exit 0 with a not-enforced warning", watchSet.exitCode === 0 && watchSet.stderr.includes("not currently enforced"))
 
+const defaultList = runLesson(["--store", projectDir, "list"])
+check("default list hides the watching gate", defaultList.exitCode === 0 && lineFor(defaultList.stdout, watchKey) === undefined)
+const allList = runLesson(["--store", projectDir, "--all", "list"])
+const watchRow = lineFor(allList.stdout, watchKey)
+check("list --all shows the watching gate marked enforced=no", allList.exitCode === 0 && watchRow?.includes("watching") === true && watchRow?.includes("enforced=no") === true)
+check("list --all keeps enforced rows unmarked", lineFor(allList.stdout, key)?.includes("enforced=no") === false)
+const allAfterSub = runLesson(["--store", projectDir, "list", "--all"])
+check("--all after the subcommand stays a usage error", allAfterSub.exitCode === 1 && allAfterSub.stderr.includes("usage:"))
+
 report()

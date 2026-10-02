@@ -10,11 +10,12 @@ import { isAutoCorrection, sliceSafe, SNIPPET_MAX } from "./validate"
 
 const KEY_SHAPE = /^[0-9a-f]{12}$/
 
-const USAGE = `usage: dejavu lesson [--store <dir>] <command> [args]
+const USAGE = `usage: dejavu lesson [--store <dir>] [--all] <command> [args]
   list                    enforced gates, highest count first
   show <key>              one gate's evidence and correction
   set <key> <text...>     write a human correction (sanitized, capped at ${SNIPPET_MAX} chars)
-  --store <dir>           project dir to read (default: cwd); must precede <command>`
+  --store <dir>           project dir to read (default: cwd); must precede <command>
+  --all                   list watching gates too, marked enforced=no; must precede <command>`
 
 function scopes(stores: Stores): GateStore[] {
   return stores.projectStore !== null ? [stores.projectStore, stores.globalStore] : [stores.globalStore]
@@ -29,7 +30,7 @@ async function locateGate(stores: Stores, key: string): Promise<{ gate: Gate; st
   return null
 }
 
-async function runList(projectDir: string, args: readonly string[]): Promise<number> {
+async function runList(projectDir: string, args: readonly string[], all: boolean): Promise<number> {
   if (args.length > 0) {
     process.stderr.write(`error: list takes no arguments\n${USAGE}\n`)
     return 1
@@ -37,19 +38,20 @@ async function runList(projectDir: string, args: readonly string[]): Promise<num
   const stores = createStores(projectDir)
   // a key can sit in both scopes until migrate heals the duplicate — list it once, project copy first
   const seen = new Set<string>()
-  const enforced: { gate: Gate; scope: string }[] = []
+  const rows: { gate: Gate; scope: string }[] = []
   for (const store of scopes(stores)) {
     const scope = store === stores.projectStore ? "project" : "global"
     for (const gate of await store.load()) {
-      if (gate.status === "watching" || seen.has(gate.key)) continue
+      if ((!all && gate.status === "watching") || seen.has(gate.key)) continue
       seen.add(gate.key)
-      enforced.push({ gate, scope })
+      rows.push({ gate, scope })
     }
   }
-  enforced.sort((a, b) => b.gate.count - a.gate.count)
-  for (const { gate, scope } of enforced) {
+  rows.sort((a, b) => b.gate.count - a.gate.count)
+  for (const { gate, scope } of rows) {
     const correction = gate.correction === undefined ? "none" : isAutoCorrection(gate) ? "machine" : "human"
-    process.stdout.write(`${gate.key}  ${gate.status}  count=${gate.count}  sessions=${gate.sessions.length}  correction=${correction}  scope=${scope}  ${gate.signature}\n`)
+    const enforced = gate.status === "watching" ? "  enforced=no" : ""
+    process.stdout.write(`${gate.key}  ${gate.status}  count=${gate.count}  sessions=${gate.sessions.length}  correction=${correction}  scope=${scope}${enforced}  ${gate.signature}\n`)
   }
   return 0
 }
@@ -154,8 +156,9 @@ async function runSet(projectDir: string, args: readonly string[]): Promise<numb
 }
 
 export async function runLesson(argv: readonly string[]): Promise<number> {
-  // flags only before the subcommand: correction text may contain "--store" verbatim
+  // flags only before the subcommand: correction text may contain "--store" or "--all" verbatim
   let storeDir: string | null = null
+  let all = false
   let i = 0
   while (i < argv.length) {
     const arg = argv[i]
@@ -184,11 +187,16 @@ export async function runLesson(argv: readonly string[]): Promise<number> {
       i += 1
       continue
     }
+    if (arg === "--all") {
+      all = true
+      i += 1
+      continue
+    }
     break
   }
   const projectDir = storeDir ?? process.cwd()
   const [sub, ...args] = argv.slice(i)
-  if (sub === "list") return runList(projectDir, args)
+  if (sub === "list") return runList(projectDir, args, all)
   if (sub === "show") return runShow(projectDir, args)
   if (sub === "set") return runSet(projectDir, args)
   process.stderr.write(`${USAGE}\n`)

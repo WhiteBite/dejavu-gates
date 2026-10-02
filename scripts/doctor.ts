@@ -9,7 +9,7 @@ import { existsSync } from "node:fs"
 import { readFile, readdir, stat } from "node:fs/promises"
 import { join } from "node:path"
 import { CORRUPT_DEFAULT_DAYS, sweepStoreArtifacts, TMP_ORPHAN_MS } from "../src/fs"
-import { canBlock, canRemind, isRepoLocal, sanitizeForStore } from "../src/patterns"
+import { canBlock, canRemind, fuzzySimilar, isRepoLocal, sanitizeForStore } from "../src/patterns"
 import { createStores, DEMOTE_RECURRENCES, GateStore, GLOBAL_PROJECTS, MAX_GATES, NOISE_TTL_DAYS, resolveGlobalDir, retireTaught, PLUGIN_VERSION, PROMOTE_SESSIONS, TTL_DAYS, type Gate } from "../src/store"
 import { coerceGateShape, hasNestedTokens } from "../src/validate"
 
@@ -36,6 +36,33 @@ function staleCorrectionPath(gate: Gate): string | null {
   const candidate = quoted.replace(/\\\\/g, "\\")
   if (!/^(?:[A-Za-z]:[\\/]|\/)/.test(candidate)) return null
   return existsSync(candidate) ? candidate : null
+}
+
+// --repair only: human-correction claims — missing paths, malformed URLs. Flag-only.
+function correctionClaims(gate: Gate, roots: readonly string[]): string[] {
+  if (gate.correctionOrigin !== "human" || gate.correction === undefined) return []
+  const claims: string[] = []
+  for (const match of gate.correction.matchAll(/['"]([^'"]+)['"]/g)) {
+    const quoted = match[1]
+    if (quoted === undefined) continue
+    const candidate = quoted.replace(/\\\\/g, "\\")
+    if (/^(?:[A-Za-z]:[\\/]|\\\\|\/)/.test(candidate)) {
+      if (!existsSync(candidate)) claims.push(`quoted path not found: ${candidate}`)
+      continue
+    }
+    if (/^[a-z][a-z0-9+.-]*:/i.test(candidate) || candidate.includes(" ") || !/[\\/]/.test(candidate)) continue
+    if (roots.length === 0) continue
+    if (!roots.some((root) => existsSync(join(root, candidate)))) claims.push(`quoted path not found: ${candidate}`)
+  }
+  for (const match of gate.correction.matchAll(/\bhttps?:\S+/gi)) {
+    const trimmed = (match[0] ?? "").replace(/[.,;:!?)\]}'"]+$/, "")
+    try {
+      new URL(trimmed)
+    } catch {
+      claims.push(`malformed URL: ${trimmed}`)
+    }
+  }
+  return claims
 }
 
 // Cross-store invariants need every scope visible. Without explicit args,
@@ -274,6 +301,8 @@ async function loadScope(dir: string, isGlobal: boolean): Promise<Scope> {
 
 const scopes: Scope[] = [await loadScope(globalDir, true)]
 for (const p of projectDirs) scopes.push(await loadScope(join(p, ".opencode", "dejavu"), false))
+const scopeProject = new Map<string, string | null>([[globalDir, null]])
+for (const p of projectDirs) scopeProject.set(join(p, ".opencode", "dejavu"), p)
 
 const allKeys = new Set(scopes.flatMap((s) => s.gates.map((g) => g.key)))
 const keySignature = new Map(scopes.flatMap((s) => s.gates.map((g) => [g.key, g.signature] as const)))
@@ -413,6 +442,13 @@ for (const scope of scopes) {
     console.log(`   note: TEACHING (${teaching.length}) — corrected gates with zero recurrences after promotion`)
   }
 
+  const proven = gates.filter((g) => (g.correctionsProven ?? 0) > 0)
+  if (proven.length > 0) {
+    console.log(`   note: PROVEN LESSONS (${proven.length}) — human corrections followed by success:`)
+    for (const g of [...proven].sort((a, b) => (b.correctionsProven ?? 0) - (a.correctionsProven ?? 0)).slice(0, 10))
+      console.log(`     - ${g.key} proven ${g.correctionsProven} | ${g.signature}`)
+  }
+
   const annoying = gates.filter((g) => g.remindedCount >= 10 && (canBlock(g.tool, g.signature) || canRemind(g.tool, g.signature)))
   if (annoying.length > 0) {
     issues += annoying.length
@@ -425,6 +461,17 @@ for (const scope of scopes) {
     issues += staleCorrections.length
     console.log(`   STALE-CORRECTION (${staleCorrections.length}) — correction teaches a file-not-found error but the quoted path EXISTS now; doctor --repair retires:`)
     for (const g of staleCorrections.slice(0, 10)) console.log(`     - reminded ${g.remindedCount} | ${g.signature}`)
+  }
+
+  if (repair) {
+    const project = scopeProject.get(scope.dir) ?? null
+    const roots = project !== null ? [project] : projectDirs
+    const staleClaims = gates.flatMap((g) => correctionClaims(g, roots).map((claim) => `${g.key}: ${claim}`))
+    if (staleClaims.length > 0) {
+      issues += staleClaims.length
+      console.log(`   STALE CLAIM (${staleClaims.length}) — human correction quotes a missing path or a malformed URL; flag-only, fix via \`dejavu lesson set\`:`)
+      for (const claim of staleClaims.slice(0, 10)) console.log(`     - ${claim}`)
+    }
   }
 
   // review:true is set mechanically (blocked >= REVIEW_FIRES) but consumed
@@ -524,6 +571,27 @@ for (const scope of scopes) {
   }
 }
 
+// --- discoverability (informational): the project's instruction surface should mention the store contract ---
+const DISCOVERABILITY_TOKENS = [".opencode/dejavu/gates.json", "dejavu:proceed", "dejavu lesson"]
+const discoverability: string[] = []
+for (const project of projectDirs) {
+  const surface = ["AGENTS.md", "README.md"].map((name) => join(project, name)).find((p) => existsSync(p))
+  if (surface === undefined) continue
+  let text: string
+  try {
+    text = await readFile(surface, "utf8")
+  } catch {
+    continue
+  }
+  for (const token of DISCOVERABILITY_TOKENS) {
+    if (!text.includes(token)) discoverability.push(`${surface} does not mention ${token}`)
+  }
+}
+if (discoverability.length > 0) {
+  console.log(`\n== instruction-surface discoverability (informational)`)
+  for (const line of discoverability) console.log(`   DISCOVERABILITY (${line})`)
+}
+
 // --- cross-store invariants (need the full scope list) ---
 console.log(`\n== ${globalDir} (cross-store)`)
 let crossIssues = 0
@@ -556,6 +624,24 @@ if (missed.length > 0) {
   crossIssues += missed.length
   console.log(`   MISSED ESCALATION (${missed.length}) — index shows 2+ projects but the gate is not global; doctor --repair escalates:`)
   for (const [key, entry] of missed.slice(0, 10)) console.log(`     - ${key} projects=${entry.projects.length}`)
+}
+
+// C10b: a retired human lesson whose fuzzy-similar sibling is enforced without one.
+const orphanedLessons: Array<{ gate: Gate; sibling: Gate }> = []
+const seenOrphans = new Set<string>()
+for (const gate of scopes.flatMap((s) => s.gates)) {
+  if (orphanedLessons.length >= 10) break
+  if (gate.correctionOrigin !== "human" || gate.status !== "watching" || seenOrphans.has(gate.key)) continue
+  seenOrphans.add(gate.key)
+  const sibling = scopes
+    .flatMap((s) => s.gates)
+    .find((s) => s.key !== gate.key && s.status !== "watching" && s.correctionOrigin !== "human" && fuzzySimilar(s.signature, gate.signature))
+  if (sibling !== undefined) orphanedLessons.push({ gate, sibling })
+}
+if (orphanedLessons.length > 0) {
+  crossIssues += orphanedLessons.length
+  console.log(`   ORPHANED LESSON (${orphanedLessons.length}) — human-corrected gate retired while a fuzzy-similar enforced gate has no human correction; copy the correction over (dejavu lesson set <sibling> "<correction>"):`)
+  for (const { gate, sibling } of orphanedLessons) console.log(`     - (${gate.key}, ${sibling.key}) ${sibling.signature}`)
 }
 if (crossIssues === 0) console.log("   ok")
 issues += crossIssues
