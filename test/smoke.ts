@@ -1331,7 +1331,10 @@ check("fuzzy proxy success does not heal or clear chains", (pxGate?.succeededAft
 
 // --- 63. override marker requires comment syntax (no smuggling as data) ---
 check("unquoted marker smuggled into a chain segment does not bypass", (await attempt(`echo dejavu:proceed && ${CMD}`, "sm1", "sm1")) !== null)
-check("bare marker without '#' does not bypass", (await attempt(`${CMD} dejavu:proceed`, "sm2", "sm2")) !== null)
+const sm2Before = (await readGates()).find((g) => g.signature === (callSignature("bash", { command: CMD }) ?? ""))?.overrideCount ?? 0
+const sm2Bare = await attempt(`${CMD} dejavu:proceed`, "sm2", "sm2")
+const sm2After = (await readGates()).find((g) => g.signature === (callSignature("bash", { command: CMD }) ?? ""))?.overrideCount ?? 0
+check("bare marker without '#' is data — no gate match, no override counted", sm2Bare === null && sm2After === sm2Before)
 check("comment-form marker still bypasses", (await attempt(`${CMD} # dejavu:proceed`, "sm3", "sm3")) === null)
 
 // --- 64. exit-1 immunity requires every chain segment to be diagnostic ---

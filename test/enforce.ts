@@ -14,7 +14,7 @@ import {
   recordEventFailure,
   type EnforceContext,
 } from "../src/enforce"
-import { callSignature, canBlock, canRemind, hasGenericResidualIdentity, isRepoLocal, normalizeCommand, normalizeFilePath, patternKey } from "../src/patterns"
+import { callSignature, canBlock, canRemind, hasGenericResidualIdentity, isRepoLocal, normalizeCommand, normalizeFilePath, patternKey, REPEAT_PROCEED, signRepeatedCall } from "../src/patterns"
 import { claudeAdapter } from "../src/adapters/claude"
 import { GateStore, GLOBAL_PROJECTS, PROMOTE_COUNT_PROBE, Stores, type Gate } from "../src/store"
 import { repairGate } from "../src/validate"
@@ -234,6 +234,13 @@ check("the guard denial names the LONG-RUNNING class", (mGuard.verdict.reason ??
 const mProceed = await enforceBefore(ev({ tool: "bash", sessionId: "m1", args: { command: "npm run dev # dejavu:proceed" } }), m.ctx)
 check("dejavu:proceed lets a deliberate foreground run through", mProceed.verdict.action === "allow")
 
+// --- gw. guard bypass honors the marker inside a cmd /c wrapper ---
+const gw = await makeWorld("gw")
+const gwProceed = await enforceBefore(ev({ tool: "bash", sessionId: "gw1", args: { command: 'cmd /c "vite # dejavu:proceed"' } }), gw.ctx)
+check("a dejavu:proceed inside a cmd /c wrapper is not guard-blocked", gwProceed.verdict.action === "allow" && gwProceed.signalKind === null)
+const gwPlain = await enforceBefore(ev({ tool: "bash", sessionId: "gw2", args: { command: 'cmd /c "vite"' } }), gw.ctx)
+check("a cmd /c wrapper without the marker is still guard-blocked", gwPlain.signalKind === "guard")
+
 // --- n. ephemeral degradation: the chain lives on the gate, not in process memory ---
 const n = await makeWorld("n")
 const nCmd = "chain-state-tool --run"
@@ -448,6 +455,39 @@ check("an error-signalled generic result is still recorded", ge2ErrOut.recorded 
 
 // file probes keep their dedicated signatures and stay non-enforcing
 check("file probes are not generic (dedicated signature shape)", callSignature("read", { filePath: "src/x.ts" }, gc.projectDir) === "read:src/x.ts" && !canRemind("read", "read:src/x.ts") && !canBlock("read", "read:src/x.ts"))
+
+// --- pe. probe tools: the host's structural errored signal records the failure ---
+const pe = await makeWorld("pe")
+const peOut = await enforceAfter(
+  ev({ tool: "read", sessionId: "pe1", args: { filePath: join(pe.projectDir, "src", "missing.ts") }, phase: "post", output: "File does not exist: src/missing.ts", exitCode: null, channel: "text", errored: true }),
+  pe.ctx,
+)
+check("an errored probe with no exit code records a failure", peOut.recorded === true)
+const peGate = (await readProjectGates(pe)).find((g) => g.signature === "read:src/missing.ts")
+check("the probe failure lands under its file signature with the tool's own error text", peGate !== undefined && peGate.count === 1 && peGate.snippet === "File does not exist: src/missing.ts")
+
+const pe2 = await makeWorld("pe2")
+const pe2Out = await enforceAfter(
+  ev({ tool: "read", sessionId: "pe2", args: { filePath: join(pe2.projectDir, "src", "missing.ts") }, phase: "post", output: "File does not exist: src/missing.ts", exitCode: null, channel: "text", errored: false }),
+  pe2.ctx,
+)
+check("a probe with a falsy errored signal records nothing", pe2Out.recorded === false && (await readProjectGates(pe2)).length === 0)
+
+// --- rs. repeat-channel log keys are sanitized before persistence ---
+const rs = await makeWorld("rs")
+const rsCommand = "curl -H 'Authorization: Bearer eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiIxMjM0NTY3ODkwIn0.abc123def456' https://api.example.com/v1/data"
+rs.ctx.ephemeral.repeatSeries.set("rs-block", { key: signRepeatedCall("bash", { command: rsCommand }), length: 2, logged: 0, blocked: 0, lastBlockAt: 0 })
+const rsBlock = await enforceBefore(ev({ tool: "bash", sessionId: "rs-block", args: { command: rsCommand } }), rs.ctx)
+check("a live tail series at the threshold is repeat-blocked", rsBlock.signalKind === "repeat")
+rs.ctx.ephemeral.repeatSeries.set("rs-override", { key: signRepeatedCall("bash", { command: rsCommand }), length: 2, logged: 0, blocked: 0, lastBlockAt: 0 })
+const rsOverride = await enforceBefore(ev({ tool: "bash", sessionId: "rs-override", args: { command: rsCommand, [REPEAT_PROCEED]: true } }), rs.ctx)
+check("the repeat override falls through to gate processing", rsOverride.verdict.action === "allow")
+const rsLogText = `${await readFile(join(rs.projectStoreDir, "log.jsonl"), "utf8")}\n${await readFile(join(rs.globalDir, "log.jsonl"), "utf8")}`
+check("repeat-channel log events exist for both paths", rsLogText.includes('"repeat-blocked"') && rsLogText.includes('"override"'))
+check("repeat-channel log keys never carry the secret", !rsLogText.includes("eyJhbGci"))
+
+// --- om. a bare marker is data, not a bypass — it must not collapse signatures ---
+check("a bare marker as data does not collapse onto the unmarked signature", callSignature("bash", { command: "grep dejavu:proceed file.txt" }) !== callSignature("bash", { command: "grep file.txt" }))
 
 // policy repair inherits the generic tiers: blocking generic -> reminding, identity-less -> watching
 const repairSeed = (signature: string): Gate =>

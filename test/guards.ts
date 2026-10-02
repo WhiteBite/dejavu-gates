@@ -22,6 +22,10 @@ check("long-running allows tmux new-session detached form", proactiveGuardMessag
 check("long-running fires on foreground npm run dev 2>&1 (fd-dup is not backgrounding)", msg("npm run dev 2>&1").includes("[dejavu] LONG-RUNNING"))
 check("real background after fd-dup stays detached", proactiveGuardMessage("npm run dev 2>&1 &") === null)
 check("nohup with redirect and trailing & stays detached", proactiveGuardMessage("nohup npm run dev > server.log 2>&1 &") === null)
+check("long-running fires on a PowerShell call-operator foreground server", msg("& python -m http.server 8000").includes("[dejavu] LONG-RUNNING"))
+check("long-running allows mid-chain background &", proactiveGuardMessage("npm run dev & sleep 1") === null)
+check("long-running allows subshell background (cmd &)", proactiveGuardMessage("(npm run dev &)") === null)
+check("long-running fires on a foreground && chain", msg("npm run dev && echo up").includes("[dejavu] LONG-RUNNING"))
 
 // --- WAIT-LOOP ---
 check("wait-loop fires on bash until/curl/sleep poll", msg("until curl -sf http://localhost:3000; do sleep 2; done").includes("[dejavu] WAIT-LOOP"))

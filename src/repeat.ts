@@ -1,4 +1,4 @@
-import { REPEAT_MARKER, REPEAT_PROCEED, signRepeatedCall, stripQuotedSpans } from "./patterns"
+import { REPEAT_MARKER, REPEAT_PROCEED, sanitizeForStore, signRepeatedCall, stripQuotedSpans } from "./patterns"
 import type { EnforceContext } from "./context"
 import type { NormalizedEvent } from "./types"
 
@@ -32,12 +32,12 @@ export async function repeatSeriesDecision(event: NormalizedEvent, ctx: EnforceC
   const entry = ctx.ephemeral.repeatSeries.get(event.sessionId)
   if (entry === undefined || entry.length < REPEAT_BLOCK_AT - 1 || signRepeatedCall(event.tool, rawArgs) !== entry.key) return null
   if (bypass) {
-    await ctx.stores.logAll({ type: "override", key: entry.key.slice(0, 80), tool: event.tool, session: event.sessionId, project: ctx.projectDir, repeatCount: entry.length })
+    await ctx.stores.logAll({ type: "override", key: sanitizeForStore(entry.key).slice(0, 80), tool: event.tool, session: event.sessionId, project: ctx.projectDir, repeatCount: entry.length })
     return { kind: "override" }
   }
   entry.blocked += 1
   entry.lastBlockAt = Date.now()
-  await ctx.stores.logAll({ type: "repeat-blocked", key: entry.key.slice(0, 80), tool: event.tool, session: event.sessionId, project: ctx.projectDir, repeatCount: entry.length })
+  await ctx.stores.logAll({ type: "repeat-blocked", key: sanitizeForStore(entry.key).slice(0, 80), tool: event.tool, session: event.sessionId, project: ctx.projectDir, repeatCount: entry.length })
   if (entry.blocked >= REPEAT_STOP_AFTER) {
     return {
       kind: "stop",

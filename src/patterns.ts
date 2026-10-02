@@ -1,8 +1,8 @@
 import { createHash } from "node:crypto"
 import { isAbsolute, relative, resolve } from "node:path"
 
-/** Override marker stripped before normalization so bypassed failures land on the original pattern. */
-const OVERRIDE_MARKER = /#?\s*dejavu:proceed/gi
+/** Override marker stripped before normalization so bypassed failures land on the original pattern. Comment syntax is mandatory — a bare marker is data, not a bypass. */
+const OVERRIDE_MARKER = /#[ \t]*dejavu:proceed\b/gi
 
 /** Agent commentary lines ("# probing the api...") carry no signal — strip them. */
 const COMMENT_LINE = /(^|\n)[ \t]*#[^\n]*/g
@@ -1453,9 +1453,10 @@ function isDetached(command: string): boolean {
   if (/\bstart\s+\/b\b/i.test(command)) return true // cmd.exe background
   // A standalone background `&` (not part of `&&`), anywhere — trailing,
   // mid-chain, or closing a subshell (`(cmd &)`). `&&` chains stay foreground.
+  // A LEADING `&` is the PowerShell call operator, not backgrounding.
   // BUT `& … wait` blocks until the background job finishes, and `nohup X`
   // without `&` still runs in the foreground — both are NOT detached.
-  if (/(^|[^&>])&([^&]|$)/.test(command.trim())) return !/\bwait\b/i.test(command)
+  if (/[^&>]&([^&]|$)/.test(command.trim())) return !/\bwait\b/i.test(command)
   if (/\b(nohup|disown)\b/i.test(command)) return false // needs `&` to detach; handled above
   return false
 }
@@ -1594,7 +1595,7 @@ const UNIX_TOOL_CORRECTION =
  * "NOT TEACHING" until a human writes one. Rules, not an LLM — the hot path
  * stays mechanical; a human/agent may refine the text later.
  */
-export function suggestCorrection(signature: string, snippet: string): string {
+export function suggestCorrection(signature: string, snippet: string, platform: string = process.platform): string {
   // A timeout kill is evidence about the CALL SHAPE (orphaned stdio holder or
   // a genuinely long run) — it must outrank every command-family guess: a
   // vitest suite killed at the timeout is not "a failing test".
@@ -1625,7 +1626,7 @@ export function suggestCorrection(signature: string, snippet: string): string {
   // wording (OpenCode normalizes exits to 1). cat/grep/sort/tr are excluded —
   // they have pwsh aliases or common installs, so their exit 1 may be real.
   if (
-    process.platform === "win32" &&
+    platform === "win32" &&
     /(^|[\s|;&(:])(?:head|tail|wc|sed|awk|cut|uniq|xargs|less)\b(?!:)/i.test(signature) &&
     /^exit code \d+$/i.test(snippet.trim())
   ) {

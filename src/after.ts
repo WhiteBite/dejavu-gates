@@ -42,11 +42,15 @@ export async function enforceAfter(event: NormalizedEvent, ctx: EnforceContext):
   let detection: { matched: boolean; snippet: string } = { matched: false, snippet: "" }
   let failed: boolean
   if (exitCode !== null) {
-    failed = exitCode !== 0 && !intended
+    failed = (exitCode !== 0 && !intended) || event.errored === true
     if (failed && textScanable) detection = detectFailure(text)
   } else {
     detection = textScanable ? detectFailure(text) : detection
-    failed = detection.matched
+    failed = detection.matched || event.errored === true
+  }
+  // probes have no exit code — the host's errored signal decides, snippet stays the tool's own error text
+  if (!textScanable && event.errored === true) {
+    detection = { matched: true, snippet: failureSnippet(text, 1) }
   }
   // only a landed edit/write is iteration evidence — a failed one must not lift the block
   if ((event.tool === "edit" || event.tool === "write") && !failed && event.errored !== true) {

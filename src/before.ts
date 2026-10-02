@@ -41,7 +41,9 @@ export async function enforceBefore(event: NormalizedEvent, ctx: EnforceContext)
 
   if (event.tool === "bash" && typeof rawArgs.command === "string") {
     const command = rawArgs.command
-    const proceeded = /#[ \t]*dejavu:proceed\b/.test(stripQuotedSpans(command))
+    // unwrap a cmd /c wrapper first — quote-stripping would eat the marker inside the payload quotes
+    const guardPayload = cmdWrapperPayload(command.trim()) ?? command
+    const proceeded = /#[ \t]*dejavu:proceed\b/.test(stripQuotedSpans(guardPayload))
     if (!proceeded) {
       const guardMessage = proactiveGuardMessage(command)
       if (guardMessage !== null) return denyOutcome(guardMessage, "guard")
@@ -60,9 +62,14 @@ export async function enforceBefore(event: NormalizedEvent, ctx: EnforceContext)
   }
 
   let found: { gate: Gate; store: GateStore; via: "exact" | "fuzzy" | "segment" } | null = null
+  const seenKeys = new Set<string>()
   for (let i = 0; i < candidates.length; i++) {
     const sig = candidates[i] ?? ""
-    const match = await ctx.stores.findGate(patternKey(sig), sig)
+    const key = patternKey(sig)
+    // single-segment commands repeat the whole-call key — skip the duplicate lookup
+    if (seenKeys.has(key)) continue
+    seenKeys.add(key)
+    const match = await ctx.stores.findGate(key, sig)
     if (match && match.gate.status !== "watching") {
       found = { gate: match.gate, store: match.store, via: i > 0 && match.via === "exact" ? "segment" : match.via }
       break
@@ -134,6 +141,8 @@ export async function enforceBefore(event: NormalizedEvent, ctx: EnforceContext)
   const signal = await target.store.runLocked(async (): Promise<{ message: string; kind: "block" | "reminder" } | null> => {
     const fresh = (await target.store.loadForMutation()).find((g) => g.key === gate.key)
     if (fresh === undefined) return null // gate deleted between find and lock
+    // a concurrent window may have demoted the gate — only blocking gates interrupt
+    if (fresh.status !== "blocking") return null
 
     // repeat offense: reminded, retried, failed again → hard block
     const failedEntry = fresh.failedSessions?.[session]
