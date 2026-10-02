@@ -3,11 +3,11 @@ import { appendFile, mkdir, readFile, stat, unlink, writeFile } from "node:fs/pr
 import { homedir } from "node:os"
 import { dirname, join } from "node:path"
 import { atomicWrite, ntPath } from "./fs"
-import { canBlock, canRemind, fuzzySimilar, FUZZY_MAX_LEN, hasGenericResidualIdentity, hasResidualIdentity, isGenericSignature, isNoiseError, isRepoLocal, looksLikeFailure, parameterizeError, sanitizeForStore, scrubSecrets, suggestCorrection } from "./patterns"
+import { canBlock, canRemind, fuzzySimilar, FUZZY_MAX_LEN, hasGenericResidualIdentity, hasResidualIdentity, isGenericSignature, isNoiseError, isRepoLocal, looksLikeFailure, parameterizeError, sanitizeForStore, scrubSecrets, suggestCorrection, type DfIndex } from "./patterns"
 import { coerceGateShape, failedAtMs, isAutoCorrection, repairGate } from "./validate"
 
 /** Bumped on behavior changes; stamped into init log events so stale sessions are visible. */
-export const PLUGIN_VERSION = "2.49.0"
+export const PLUGIN_VERSION = "2.50.0"
 
 /** Global store root — DEJAVU_HOME overrides it (testing, custom setups). */
 export function resolveGlobalDir(): string {
@@ -424,6 +424,11 @@ export class GateStore {
   private deferredEvents: LogEvent[] = []
   /** lastSeen-only index refreshes deferred by recordFailure; flushed under the index lock by flushDeferred */
   private pendingIndexTouches: Map<string, string> = new Map()
+  /** df-index cache over ALL gates of this scope; rebuilt when the revision moves */
+  private dfCache: DfIndex | null = null
+  private dfCacheRevision = -1
+  /** monotonic gate-set revision — bumped whenever gates are replaced or mutated */
+  private revision = 0
   /** Set by Stores on the PROJECT store → the global store. Deferred events
    * bypass logAll's routing, so a salient event deferred on the project store
    * (demoted in migrate, retired-healed in expireAll) would never reach the
@@ -623,6 +628,7 @@ export class GateStore {
     this.keyIndex = new Map(gates.map((g) => [g.key, g]))
     this.enforcedCache = gates.filter((g) => g.status !== "watching")
     this.mtimeMs = info.mtimeMs
+    this.revision++
     this.cacheUntilMs = Date.now() + LOAD_CACHE_TTL_MS
     return this.gates
   }
@@ -643,8 +649,30 @@ export class GateStore {
     return this.enforcedCache
   }
 
+  /** Token document-frequency over ALL gates of this scope (watching included);
+   * cached until the gate-set revision moves. Reads the cached gate view —
+   * call load() first for freshness. */
+  dfIndex(): DfIndex {
+    if (this.dfCache === null || this.dfCacheRevision !== this.revision) {
+      const df = new Map<string, number>()
+      const gates = this.gates ?? []
+      for (const gate of gates) {
+        const seen = new Set<string>()
+        for (const token of gate.signature.split(/\s+/)) {
+          if (token === "" || seen.has(token)) continue
+          seen.add(token)
+          df.set(token, (df.get(token) ?? 0) + 1)
+        }
+      }
+      this.dfCache = { df, total: gates.length }
+      this.dfCacheRevision = this.revision
+    }
+    return this.dfCache
+  }
+
   async save(): Promise<void> {
     if (this.gates === null) return
+    this.revision++
     await mkdir(ntPath(this.dir), { recursive: true })
     const payload: GatesFile = { version: 1, gates: this.gates }
     if (this.migratedStamp !== null) payload.migrated = this.migratedStamp
@@ -810,6 +838,7 @@ export class GateStore {
     this.gates = gates.filter((g) => !expiredKeys.has(g.key))
     this.keyIndex = null
     this.enforcedCache = null
+    this.revision++
     await this.save()
     return expired
   }
@@ -822,6 +851,7 @@ export class GateStore {
       this.gates = this.gates.filter((g) => !keys.has(g.key))
       this.keyIndex = null
       this.enforcedCache = null
+      this.revision++
     }
     return removed
   }
@@ -914,6 +944,7 @@ export class GateStore {
             this.keyIndex = new Map(this.gates.map((g) => [g.key, g]))
             this.enforcedCache = this.gates.filter((g) => g.status !== "watching")
             this.mtimeMs = mtimeMs
+            this.revision++
             this.cacheUntilMs = Date.now() + LOAD_CACHE_TTL_MS
             // a version bump is a real change even on a quiet store — stamp once
             if (parsed.lastInitVersion !== PLUGIN_VERSION) await this.save()
@@ -1210,6 +1241,19 @@ export class Stores {
     return this.projectStore ? [this.projectStore, this.globalStore] : [this.globalStore]
   }
 
+  /** Combined token df over every visible scope (maps and totals summed) —
+   * the corpus the rare-token veto measures rarity against. */
+  private combinedDfIndex(): DfIndex {
+    const df = new Map<string, number>()
+    let total = 0
+    for (const store of this.scopes()) {
+      const scope = store.dfIndex()
+      for (const [token, count] of scope.df) df.set(token, (df.get(token) ?? 0) + count)
+      total += scope.total
+    }
+    return { df, total }
+  }
+
   /** True if a pattern with this key exists in any scope (chain attribution). */
   async hasKey(key: string): Promise<boolean> {
     for (const store of this.scopes()) {
@@ -1236,9 +1280,10 @@ export class Stores {
     if (signature.startsWith("bash:") && !hasResidualIdentity(signature)) return null
     if (isGenericSignature(signature) && !hasGenericResidualIdentity(signature)) return null
     let best: { gate: Gate; store: GateStore; score: number } | null = null
+    const df = this.combinedDfIndex()
     for (const store of this.scopes()) {
       for (const gate of store.enforcedOnly()) {
-        if (!fuzzySimilar(signature, gate.signature)) continue
+        if (!fuzzySimilar(signature, gate.signature, df)) continue
         const score = Math.abs(signature.length - gate.signature.length)
         if (best === null || score < best.score) best = { gate, store, score }
       }
@@ -1682,7 +1727,8 @@ export class Stores {
         // Over-generic bash shapes never consolidate into concrete gates:
         // family noise must not inflate a specific call's evidence.
         const fuzzyAllowed = input.tool === "bash" ? hasResidualIdentity(input.signature) : !isGenericSignature(input.signature) || hasGenericResidualIdentity(input.signature)
-        const fuzzyMatches = fuzzyAllowed ? gates.filter((g) => g.tool === input.tool && fuzzySimilar(input.signature, g.signature)) : []
+        const df = fuzzyAllowed ? this.combinedDfIndex() : undefined
+        const fuzzyMatches = fuzzyAllowed ? gates.filter((g) => g.tool === input.tool && fuzzySimilar(input.signature, g.signature, df)) : []
         gate = fuzzyMatches.find((g) => g.remindedSessions?.[input.sessionID] !== undefined) ?? fuzzyMatches[0]
         if (gate !== undefined) fuzzyConsolidated = true
       }

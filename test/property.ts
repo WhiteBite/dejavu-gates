@@ -13,6 +13,8 @@ import {
   callSignature,
   fuzzySimilar,
   hasGenericResidualIdentity,
+  IDF_MIN_CORPUS,
+  IDF_RARE_MAX_DF,
   isRepoLocal,
   levenshtein,
   normalizeCommand,
@@ -20,6 +22,7 @@ import {
   parameterizeError,
   scrubSecrets,
   splitChain,
+  type DfIndex,
 } from "../src/patterns"
 import { hasNestedTokens } from "../src/validate"
 
@@ -306,6 +309,75 @@ for (let i = 0; i < 2000; i++) {
     fail("capped fuzzy diverges from reference", `${JSON.stringify(a)} vs ${JSON.stringify(b)}`)
     break
   }
+}
+
+// --- df (rare-token) veto ------------------------------------------------------
+
+function buildDf(corpus: string[]): DfIndex {
+  const df = new Map<string, number>()
+  for (const sig of corpus) {
+    const seen = new Set<string>()
+    for (const token of sig.split(/\s+/)) {
+      if (token === "" || seen.has(token)) continue
+      seen.add(token)
+      df.set(token, (df.get(token) ?? 0) + 1)
+    }
+  }
+  return { df, total: corpus.length }
+}
+
+const dfCorpusIndex = buildDf(Array.from({ length: 60 }, () => `bash:${genCommand()}`))
+
+// the veto only removes merges: a df verdict of true always implies the no-df verdict
+for (let i = 0; i < 2000; i++) {
+  const a = `bash:${genCommand()}`
+  const b = i % 2 === 0 ? mutate(a) : `bash:${genCommand()}`
+  if (fuzzySimilar(a, b, dfCorpusIndex) && !fuzzySimilar(a, b)) {
+    fail("df veto added a merge", `${JSON.stringify(a)} vs ${JSON.stringify(b)}`)
+    break
+  }
+}
+
+// identical non-flag text (the strict-flag-addition rescue shape): the df verdict equals the no-df verdict
+for (let i = 0; i < 500; i++) {
+  const a = `bash:${genCommand()}`
+  const b = `${a} --gen-flag-${rint(4)}`
+  if (fuzzySimilar(a, b, dfCorpusIndex) !== fuzzySimilar(a, b)) {
+    fail("df veto broke the identical-non-flag-text rescue", `${JSON.stringify(a)} vs ${JSON.stringify(b)}`)
+    break
+  }
+}
+
+// a prefix-sharing pair differing by one rare token: merges without df, vetoed at the corpus floor
+const rareA = "bash:deploy-service --env prod --target alpha-instance"
+const rareB = "bash:deploy-service --env prod --target omega-instance"
+if (!fuzzySimilar(rareA, rareB)) {
+  fail("rare-pair construction does not merge without df", `${rareA} vs ${rareB}`)
+}
+const rareCorpus: string[] = []
+for (let i = 0; i < IDF_MIN_CORPUS - IDF_RARE_MAX_DF; i++) rareCorpus.push(`bash:deploy-service --env prod --target node-${i}`)
+for (let i = 0; i < IDF_RARE_MAX_DF; i++) rareCorpus.push(rareA)
+const rareDf = buildDf(rareCorpus)
+if (fuzzySimilar(rareA, rareB, rareDf)) {
+  fail("a rare (df <= IDF_RARE_MAX_DF) non-flag token did not veto the merge", `${rareA} vs ${rareB}`)
+}
+if (!fuzzySimilar(rareA, rareB, buildDf(rareCorpus.slice(0, IDF_MIN_CORPUS - 1)))) {
+  fail("a corpus below IDF_MIN_CORPUS vetoed a merge", `${rareA} vs ${rareB}`)
+}
+
+// determinism: the same index gives the same verdict regardless of map insertion order
+const dfReversed: DfIndex = { df: new Map([...dfCorpusIndex.df.entries()].reverse()), total: dfCorpusIndex.total }
+for (let i = 0; i < 500; i++) {
+  const a = `bash:${genCommand()}`
+  const b = mutate(a)
+  if (fuzzySimilar(a, b, dfCorpusIndex) !== fuzzySimilar(a, b, dfReversed)) {
+    fail("df verdict depends on map insertion order", `${JSON.stringify(a)} vs ${JSON.stringify(b)}`)
+    break
+  }
+}
+const rareDfReversed: DfIndex = { df: new Map([...rareDf.df.entries()].reverse()), total: rareDf.total }
+if (fuzzySimilar(rareA, rareB, rareDf) !== fuzzySimilar(rareA, rareB, rareDfReversed)) {
+  fail("rare-pair veto depends on map insertion order", `${rareA} vs ${rareB}`)
 }
 
 // a command hidden inside $(...) or backticks must still surface as a segment

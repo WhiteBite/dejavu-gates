@@ -11,7 +11,7 @@ import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { fileURLToPath } from "node:url"
 import { atomicWrite, CORRUPT_DEFAULT_DAYS, ntPath, sweepStoreArtifacts, TMP_ORPHAN_MS } from "../src/fs"
-import { callSignature, patternKey, suggestCorrection } from "../src/patterns"
+import { callSignature, fuzzySimilar, patternKey, suggestCorrection } from "../src/patterns"
 import { createStores, GateStore, GLOBAL_PROJECTS, lessonStaleness, mergeGate, NOISE_TTL_DAYS, PLUGIN_VERSION, STALE_LESSON_DAYS, Stores, TTL_DAYS, type Gate } from "../src/store"
 import { coerceGateShape, isAutoCorrection, repairGate } from "../src/validate"
 import { makeChecker } from "./helpers"
@@ -467,6 +467,33 @@ check(
   "lessonStaleness: machine corrections never stale or repromoted",
   lessonStaleness(makeGate({ correction: "machine default", correctionOrigin: "machine", recurredAfterGate: 9, promotionCount: 4 }), now) === "fresh",
 )
+
+// --- 18. rare-token (df) veto: a prefix-sharing pair stops merging ---
+const dfvGlobal = join(tmp, "dfv-global")
+const dfvProject = join(tmp, "dfv-project")
+const dfvProjectStore = join(dfvProject, ".opencode", "dejavu")
+await mkdir(dfvGlobal, { recursive: true })
+await mkdir(dfvProjectStore, { recursive: true })
+const dfvAlphaSig = callSignature("bash", { command: "deploy-service --env prod --target alpha-instance" }) ?? ""
+const dfvOmegaSig = callSignature("bash", { command: "deploy-service --env prod --target omega-instance" }) ?? ""
+check("the prefix-sharing pair fuzzy-merges without a df index", fuzzySimilar(dfvAlphaSig, dfvOmegaSig) === true)
+const dfvProjGates = [
+  seedGate({ key: patternKey(dfvAlphaSig), signature: dfvAlphaSig, status: "blocking", count: 3 }),
+  ...Array.from({ length: 9 }, (_, i) => seedGate({ key: `df0a${String(i).padStart(8, "0")}`, signature: `bash:corpus-cmd-${i} --env prod` })),
+]
+const dfvGlobalGates = Array.from({ length: 10 }, (_, i) => seedGate({ key: `df1a${String(i).padStart(8, "0")}`, signature: `bash:global-cmd-${i} --env prod` }))
+await writeFile(join(dfvProjectStore, "gates.json"), JSON.stringify({ version: 1, gates: dfvProjGates }), "utf8")
+await writeFile(join(dfvGlobal, "gates.json"), JSON.stringify({ version: 1, gates: dfvGlobalGates }), "utf8")
+const dfvGlobalStore = new GateStore(dfvGlobal)
+const dfvProjStore = new GateStore(dfvProjectStore)
+await dfvGlobalStore.load()
+await dfvProjStore.load()
+check("each scope alone stays below the corpus floor", dfvProjStore.dfIndex().total === 10 && dfvGlobalStore.dfIndex().total === 10)
+const dfvStores = new Stores(dfvGlobalStore, dfvProjStore)
+check("the combined df index vetoes the prefix-sharing fuzzy match", (await dfvStores.findGate(patternKey(dfvOmegaSig), dfvOmegaSig)) === null)
+const dfvFail = await dfvStores.recordFailure({ key: patternKey(dfvOmegaSig), signature: dfvOmegaSig, tool: "bash", sessionID: "dfv1", projectDir: dfvProject, snippet: "Error: boom", globalProjects: GLOBAL_PROJECTS })
+check("a vetoed failure records under its own key instead of consolidating", dfvFail.gate.key === patternKey(dfvOmegaSig) && dfvFail.gate.count === 1)
+check("the alpha gate's evidence is untouched by the vetoed sibling", ((await readGates(dfvProjectStore)).find((g) => g.key === patternKey(dfvAlphaSig))?.count ?? 0) === 3)
 
 if (process.env.BENCH === "1") {
   const benchProject = join(tmp, "bench-project")

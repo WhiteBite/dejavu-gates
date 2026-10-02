@@ -1216,6 +1216,34 @@ function strictFlagAddition(a: string, b: string): boolean {
   return nonFlagText(a) === nonFlagText(b)
 }
 
+/** Token document-frequency over the gate corpus — the rare-token veto's data. */
+export interface DfIndex {
+  df: Map<string, number>
+  total: number
+}
+
+/** Below this many corpus gates the df signal is too thin to veto merges on. */
+export const IDF_MIN_CORPUS = 20
+
+/** A non-flag token present in at most this many gates is rare — identity, not noise. */
+export const IDF_RARE_MAX_DF = 2
+
+/** A rare NON-flag token in the pair's symmetric difference is identity, not
+ * noise — commands sharing a long prefix but differing by it never merge.
+ * Flags are exempt so the strict-flag-addition rescue (identical non-flag
+ * text) keeps its verdict. */
+function rareTokenVeto(a: string, b: string, df: DfIndex): boolean {
+  const tokensA = new Set(a.split(/\s+/).filter((token) => token !== "" && !token.startsWith("-")))
+  const tokensB = new Set(b.split(/\s+/).filter((token) => token !== "" && !token.startsWith("-")))
+  for (const token of tokensA) {
+    if (!tokensB.has(token) && (df.df.get(token) ?? 0) <= IDF_RARE_MAX_DF) return true
+  }
+  for (const token of tokensB) {
+    if (!tokensA.has(token) && (df.df.get(token) ?? 0) <= IDF_RARE_MAX_DF) return true
+  }
+  return false
+}
+
 /**
  * Near-duplicate match: normalized edit distance <= 30% AND absolute distance
  * >= 3. Unlike token-set Jaccard, this does not collapse commands that merely
@@ -1225,9 +1253,9 @@ function strictFlagAddition(a: string, b: string): boolean {
  * are identical — random hashes differing in 3 chars would otherwise pass the
  * distance rule and merge unrelated one-liners into one gate. Flag sets must
  * also be comparable (one a subset of the other) — disjoint switches mean
- * different operations.
+ * different operations. An optional DfIndex vetoes rare symmetric-difference tokens.
  */
-export function fuzzySimilar(a: string, b: string): boolean {
+export function fuzzySimilar(a: string, b: string, df?: DfIndex): boolean {
   if (a === b) return true
   const maxLen = Math.max(a.length, b.length)
   if (maxLen === 0) return true
@@ -1250,6 +1278,7 @@ export function fuzzySimilar(a: string, b: string): boolean {
   if (codesA !== null || codesB !== null) {
     if (codesA === null || codesB === null || codesA.join("\u0000") !== codesB.join("\u0000")) return false
   }
+  if (df !== undefined && df.total >= IDF_MIN_CORPUS && rareTokenVeto(a, b, df)) return false
   // distance/maxLen <= 0.3 ⟺ distance <= floor(0.3*maxLen) for integer
   // distances; below 3 the ratio bar and the absolute floor cannot both hold.
   const ratioCutoff = Math.floor(maxLen * 0.3)
