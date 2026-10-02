@@ -1,0 +1,20 @@
+{
+  "kit": "@whitebite/harness-kit",
+  "kitVersion": "0.1.0",
+  "registryVersion": "0.1.0",
+  "files": {
+    "src/atomic.mjs": "2b7ef169330887417dc4027f0d3c5451a6ac3430e94cb1d9f4aa590304fa52fd",
+    "src/drift.mjs": "fcf949c72a68aaa0a3d778d831db9c1327be0039c44818faa6434b73cb9d7a8f",
+    "src/index.mjs": "ad3c6267e02ed190433f0bf659edd76b98bdba64a0caa3ff735a61dd662b57c5",
+    "src/marker.mjs": "c67b8c54f3812a4670bce167033afd0bd1d4994ef0a0caa4319b6a192ad861f8",
+    "src/merge.mjs": "e190df1174e49a2dab945618d402157a0e82a6e1ccce3d7a6719e622c7fff0e0",
+    "src/ownership.mjs": "8e768c012d082d56e46ba0d0f8b2a4c3a4520983f731d8e9c9dbd6c919f59019",
+    "src/registry.mjs": "e8b4fbaaf882d8a13c772be586cdc0bd53d668d9ba930e4f7c6194a614685e58",
+    "src/symlink.mjs": "dd225abf327d72c2f6cdd069fdc8403b2d3852203ea0aa3f511eecc07ba866c1",
+    "src/template.mjs": "00035c0c6af91db29f4e03a6aead86ef2496e4c80eae6b37c1c6efe9c5118af3",
+    "registry/CHANGELOG.md": "8740ba3c7ef0098b01619b580d5c566c89bc3a8b0a46c5ce878b9a9eea88da9b",
+    "registry/harnesses.json": "4554ab8fff7fd6c6b06292016e737d48c925b838d6c65d8a5294bd35d44bd152",
+    "registry/harnesses.schema.json": "b73abef890e0ee424bb2f9e4515ceacf2ca98efdf42d16f2873cf8a9dba53b94",
+    "types/index.d.mts": "8a0b2620967331f270699cfceb3fe12cbdebaffa04a315fddd4f48f7d846621e"
+  }
+}

@@ -25,6 +25,7 @@
     "index.ts",
     "bin",
     "src",
+    "vendor",
     "hooks",
     ".claude-plugin",
     ".cursor-plugin",

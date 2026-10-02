@@ -1,0 +1,202 @@
+{
+  "$schema": "./harnesses.schema.json",
+  "schemaVersion": 1,
+  "registryVersion": "0.1.0",
+  "conventions": {
+    "ownership": {
+      "sidecar": ".harness-kit/ownership.json",
+      "fallback": "consumer-supplied command-substring predicate; migrated entries must keep their legacy substring so not-yet-migrated tools still recognize their own entries"
+    },
+    "mergePolicy": "owner-scoped strip-then-append: remove only entries owned by the caller, append fresh ones, preserve every foreign byte; whole-file overwrite is allowed only for tool-owned files",
+    "userScopeDefault": "print-only",
+    "eol": "lf",
+    "encoding": "utf-8",
+    "pathPlaceholders": {
+      "{tool}": "kebab-case tool id (e.g. dejavu-gates, stop-ai-slop)",
+      "{id}": "rule or file id chosen by the consumer",
+      "{name}": "plugin module name"
+    },
+    "scopeResolution": "project paths resolve against the repository root; user paths against the home directory unless an envOverrides key is set"
+  },
+  "harnesses": {
+    "claude": {
+      "name": "Claude Code",
+      "status": "stable",
+      "hooks": {
+        "config": { "project": ".claude/settings.json", "user": ".claude/settings.json" },
+        "write": "merge",
+        "shape": "nested-hooks",
+        "events": ["PreToolUse", "PostToolUse", "PostToolUseFailure", "SessionEnd"],
+        "entryFields": { "type": "command", "timeoutUnit": "seconds" },
+        "pluginRootVar": "${CLAUDE_PLUGIN_ROOT}",
+        "envOverrides": { "configDir": "CLAUDE_CONFIG_DIR" }
+      },
+      "skills": { "global": [".claude/skills"], "project": [".claude/skills"] },
+      "manifests": {
+        "plugin": ".claude-plugin/plugin.json",
+        "marketplace": ".claude-plugin/marketplace.json",
+        "bundledHooks": ".claude-plugin/{tool}/hooks/hooks.json"
+      },
+      "notes": "Marketplace install delivers skills and bundled hooks together; plugin.json may carry \"skills\" and \"hooks\" fields."
+    },
+    "codex": {
+      "name": "Codex CLI",
+      "status": "stable",
+      "hooks": {
+        "config": { "project": ".codex/hooks.json", "user": ".codex/hooks.json" },
+        "write": "merge",
+        "shape": "nested-hooks",
+        "events": ["PreToolUse", "PostToolUse"],
+        "entryFields": { "type": "command", "timeoutUnit": "seconds" },
+        "envOverrides": { "configDir": "CODEX_HOME" }
+      },
+      "skills": { "global": [".codex/skills"] },
+      "manifests": { "plugin": ".codex-plugin/plugin.json" },
+      "notes": "Hooks are enabled by default; the first run may show a trust prompt for project hooks. Matcher vocabulary is product policy, not registry data. Known shared-file site: two family tools write this file - use ownership sidecar."
+    },
+    "opencode": {
+      "name": "OpenCode",
+      "status": "stable",
+      "hooks": null,
+      "plugin": {
+        "stubs": { "user": ".config/opencode/plugins/{name}.ts", "project": ".opencode/plugin/{name}.ts" },
+        "dualApi": "default export {id, server, setup}: server() serves 1.18.29+ (v1 tool.execute.before, throw-to-reject), setup() serves 2.x (ctx.tool.hook(\"execute.before\"), the only V2 hook that may reject); keep the legacy named export for older 1.x stubs",
+        "stubConvention": "export { default } from \"<absolute path to plugin module>\"; OpenCode labels local plugins by stub file name",
+        "stateDirs": [".opencode/"]
+      },
+      "skills": { "global": [".config/opencode/skills"], "project": [".opencode/skills"] },
+      "notes": "No hook-config file: integration is a plugin module plus a one-line re-export stub."
+    },
+    "gemini": {
+      "name": "Gemini CLI",
+      "status": "stable",
+      "hooks": {
+        "config": { "project": ".gemini/settings.json", "user": ".gemini/settings.json" },
+        "write": "merge",
+        "shape": "nested-hooks",
+        "events": ["BeforeTool", "AfterTool"],
+        "entryFields": { "type": "command", "timeoutUnit": "milliseconds" },
+        "pluginRootVar": "${extensionPath}",
+        "toolNames": ["run_shell_command", "read_file", "write_file", "replace", "glob", "search_file_content"]
+      },
+      "manifests": { "extension": "gemini-extension.json" },
+      "notes": "Timeout unit differs from Claude-dialect harnesses (ms, not s). Family policy split observed: dejavu auto-merges user scope, stop-ai-slop prints snippets only - the kit default is print-only for user scope."
+    },
+    "qwen": {
+      "name": "Qwen Code",
+      "status": "experimental",
+      "hooks": {
+        "config": { "project": ".qwen/settings.json", "user": ".qwen/settings.json" },
+        "write": "merge",
+        "shape": "nested-hooks",
+        "events": ["PreToolUse", "PostToolUse"],
+        "entryFields": { "type": "command", "timeoutUnit": "milliseconds" },
+        "toolNames": ["write_file", "replace"]
+      },
+      "notes": "Gemini CLI fork but event naming observed as PreToolUse (not BeforeTool) in stop-ai-slop snippets - verify empirically before auto-writing; settings.json is user-global, print-only by default."
+    },
+    "cursor": {
+      "name": "Cursor",
+      "status": "stable",
+      "hooks": {
+        "config": { "project": ".cursor/hooks.json", "user": ".cursor/hooks.json" },
+        "write": "merge",
+        "shape": "versioned-flat",
+        "envelope": { "version": 1 },
+        "events": ["beforeShellExecution", "afterShellExecution", "preToolUse", "postToolUse", "postToolUseFailure"],
+        "entryFields": { "type": null, "timeoutUnit": "seconds" },
+        "pluginRootVar": "${CURSOR_PLUGIN_ROOT}"
+      },
+      "rules": [{ "path": ".cursor/rules/{id}.mdc", "format": "mdc", "frontmatter": ["description", "globs", "alwaysApply"] }],
+      "manifests": { "plugin": ".cursor-plugin/plugin.json" },
+      "notes": "Entries are flat {command, timeout} - no type field, unlike the Claude dialect."
+    },
+    "windsurf": {
+      "name": "Windsurf",
+      "status": "stable",
+      "hooks": null,
+      "rules": [{ "path": ".windsurfrules", "format": "plain", "ownership": "first-line-marker" }]
+    },
+    "aider": {
+      "name": "Aider",
+      "status": "stable",
+      "hooks": null,
+      "rules": [{ "path": "CONVENTIONS.md", "format": "plain", "ownership": "first-line-marker", "note": "pair with aider --read CONVENTIONS.md" }]
+    },
+    "cline": {
+      "name": "Cline",
+      "status": "stable",
+      "hooks": null,
+      "plugin": {
+        "inProcess": "long-lived sandbox subprocess host (see dejavu src/cline-plugin.ts); declared via package.json \"cline.plugins\"",
+        "manifestHooksDialect": "claude"
+      },
+      "rules": [{ "path": ".clinerules", "format": "plain", "ownership": "first-line-marker" }],
+      "manifests": { "plugin": "plugin.json" },
+      "notes": "Root plugin.json points its hooks field at a Claude-dialect bundle file - a dialect reuse that must stay documented."
+    },
+    "kiro": {
+      "name": "Kiro",
+      "status": "stable",
+      "hooks": {
+        "config": { "project": ".kiro/hooks/{tool}.json" },
+        "write": "overwrite",
+        "shape": "hooks-array",
+        "envelope": { "version": "v1" },
+        "triggers": ["PreToolUse", "PostToolUse"],
+        "entryFields": { "nameConvention": "{tool}-pre | {tool}-post", "commandPath": ["action", "command"], "timeoutUnit": "seconds" }
+      },
+      "notes": "Top-level hooks is an ARRAY of {name, trigger, matcher, action:{type,command}, timeout}; informational output rides raw stdout."
+    },
+    "devin": {
+      "name": "Devin CLI",
+      "status": "stable",
+      "hooks": {
+        "config": { "project": ".devin/hooks.v1.json" },
+        "write": "merge",
+        "shape": "root-events",
+        "events": ["PreToolUse", "PostToolUse"],
+        "entryFields": { "type": "command", "timeoutUnit": "seconds" }
+      },
+      "rules": [{ "path": ".devin/rules/{id}.md", "format": "plain" }],
+      "notes": "Event keys sit at the config root (no hooks wrapper). Auto-imports .claude/settings.json hooks (read_config_from.claude), so a Claude install already gates Devin sessions. Known shared-file site: two family tools wrote this file with different identity substrings - the reason ownership moved to a sidecar."
+    },
+    "copilot": {
+      "name": "VS Code Copilot (local hooks)",
+      "status": "preview",
+      "hooks": {
+        "config": { "project": ".github/hooks/{tool}.json", "user": ".copilot/hooks/{tool}.json" },
+        "write": "overwrite",
+        "shape": "versioned-typed",
+        "envelope": { "version": 1 },
+        "events": ["preToolUse", "postToolUse", "postToolUseFailure"],
+        "entryFields": { "type": "command", "timeoutUnit": "timeoutSec" }
+      },
+      "rules": [{ "path": ".github/copilot-instructions.md", "format": "marker-block", "markers": { "open": "<!-- >>> {id} >>> -->", "close": "<!-- <<< {id} <<< -->" } }],
+      "notes": "Preview feature: tool names are not a stable API - gate payloads by shape (file_path+content / old+new_string / edits[] / V4A patch text), never by name. Per-tool file ownership makes overwrite safe here."
+    },
+    "crush": {
+      "name": "Crush",
+      "status": "experimental",
+      "hooks": {
+        "config": { "project": ".crush/crush.json", "user": ".config/crush/crush.json" },
+        "write": "merge",
+        "shape": "flat-matcher",
+        "events": ["PreToolUse"],
+        "entryFields": { "type": null, "timeoutUnit": null }
+      },
+      "notes": "No AfterTool hook exists - failure observation is degraded (pre-tool only). Entries are flat {matcher, command}."
+    },
+    "git": {
+      "name": "git (pre-commit enforcement surface)",
+      "status": "stable",
+      "hooks": {
+        "config": { "project": ".git/hooks/pre-commit" },
+        "resolveVia": "git config core.hooksPath",
+        "write": "marker-block",
+        "markers": { "open": "# >>> {id} >>>", "close": "# <<< {id} <<<", "mode": "append-or-replace, never clobber a foreign hook" }
+      },
+      "notes": "Not an AI harness; included because the marker-block primitive and install UX are shared with harness wiring."
+    }
+  }
+}

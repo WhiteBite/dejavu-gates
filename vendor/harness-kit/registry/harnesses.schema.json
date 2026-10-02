@@ -1,0 +1,84 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://raw.githubusercontent.com/WhiteBite/harness-kit/main/registry/harnesses.schema.json",
+  "title": "harness-kit registry",
+  "description": "Language-neutral contract describing AI coding harness wiring facts. Unknown keys are tolerated at every level (forward compatibility): consumers must ignore what they do not understand.",
+  "type": "object",
+  "required": ["schemaVersion", "registryVersion", "harnesses"],
+  "properties": {
+    "schemaVersion": { "type": "integer", "const": 1 },
+    "registryVersion": { "type": "string", "pattern": "^\\d+\\.\\d+\\.\\d+$" },
+    "conventions": { "type": "object" },
+    "harnesses": {
+      "type": "object",
+      "minProperties": 1,
+      "additionalProperties": { "$ref": "#/definitions/harness" }
+    }
+  },
+  "definitions": {
+    "harness": {
+      "type": "object",
+      "required": ["name", "status"],
+      "properties": {
+        "name": { "type": "string", "minLength": 1 },
+        "status": { "enum": ["stable", "preview", "experimental"] },
+        "hooks": {
+          "oneOf": [
+            { "type": "null" },
+            {
+              "type": "object",
+              "required": ["config", "write"],
+              "properties": {
+                "config": {
+                  "type": "object",
+                  "required": ["project"],
+                  "properties": {
+                    "project": { "type": "string" },
+                    "user": { "type": "string" }
+                  }
+                },
+                "resolveVia": { "type": "string" },
+                "write": { "enum": ["merge", "overwrite", "marker-block", "print-only"] },
+                "shape": { "enum": ["nested-hooks", "root-events", "versioned-flat", "versioned-typed", "flat-matcher", "hooks-array"] },
+                "envelope": { "type": "object" },
+                "events": { "type": "array", "items": { "type": "string" } },
+                "triggers": { "type": "array", "items": { "type": "string" } },
+                "entryFields": { "type": "object" },
+                "markers": { "type": "object" },
+                "pluginRootVar": { "type": "string" },
+                "toolNames": { "type": "array", "items": { "type": "string" } },
+                "envOverrides": { "type": "object" },
+                "timeoutUnit": { "type": "string" }
+              }
+            }
+          ]
+        },
+        "plugin": { "type": "object" },
+        "skills": {
+          "type": "object",
+          "properties": {
+            "global": { "type": "array", "items": { "type": "string" } },
+            "project": { "type": "array", "items": { "type": "string" } }
+          }
+        },
+        "rules": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["path", "format"],
+            "properties": {
+              "path": { "type": "string" },
+              "format": { "enum": ["plain", "mdc", "marker-block"] },
+              "ownership": { "type": "string" },
+              "frontmatter": { "type": "array", "items": { "type": "string" } },
+              "markers": { "type": "object" },
+              "note": { "type": "string" }
+            }
+          }
+        },
+        "manifests": { "type": "object" },
+        "notes": { "type": "string" }
+      }
+    }
+  }
+}
