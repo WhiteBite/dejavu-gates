@@ -171,26 +171,15 @@ export function stripDejavu(entries: unknown, harness: string): unknown[] {
   return kept
 }
 
-/** mergeHooks replaces non-array foreign event values with the template array; the golden suite pins their verbatim survival. */
-function restoreForeignEvents(target: Json, source: Json): void {
-  for (const [event, value] of Object.entries(source)) {
-    if (!Array.isArray(value)) target[event] = value
-  }
-}
-
 /** Append fresh template entries after stripping prior dejavu ones; unknown fields and foreign hooks survive. */
 export function mergeConfig(existing: Json, template: Json, harness: string): Json {
-  const merged = mergeHooks(existing, template, { shape: "nested-hooks", isMine: (command) => isDejavuCommand(command, harness) })
-  restoreForeignEvents(asRecord(merged.hooks), asRecord(existing.hooks))
-  return merged
+  return mergeHooks(existing, template, { shape: "nested-hooks", isMine: (command) => isDejavuCommand(command, harness) })
 }
 
 /** Root-hooks variant of mergeConfig: template.hooks entries are merged into the config root as event keys.
  * Foreign root-level keys and custom fields survive. */
 export function mergeConfigRoot(existing: Json, template: Json, harness: string): Json {
-  const merged = mergeHooks(existing, asRecord(template.hooks), { shape: "root-events", isMine: (command) => isDejavuCommand(command, harness) })
-  restoreForeignEvents(merged, existing)
-  return merged
+  return mergeHooks(existing, asRecord(template.hooks), { shape: "root-events", isMine: (command) => isDejavuCommand(command, harness) })
 }
 
 /** All hook command strings in a config matching the predicate, from both flat and nested entry shapes. */
