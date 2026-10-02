@@ -149,8 +149,9 @@ const TEXT_FAILURES: Array<[string, string]> = [
   ["NU1101: Unable to find package broken-package", "nuget restore"],
 ]
 for (const [line, name] of TEXT_FAILURES) {
-  check(`detects ${name}`, detectFailure(`${line}\nexit code 1`).matched)
+  check(`detects ${name}`, detectFailure(line).matched)
 }
+check("detects a bare exit-code line", detectFailure("compiling...\nexit code 1").matched)
 const NOT_FAILURES: Array<[string, string]> = [
   ["npm warn deprecated left-pad@1.3.0: use fpkg", "npm warn"],
   ["10:30 session started", "time-prefixed line"],

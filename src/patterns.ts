@@ -1309,7 +1309,7 @@ const FAILURE_SIGNATURES: RegExp[] = [
   /\bpanic:/i,
   /\bFATAL\b/,
   // npm/pnpm/yarn resolver failures — the text channel's only detector on exit-code-less harnesses
-  /^npm (?:ERR!|error)\b/i,
+  /^npm (?:ERR!|error)(?!\w)/i,
   /^ERR_[A-Z]\w+/,
   /^\s*error\s+(?:Command failed|https:\/\/)/i,
   // pytest --tb=short: a `| tail` cut drops the "N failed" summary — the FAILED row IS the failure

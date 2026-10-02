@@ -333,4 +333,17 @@ const reportAll = run(["report"], h18.cwd, h18.home)
 check("report with no dirs exits 0 or 1", reportAll.code === 0 || reportAll.code === 1)
 check("report with no dirs leaves stderr free of stack traces", !reportAll.stderr.includes("TypeError"))
 
+// --- S19: bundled hooks/ and installer templates/ stay in event parity ---
+const HOOK_PAIRS: Array<{ name: string; bundled: string; template: string }> = [
+  { name: "claude", bundled: join(repoRoot, "hooks", "claude.json"), template: join(repoRoot, "scripts", "templates", "claude.json") },
+  { name: "cursor", bundled: join(repoRoot, "hooks", "cursor.json"), template: join(repoRoot, "scripts", "templates", "cursor.json") },
+  { name: "gemini", bundled: join(repoRoot, "hooks", "hooks.json"), template: join(repoRoot, "scripts", "templates", "gemini.json") },
+]
+for (const pair of HOOK_PAIRS) {
+  const bundled = JSON.parse(await readFile(pair.bundled, "utf8")) as { hooks?: Record<string, unknown> }
+  const template = JSON.parse(await readFile(pair.template, "utf8")) as { hooks?: Record<string, unknown> }
+  const events = Object.keys(bundled.hooks ?? {}).sort()
+  check(`bundled hooks and installer template share events (${pair.name})`, events.length > 0 && events.join(",") === Object.keys(template.hooks ?? {}).sort().join(","))
+}
+
 report()
