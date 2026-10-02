@@ -828,6 +828,22 @@ export class GateStore {
     })
   }
 
+  /** Scrub historical log lines in place (sanitizeForStore: secrets + control
+   * chars). Under the log lock, atomic write; a missing or unreadable log is a no-op. */
+  async scrubLog(): Promise<void> {
+    await this.withLogLock(async () => {
+      let raw: string
+      try {
+        raw = await readFile(ntPath(this.logPath), "utf8")
+      } catch {
+        // missing or unreadable log — nothing to scrub
+        return
+      }
+      const scrubbed = raw.split("\n").map((line) => sanitizeForStore(line)).join("\n")
+      if (scrubbed !== raw) await atomicWrite(this.logPath, scrubbed)
+    })
+  }
+
   /**
    * Structural self-healing (idempotent): unparseable gates.json is
    * quarantined with its bytes preserved; parseable records are coerced,

@@ -8,6 +8,7 @@ import { existsSync } from "node:fs"
 import { readFile } from "node:fs/promises"
 import { homedir } from "node:os"
 import { dirname, join } from "node:path"
+import { ntPath } from "./fs"
 
 export type Harness = "claude" | "codex" | "gemini" | "cursor" | "copilot" | "crush" | "devin" | "kiro"
 
@@ -73,7 +74,7 @@ const PROJECT_MARKERS: Record<Harness, readonly string[]> = {
   codex: [".codex"],
   gemini: [".gemini"],
   cursor: [".cursor"],
-  copilot: [".github"],
+  copilot: [".github/hooks"],
   crush: [".crush", "crush.json"],
   devin: [".devin"],
   kiro: [".kiro"],
@@ -83,7 +84,7 @@ const PROJECT_MARKERS: Record<Harness, readonly string[]> = {
 export function detectHarnesses(user: boolean): Harness[] {
   const base = user ? homedir() : process.cwd()
   const markers = user ? USER_MARKERS : PROJECT_MARKERS
-  return (Object.keys(markers) as Harness[]).filter((harness) => markers[harness].some((m) => existsSync(join(base, m))))
+  return (Object.keys(markers) as Harness[]).filter((harness) => markers[harness].some((m) => existsSync(ntPath(join(base, m)))))
 }
 
 /** A config file that exists but does not parse — install aborts, check reports broken. */
@@ -114,15 +115,15 @@ export function warnIfNoBun(): void {
 export async function loadTemplate(harness: Harness): Promise<Json> {
   const path = join(PACKAGE_ROOT, "scripts", "templates", `${harness}.json`)
   // {{CLI}} lands inside a JSON string, so the path quotes must arrive JSON-escaped.
-  const substituted = (await readFile(path, "utf8")).replaceAll("{{CLI}}", CLI_COMMAND.replaceAll(`"`, `\\"`))
+  const substituted = (await readFile(ntPath(path), "utf8")).replaceAll("{{CLI}}", CLI_COMMAND.replaceAll(`"`, `\\"`))
   const parsed: unknown = JSON.parse(substituted)
   if (parsed === null || typeof parsed !== "object" || Array.isArray(parsed)) throw new Error(`template is not a JSON object: ${path}`)
   return parsed as Json
 }
 
 export async function readExisting(path: string): Promise<Json> {
-  if (!existsSync(path)) return {}
-  const raw = await readFile(path, "utf8")
+  if (!existsSync(ntPath(path))) return {}
+  const raw = await readFile(ntPath(path), "utf8")
   let parsed: unknown
   try {
     parsed = JSON.parse(raw)
@@ -177,7 +178,10 @@ export function mergeConfig(existing: Json, template: Json, harness: string): Js
   }
   const mergedHooks: Json = { ...asRecord(merged.hooks) }
   for (const [event, entries] of Object.entries(asRecord(template.hooks))) {
-    mergedHooks[event] = [...stripDejavu(mergedHooks[event], harness), ...(Array.isArray(entries) ? entries : [])]
+    const existingEntries = mergedHooks[event]
+    // non-array foreign value survives verbatim — the template array must not clobber it
+    if (existingEntries !== undefined && !Array.isArray(existingEntries)) continue
+    mergedHooks[event] = [...stripDejavu(existingEntries, harness), ...(Array.isArray(entries) ? entries : [])]
   }
   merged.hooks = mergedHooks
   return merged
@@ -188,7 +192,9 @@ export function mergeConfig(existing: Json, template: Json, harness: string): Js
 export function mergeConfigRoot(existing: Json, template: Json, harness: string): Json {
   const merged: Json = { ...existing }
   for (const [event, entries] of Object.entries(asRecord(template.hooks))) {
-    const existingEntries = merged[event] ?? []
+    const existingEntries = merged[event]
+    // non-array foreign value survives verbatim — the template array must not clobber it
+    if (existingEntries !== undefined && !Array.isArray(existingEntries)) continue
     merged[event] = [...stripDejavu(existingEntries, harness), ...(Array.isArray(entries) ? entries : [])]
   }
   return merged

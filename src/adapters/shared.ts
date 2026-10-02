@@ -23,7 +23,7 @@ const TOOL_ALIASES: Record<HarnessName, Record<string, string>> = {
   copilot: { powershell: "bash", view: "read" },
   crush: { multiedit: "edit" },
   devin: { exec: "bash", apply_patch: "edit" },
-  kiro: { shell: "bash" },
+  kiro: { shell: "bash", apply_patch: "edit" },
   cline: { execute_command: "bash", read_file: "read", write_to_file: "write", apply_patch: "edit" },
 }
 

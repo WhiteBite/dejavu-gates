@@ -221,6 +221,20 @@ check("mergeConfig standard: hooks key present", typeof (stdMerged as Json).hook
 check("mergeConfig standard: foreign hook preserved", JSON.stringify(stdMerged).includes("echo foreign"))
 check("mergeConfig standard: dejavu hook added", JSON.stringify(stdMerged).includes("--harness claude"))
 
+const objectExisting: Json = { hooks: { PreToolUse: { custom: "shape" } } }
+const objMerged = mergeConfig(objectExisting, standardTemplate, "claude")
+check(
+  "mergeConfig keeps an object-shaped foreign event value",
+  !Array.isArray((objMerged.hooks as Json).PreToolUse) && JSON.stringify((objMerged.hooks as Json).PreToolUse).includes("custom"),
+)
+const objectRootExisting: Json = { PreToolUse: { custom: "shape" } }
+const objRootMerged = mergeConfigRoot(objectRootExisting, templateRoot, "devin")
+check(
+  "mergeConfigRoot keeps an object-shaped foreign root event value",
+  !Array.isArray((objRootMerged as Json).PreToolUse) && JSON.stringify((objRootMerged as Json).PreToolUse).includes("custom"),
+)
+check("mergeConfigRoot still adds absent events", Array.isArray((objRootMerged as Json).PostToolUse))
+
 // --- S12: devin root-hooks merge - config root IS the event map, foreign keys survive ---
 const h12 = await world("h12")
 await mkdir(join(h12.cwd, ".devin"), { recursive: true })
@@ -345,5 +359,38 @@ for (const pair of HOOK_PAIRS) {
   const events = Object.keys(bundled.hooks ?? {}).sort()
   check(`bundled hooks and installer template share events (${pair.name})`, events.length > 0 && events.join(",") === Object.keys(template.hooks ?? {}).sort().join(","))
 }
+
+// --- S20: object-shaped foreign event value survives install (never clobbered by the template array) ---
+const h20 = await world("h20")
+await mkdir(join(h20.cwd, ".claude"), { recursive: true })
+const settings20 = join(h20.cwd, ".claude", "settings.json")
+await writeFile(settings20, JSON.stringify({ hooks: { PreToolUse: { custom: "shape" } } }, null, 2), "utf8")
+const inst20 = run(["install", "--harness", "claude", "--project", "--yes"], h20.cwd, h20.home)
+check("install with an object-shaped foreign event exits 0", inst20.code === 0)
+const s20 = JSON.parse(await readFile(settings20, "utf8")) as Settings
+check(
+  "object-shaped foreign event value survives install",
+  !Array.isArray(s20.hooks?.PreToolUse) && JSON.stringify(s20.hooks?.PreToolUse).includes("custom"),
+)
+check("absent events still get the dejavu entries", Array.isArray(s20.hooks?.SessionEnd) && (s20.hooks?.SessionEnd ?? []).length === 1)
+
+// --- S21: merge:false harness aborts on an unparseable existing config (file untouched) ---
+const h21 = await world("h21")
+await mkdir(join(h21.cwd, ".kiro", "hooks"), { recursive: true })
+const kiro21 = join(h21.cwd, ".kiro", "hooks", "dejavu-gates.json")
+await writeFile(kiro21, "{ not json", "utf8")
+const inst21 = run(["install", "--harness", "kiro", "--project", "--yes"], h21.cwd, h21.home)
+check("install kiro over an unparseable file exits 1", inst21.code === 1)
+check("install kiro over an unparseable file reports the abort", inst21.stderr.includes("not valid JSON"))
+check("the unparseable file is left untouched", (await readFile(kiro21, "utf8")) === "{ not json")
+
+// --- S22: multi-harness install pre-validates every target before the first write ---
+const h22 = await world("h22")
+await mkdir(join(h22.cwd, ".claude"), { recursive: true })
+await mkdir(join(h22.cwd, ".kiro", "hooks"), { recursive: true })
+await writeFile(join(h22.cwd, ".kiro", "hooks", "dejavu-gates.json"), "{ not json", "utf8")
+const inst22 = run(["install", "--harness", "claude,kiro", "--project", "--yes"], h22.cwd, h22.home)
+check("multi-harness install with a later unparseable target exits 1", inst22.code === 1)
+check("no config was written before the abort", !existsSync(join(h22.cwd, ".claude", "settings.json")))
 
 report()

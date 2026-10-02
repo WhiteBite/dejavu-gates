@@ -9,7 +9,7 @@ import { copyFile, mkdir, rm } from "node:fs/promises"
 import { homedir } from "node:os"
 import { dirname, join, resolve } from "node:path"
 import { createInterface } from "node:readline"
-import { atomicWrite } from "./fs"
+import { atomicWrite, ntPath } from "./fs"
 import {
   asRecord,
   collectCommands,
@@ -125,17 +125,19 @@ export function targetPath(harness: Harness, user: boolean): string {
 
 /** Single rotating backup of the pre-mutation config; skipped when the file does not exist yet. */
 async function backup(target: string): Promise<void> {
-  if (existsSync(target)) await copyFile(target, `${target}.dejavu-bak`)
+  if (existsSync(ntPath(target))) await copyFile(ntPath(target), ntPath(`${target}.dejavu-bak`))
 }
 
 async function installOne(harness: Harness, user: boolean, dryRun: boolean): Promise<void> {
   const spec = HARNESSES[harness]
   const template = await loadTemplate(harness)
   const target = targetPath(harness, user)
+  // merge:false targets are parsed too — an unparseable existing file aborts before any write
+  const existing = await readExisting(target)
   const output = spec.merge
     ? spec.rootHooks === true
-      ? mergeConfigRoot(await readExisting(target), template, harness)
-      : mergeConfig(await readExisting(target), template, harness)
+      ? mergeConfigRoot(existing, template, harness)
+      : mergeConfig(existing, template, harness)
     : template
   const bytes = `${JSON.stringify(output, null, 2)}\n`
   if (dryRun) {
@@ -153,7 +155,7 @@ async function installOne(harness: Harness, user: boolean, dryRun: boolean): Pro
 async function uninstallOne(harness: Harness, user: boolean, dryRun: boolean): Promise<void> {
   const spec = HARNESSES[harness]
   const target = targetPath(harness, user)
-  if (!existsSync(target)) {
+  if (!existsSync(ntPath(target))) {
     process.stderr.write(`${harness}: nothing to remove (${target} absent)\n`)
     return
   }
@@ -164,7 +166,7 @@ async function uninstallOne(harness: Harness, user: boolean, dryRun: boolean): P
       return
     }
     await backup(target)
-    await rm(target)
+    await rm(ntPath(target))
     process.stderr.write(`${harness}: removed ${target}\n`)
     return
   }
@@ -224,7 +226,7 @@ async function checkOne(harness: Harness, user: boolean): Promise<{ status: Chec
   }
   const commands = (HARNESSES[harness].rootHooks === true ? collectCommandsRoot : collectCommands)(config, (c) => isDejavuHookCommand(c, harness))
   if (commands.length === 0) return { status: "missing", line: `${harness}: missing — no dejavu hooks in ${target}` }
-  const gone = commands.map(extractCliPath).find((p) => p === null || !existsSync(p))
+  const gone = commands.map(extractCliPath).find((p) => p === null || !existsSync(ntPath(p)))
   if (gone !== undefined) return { status: "stale", line: `${harness}: stale — hook cli not on disk: ${gone ?? "(unparseable command)"} (${target})` }
   return { status: "ok", line: `${harness}: ok — ${target}` }
 }
@@ -282,6 +284,12 @@ export async function runInstall(argv: string[]): Promise<number> {
       }
       process.stderr.write(bad === 0 ? "hooks: all targets ok or missing\n" : `hooks: ${bad} target(s) need reinstall\n`)
       return bad === 0 ? 0 : 1
+    }
+    // pre-validate every parseable target — an unparseable config aborts before the first write
+    for (const harness of harnesses) {
+      // merge:false uninstall removes the dejavu-owned file whole — no parse needed
+      if (args.sub === "uninstall" && !HARNESSES[harness].merge) continue
+      await readExisting(targetPath(harness, args.user))
     }
     for (const harness of harnesses) {
       if (args.sub === "install") await installOne(harness, args.user, args.dryRun)

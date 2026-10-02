@@ -6,15 +6,10 @@
  * feedback-demotion catch-up, and merges stale project copies of global gates.
  * Idempotent; also runs automatically at plugin init.
  *
- * WARNING: the log-scrub step below rewrites log.jsonl WITHOUT the log lock —
- * run this while OpenCode is closed, or appends racing the rewrite are lost.
- *
  * Usage: bun scripts/migrate.ts <projectDir> [moreProjectDirs...]
  */
-import { readFile, writeFile } from "node:fs/promises"
 import { join } from "node:path"
-import { scrubSecrets } from "../src/patterns"
-import { createStores, resolveGlobalDir } from "../src/store"
+import { createStores, GateStore, NOISE_TTL_DAYS, resolveGlobalDir, TTL_DAYS } from "../src/store"
 
 const globalDir = resolveGlobalDir()
 const projects = process.argv.slice(2)
@@ -23,25 +18,14 @@ const targets = projects.length > 0 ? projects : [process.cwd()]
 for (const project of targets) {
   const stores = createStores(project)
   await stores.migrate(true)
-  // The script exits after this — flush deferred demotion events now, or they
-  // are silently lost ("every repair is logged" invariant).
-  await stores.globalStore.flushDeferred()
-  if (stores.projectStore !== null) await stores.projectStore.flushDeferred()
+  await stores.flushDeferredAll()
+  // migrate backdates noise to the epoch — only the TTL sweep actually expires it
+  await stores.expireAll(TTL_DAYS, NOISE_TTL_DAYS)
+  // the script exits after the loop — deferred events must not die with it
+  await stores.flushDeferredAll()
+  if (stores.projectStore !== null) await stores.projectStore.scrubLog()
   console.log(`migrated: ${project}`)
 }
 
 // Historical logs are scrubbed too — secrets must not linger on disk.
-const logDirs = [globalDir, ...targets.map((t) => join(t, ".opencode", "dejavu"))]
-for (const dir of logDirs) {
-  const logPath = join(dir, "log.jsonl")
-  try {
-    const raw = await readFile(logPath, "utf8")
-    const scrubbed = scrubSecrets(raw)
-    if (scrubbed !== raw) {
-      await writeFile(logPath, scrubbed, "utf8")
-      console.log(`scrubbed log: ${logPath}`)
-    }
-  } catch {
-    // missing log is fine
-  }
-}
+await new GateStore(globalDir).scrubLog()
