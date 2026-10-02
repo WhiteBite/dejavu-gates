@@ -2944,11 +2944,11 @@ const r105Block = async (callID: string): Promise<void> => {
 }
 const r105Early = await r105Populate()
 check("loop break: no injection below the stop threshold", !r105HasBreak(r105Early))
-await r105Block("r105c1")
-await r105Block("r105c2")
+await r105Block("r106c1")
+await r105Block("r106c2")
 const r105Two = await r105Populate()
 check("loop break: still no injection after two blocks", !r105HasBreak(r105Two))
-await r105Block("r105c3")
+await r105Block("r106c3")
 const r105Stop = await r105Populate()
 check("loop break: a stop-blocked loop injects an automated user message", r105HasBreak(r105Stop))
 const r105BreakMsg = r105Stop.find((m) => m.info.role === "user" && r105LoopText(m).includes("loop protection"))
@@ -3048,6 +3048,29 @@ const r8Quarantine = (await readdir(r8GlobalDir)).filter((f) => f.startsWith("ga
 check("corrupt global gates.json is quarantined by under-lock reconcile", r8Quarantine.length >= 1)
 check("corrupt global bytes are preserved", (await readFile(join(r8GlobalDir, r8Quarantine[0] ?? ""), "utf8")).includes("corrupted global gates"))
 check("global store restarts fresh after quarantine", (await readJson(join(r8GlobalDir, "gates.json"))).length === 0)
+
+// --- 107. V1 errored correlation by callId: an errored edit is not workspace movement ---
+const r107Dir = join(tmp, "r107-v1-errored-project")
+const R107_CMD = "deploy-tool --verify-omega"
+const r107Key = patternKey(callSignature("bash", { command: R107_CMD }) ?? "")
+await seedGates(r107Dir, [seedGate({ key: r107Key, signature: `bash:${R107_CMD}`, status: "blocking", snippet: "exit code 1" })])
+const r107Hooks = await Dejavu({ directory: r107Dir, client: { app: { log: async () => ({}) } } } as unknown as Ctx)
+await r101FailWith(r107Hooks, R107_CMD, "r107a", "r107c1", "exit code 1")
+await (r107Hooks.event as EventHook)({
+  event: {
+    type: "message.part.updated",
+    properties: {
+      part: { id: "r107c2", type: "tool", tool: "edit", sessionID: "r107a", state: { status: "error", error: "Edit failed: conflict", input: { filePath: "x.ts" } } },
+    },
+  },
+} as unknown as EventInput)
+await (r107Hooks["tool.execute.after"] as AfterHook)(
+  { tool: "edit", sessionID: "r107a", callID: "r107c2", args: { filePath: "x.ts" } } as unknown as AfterInput,
+  { title: "x.ts", output: "ok", metadata: {} } as unknown as AfterOutput,
+)
+await r101FailWith(r107Hooks, R107_CMD, "r107a", "r107c3", "exit code 1")
+const r107Gate = (await readJson(join(r107Dir, ".opencode", "dejavu", "gates.json"))).find((g) => g.key === r107Key)
+check("V1: an errored edit correlated by callId is not workspace movement", r107Gate?.recurredAfterGate === 2 && !r107Gate?.movedOn)
 
 await rm(tmp, { recursive: true, force: true })
 

@@ -87,6 +87,8 @@ export const Dejavu: Plugin = async ({ directory, client }) => {
         // failed bash calls arrive as successful executions with metadata.exit !== 0
         const metadata = (output?.metadata ?? {}) as { exit?: unknown }
         const exitCode = typeof metadata.exit === "number" ? metadata.exit : null
+        // V1 payloads carry no error status — correlate by callId; assumes error parts precede the after-hook
+        const errored = typeof input.callID === "string" && ephemeral.handledParts.has(input.callID)
         const event: NormalizedEvent = {
           harness: "opencode",
           phase: "post",
@@ -97,6 +99,7 @@ export const Dejavu: Plugin = async ({ directory, client }) => {
           cwd,
           output: genericToolOutput(input.tool, typeof output?.output === "string" ? output.output : "", false),
           exitCode,
+          errored,
           channel: exitCode !== null ? "exit" : "text",
           raw: input,
         }
@@ -121,7 +124,7 @@ export const Dejavu: Plugin = async ({ directory, client }) => {
         }
 
         if (type !== "message.part.updated") return
-        // tool-level failures (read of a missing file, rejected edit) never reach tool.execute.after
+        // tool-level failures surface HERE as error parts; the after-hook correlates by callId
         const props: unknown = (event as { properties?: unknown }).properties
         if (typeof props !== "object" || props === null) return
         const part: unknown = (props as { part?: unknown }).part

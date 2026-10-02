@@ -40,7 +40,14 @@ export function internalArgs(tool: string, raw: Record<string, unknown>): Record
     case "edit":
     case "write": {
       const filePath = raw.filePath ?? raw.file_path ?? raw.path ?? raw.target_file
-      return typeof filePath === "string" ? { filePath } : {}
+      if (typeof filePath === "string") return { filePath }
+      // codex/devin/cline apply_patch: the file path lives in the patch body
+      const patch = raw.input ?? raw.patch
+      if (typeof patch === "string") {
+        const m = /\*\*\* (?:Update|Add|Delete) File: (.+)/.exec(patch)
+        if (m !== null) return { filePath: (m[1] ?? "").trim() }
+      }
+      return {}
     }
     case "glob":
     case "grep": {
@@ -90,16 +97,18 @@ export function extractOutput(value: unknown): string | null {
   return null
 }
 
-/** True when the payload explicitly marks a failed call (failure event, `error`, `is_error`/`status`). */
+/** True when the payload explicitly marks a failed call (failure event, `error`, `is_error`/`status`). An EMPTY error string is not a signal. */
 export function errorSignalled(r: Record<string, unknown>, response: unknown = undefined): boolean {
   const hookEvent = str(r, "hook_event_name") ?? str(r, "hookEventName")
   if (hookEvent !== null && /fail/i.test(hookEvent)) return true
-  if (str(r, "error") !== null) return true
+  const error = str(r, "error")
+  if (error !== null && error.trim() !== "") return true
   if (typeof response === "object" && response !== null) {
     const obj = response as Record<string, unknown>
     if (obj.is_error === true || obj.isError === true) return true
     if (typeof obj.status === "string" && /error|fail/i.test(obj.status)) return true
-    if (str(obj, "error") !== null) return true
+    const responseError = str(obj, "error")
+    if (responseError !== null && responseError.trim() !== "") return true
   }
   return false
 }

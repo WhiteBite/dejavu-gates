@@ -26,7 +26,7 @@ export function stripQuotedSpans(text: string): string {
  * zero deps). Applied to every signature and snippet BEFORE persistence.
  */
 const SECRET_PATTERNS: RegExp[] = [
-  /sk-proj-\S*/gi, // OpenAI keys incl. fragmented PowerShell continuations ("sk-proj-\")
+  /sk-proj-[^\s\\]*/gi, // OpenAI keys; the body after a PowerShell `\`-continuation survives for the second pass
   /sk-[a-zA-Z0-9_-]{20,}/g, // OpenAI / Anthropic style keys
   /sk-ant-[a-zA-Z0-9_-]{6,}/g, // fixed Anthropic prefix — a short label still redacts where {20,} frames
   /gh[pousr]_[A-Za-z0-9_]{36,}/g, // GitHub PATs
@@ -50,6 +50,9 @@ const SECRET_PATTERNS: RegExp[] = [
   /NRAK-[A-Z0-9]{20,}/g, // New Relic
   /SG\.[A-Za-z0-9_-]{16,}\.[A-Za-z0-9_-]{16,}/g, // SendGrid
   /\b(?:api[_-]?key|secret(?:[_-]?key)?|access[_-]?token|auth[_-]?token|client[_-]?secret|password|passwd)\b\s*[:=]\s*['"]?[A-Za-z0-9+/_=.-]{16,}/gi, // generic key=<long value> assignments
+  /(?<=\b(?:[a-z0-9]+[_-])*(?:api[_-]?key|secret(?:[_-][a-z0-9]+)*(?:[_-]?key)?|access[_-]?(?:key|token)|auth[_-]?token|private[_-]?token|client[_-]?secret|consumer[_-]?secret)\s*[:=]\s*["']?)[A-Za-z0-9+/_=.-]{16,}/gi, // COMPOUND names (aws_secret_access_key, personal_access_token) — value-only so the name stays identity
+  /(?<=--(?:secret|token|api[_-]?key|access[_-]?(?:key|token)|password|passwd|client[_-]?secret)=)[^\s"']{16,}/gi, // flag forms (--token=…, --api-key=…), value-only
+  /(?<=\b(?:aws|gcloud|az|doctl)\s+(?:[\w-]+\s+){1,2}set\s+[a-z0-9_.-]*(?:secret|token|key|password)[a-z0-9_.-]*\s)[A-Za-z0-9+/=]{20,}/gi, // space forms: aws configure set aws_secret_access_key <value>
   /\broot@[\w.-]+/gi, // ssh root@host — infrastructure exposure
 ]
 
@@ -58,6 +61,8 @@ export function scrubSecrets(text: string): string {
   for (const rule of SECRET_PATTERNS) {
     s = s.replace(rule, "<redacted>")
   }
+  // a key body split by a PowerShell `\`-continuation survives its prefix's redaction
+  s = s.replace(/(<redacted>\\\r?\n\s*["']?)[A-Za-z0-9+/=_-]{8,}/g, "$1<redacted>")
   return s
 }
 
@@ -105,7 +110,7 @@ export function sanitizeForStore(text: string): string {
  * code flag itself. `py` is the Windows Python launcher (`py -3 -c ...`).
  */
 const INTERPRETER_ONELINER =
-  /(?:^|[|;&(\n]\s*)(?:\w+=\S+\s+)*(?:["']?\S*[\\/])?(python3?|py|node|bun|deno|perl|ruby|pwsh|powershell|php|julia|lua|rscript)(?:\.exe)?["']?(?:\s+(?!-(?:encodedcommand|command|c|e)\b|--eval\b)--?\w+(?:\s+\S+)?)*\s+(-command|-encodedcommand|--eval|-c|-e|-r)\s*/i
+  /(?:^|[|;&(\n]\s*)(?:\w+=\S+\s+)*(?:["']?\S*[\\/])?(bash|zsh|dash|ksh|python3?|py|node|bun|deno|perl|ruby|pwsh|powershell|php|julia|lua|rscript|sh)(?:\.(?:exe|\d[\w.]*))?["']?(?:\s+(?!-(?:encodedcommand|command|c|e)\b|--eval\b)--?[\w-]+(?:=\S+)?(?:\s+\S+)?)*\s+(-command|-encodedcommand|--eval|-c|-e|-r)\s*/i
 
 function hashInterpreterPayload(command: string): string {
   const match = INTERPRETER_ONELINER.exec(command)
@@ -146,8 +151,12 @@ function hashInterpreterPayload(command: string): string {
   const fingerprint = createHash("sha1").update(scrubSecrets(code)).digest("hex").slice(0, 8)
   // Long PowerShell flags converge to -c: `-command`/`-encodedcommand` are
   // spellings of the same one-liner call — one identity, not three families.
-  const prefix = command.slice(0, match.index + match[0].length).replace(/-(?:command|encodedcommand)(\s*)$/i, "-c$1")
-  return rest === "" ? `${prefix}<code:${fingerprint}>` : `${prefix}<code:${fingerprint}> ${rest}`
+  const prefix = command
+    .slice(0, match.index + match[0].length)
+    .replace(/--eval(\s*)$/i, "-e$1")
+    .replace(/-(?:command|encodedcommand)(\s*)$/i, "-c$1")
+  // trailing args may carry FURTHER one-liners of the same chain — fingerprint them too
+  return rest === "" ? `${prefix}<code:${fingerprint}>` : `${prefix}<code:${fingerprint}> ${hashInterpreterPayload(rest)}`
 }
 
 /**
@@ -206,14 +215,23 @@ export function normalizeCommand(command: string): string {
   // spaces that would otherwise expose an adjacent "/" to the path rule only
   // on a second pass.
   s = s.replace(QUOTED_SPAN, " <str> ")
+  // `npm test` is npm's documented alias for the run-script — one key with the explicit form
+  s = s.replace(/(^|[|;&(\n]\s*)npm\s+test\b/gi, "$1run test")
   // canonicalize after quote stripping: a runner token inside string data must stay data
   s = s.replace(PACKAGE_RUN, "$1run ")
   s = s.replace(PACKAGE_EXEC, "$1npx ")
+  // scheme URLs BEFORE drive-letter paths — "https://x" must not shatter into "http" + <path>
+  s = s.replace(/\b[a-z][a-z0-9+.-]*:\/\/[^\s"']+/gi, " <url> ")
+  s = s.replace(/\b[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\b/gi, " <uuid> ")
+  s = s.replace(/\b(?:\d{1,3}\.){3}\d{1,3}(?::\d{1,5})?\b/g, " <ip> ")
+  s = s.replace(/\b\d{4}-\d{2}-\d{2}\b/g, " <date> ")
   s = s.replace(/[a-z]:[\\/][^\s"']+/gi, " <path> ")
   s = s.replace(/(^|\s)\/[^\s"']+/g, "$1<path> ")
   // lookbehind: never re-parameterize the <code:...> fingerprint hex
   s = s.replace(/(?<!<code:)\b[0-9a-f]{7,64}\b/gi, " <hash> ")
   s = s.replace(/(?<!<code:)\b\d[\d.]*\b/g, " <n> ")
+  // trailing # comments strip LAST: placeholder rules insert the space that exposes the #
+  s = s.replace(/[ \t]+#[^\n]*/g, "")
   s = s.replace(/\s+/g, " ").trim()
   return s
 }
@@ -345,6 +363,7 @@ const DIAGNOSTIC_VERBS: RegExp[] = [
   // canonical runner form: npm run test -> run test keeps the iteration tier
   /(^|[|;&(:\n])\s*run (test|typecheck|lint|check|verify)\b/i,
   /\bplaywright test\b/i,
+  /\b(bun|deno) test\b/i,
   /\bflutter (test|analyze)\b/i,
   /\bdart (analyze|format|fix)\b/i,
   // Iteration runners: `dart run <script>`, `go run|build`, `cargo run|build`
@@ -399,19 +418,21 @@ const NAVIGATION_VERBS = /^\s*(cd|set-location|pushd|popd)\b/i
 const ENV_ASSIGNMENT_SEGMENT = /^\s*(?:\$env:)?[a-z_][a-z0-9_]*\s*=\s*(?:"[^"]*"|'[^']*'|\S+)\s*$/i
 const INERT_VERBS = /^\s*start-sleep\b/i
 
-/** Flatten subshell parens to `;` segment separators, but ONLY outside `{}`
- * script blocks and quotes. `(deploy && grep)` must split (a diagnostic inside
- * parens must not blanket-immunize a non-diagnostic verb), but method-call
- * parens inside a PowerShell script block (`ForEach-Object { $_.trim() }`) are
- * part of that segment and must NOT split it. */
+/** Flatten SUBSHELL parens to `;` separators — outside {} blocks, quotes and `$(…)` substitutions (a substitution is part of its segment, not a subshell). */
 function flattenSubshellParens(command: string): string {
   let result = ""
   let quote: string | null = null
   let braceDepth = 0
+  let subDepth = 0
   for (let i = 0; i < command.length; i++) {
     const ch = command.charAt(i)
     if (quote !== null) {
       result += ch
+      if (quote === '"' && ch === "`") {
+        result += command.charAt(i + 1)
+        i += 1
+        continue
+      }
       if (ch === quote) quote = null
       continue
     }
@@ -430,7 +451,21 @@ function flattenSubshellParens(command: string): string {
       result += ch
       continue
     }
-    if ((ch === "(" || ch === ")") && braceDepth === 0) {
+    if (ch === "(" && braceDepth === 0) {
+      if (subDepth > 0 || command.charAt(i - 1) === "$") {
+        subDepth += 1
+        result += ch
+      } else {
+        result += ";"
+      }
+      continue
+    }
+    if (ch === ")" && subDepth > 0) {
+      subDepth -= 1
+      result += ch
+      continue
+    }
+    if (ch === ")" && braceDepth === 0) {
       result += ";"
       continue
     }
@@ -460,6 +495,12 @@ function splitChainTagged(command: string): Array<{ text: string; pipeTail: bool
     const next = command.charAt(i + 1)
     if (quote !== null) {
       current += ch
+      // PowerShell escapes with a backtick inside double quotes — `` `" `` is a literal quote
+      if (quote === '"' && ch === "`") {
+        current += next
+        i += 2
+        continue
+      }
       if (ch === quote) quote = null
       i += 1
       continue
@@ -551,6 +592,24 @@ export function isIntendedNonzero(command: string, exitCode: number): boolean {
   let sawProducer = false
   for (const { text, pipeTail } of splitChainTagged(flattenSubshellParens(command))) {
     if (isTransparentSegment(text, pipeTail)) continue
+    // cmd /c wrappers and interpreter one-liners DELEGATE the exit code to their payload
+    const wrapper = cmdWrapperPayload(text)
+    if (wrapper !== null) {
+      if (!isIntendedNonzero(wrapper, exitCode)) return false
+      sawProducer = true
+      continue
+    }
+    const oneliner = INTERPRETER_ONELINER.exec(text)
+    if (oneliner !== null) {
+      const payload = text.slice(oneliner.index + oneliner[0].length).trim()
+      const code =
+        payload.length >= 2 && ((payload.startsWith('"') && payload.endsWith('"')) || (payload.startsWith("'") && payload.endsWith("'")))
+          ? payload.slice(1, -1)
+          : payload
+      if (payload === "" || !isIntendedNonzero(code, exitCode)) return false
+      sawProducer = true
+      continue
+    }
     if (!isDiagnosticText(text)) return false
     sawProducer = true
   }
@@ -567,12 +626,8 @@ export function isIntendedNonzero(command: string, exitCode: number): boolean {
  * segment's gate inflated by a non-diagnostic producer's failure).
  */
 export function nonTransparentProducers(command: string): number {
-  let count = 0
-  for (const { text, pipeTail } of splitChainTagged(flattenSubshellParens(command))) {
-    if (isTransparentSegment(text, pipeTail)) continue
-    count += 1
-  }
-  return count
+  // counted AFTER full expansion — attribution iterates exactly these signatures
+  return producerSegmentSignatures(command).length
 }
 
 // --- Residual identity (over-generic shape guard) ----------------------------
@@ -594,10 +649,11 @@ const CODE_PASSING_FLAGS = new Set(["-c", "-e", "-r", "--eval", "-command", "-en
  * (`cmd <path> <str> -f`), which must not enforce. */
 const FLAG_TOKEN = /^--?[a-z]/i
 
-/** Shell builtins that only position the session: a chain headed by one
- * (`cd <path> && python <path>`) must not borrow identity from the builtin —
- * the whole chain may be parameterized away. */
-const NO_IDENTITY_HEADS = new Set(["cd", "pushd", "popd", "set-location", "exit"])
+/** Shell builtins that only position the session or re-execute a string: a
+ *  chain headed by one (`cd <path> && python <path>`, `eval <str>`) must not
+ *  borrow identity from the builtin — the whole chain may be parameterized
+ *  away, and `eval`'s payload is indistinguishable from a family. */
+const NO_IDENTITY_HEADS = new Set(["cd", "pushd", "popd", "set-location", "exit", "eval", "source"])
 
 /** Pipe-stage cmdlets that only post-process output: a segment made of
  * plumbing (`... | select-object -last <n>`) contributes no identity. */
@@ -620,7 +676,7 @@ const PLUMBING_HEADS = new Set([
 /** Wrappers whose bare name is not a call identity: their ARGUMENTS are the
  * call. If the arguments were all parameterized away, the signature matches
  * an entire command family — enforcing it would punish unrelated calls. */
-const WRAPPER_BASENAMES = new Set(["cmd", "py", "node", "python", "python3", "bun", "deno", "perl", "ruby", "pwsh", "powershell", "php", "julia", "lua", "rscript"])
+const WRAPPER_BASENAMES = new Set(["cmd", "py", "node", "python", "python3", "bash", "sh", "zsh", "dash", "ksh", "bun", "deno", "perl", "ruby", "pwsh", "powershell", "php", "julia", "lua", "rscript"])
 
 /** npx-launched runners: the runner package is the verb, the SCRIPT argument is
  * the call — `npx tsx <str>` matches every tsx invocation (a family). */
@@ -634,7 +690,8 @@ function baseName(token: string): string {
   const bare = token.replace(/^["']+|["']+$/g, "")
   const parts = bare.split(/[\\/]/)
   const last = parts[parts.length - 1] ?? bare
-  return last.toLowerCase().replace(/\.exe$/, "")
+  // .exe and versioned tails (python3.11, node22) are the same interpreter
+  return last.toLowerCase().replace(/\.(?:exe|\d[\w.]*)$/, "")
 }
 
 /** Identity scan over the arguments after a family/wrapper verb: a surviving
@@ -808,6 +865,12 @@ export function splitChain(command: string): string[] {
     const next = command.charAt(i + 1)
     if (quote !== null) {
       current += ch
+      // PowerShell escapes with a backtick inside double quotes — `` `" `` is a literal quote
+      if (quote === '"' && ch === "`") {
+        current += next
+        i += 2
+        continue
+      }
       if (ch === quote) quote = null
       i += 1
       continue
@@ -1245,6 +1308,24 @@ const FAILURE_SIGNATURES: RegExp[] = [
   /thread '[^']*' panicked/,
   /\bpanic:/i,
   /\bFATAL\b/,
+  // npm/pnpm/yarn resolver failures — the text channel's only detector on exit-code-less harnesses
+  /^npm (?:ERR!|error)\b/i,
+  /^ERR_[A-Z]\w+/,
+  /^\s*error\s+(?:Command failed|https:\/\/)/i,
+  // pytest --tb=short: a `| tail` cut drops the "N failed" summary — the FAILED row IS the failure
+  /^FAILED \S+/,
+  // Debian/dash numbered form: "/bin/sh: 1: foo: not found" (dash, unlike bash, omits "command")
+  /\/(?:[\w.-]+\/)*(?:ba|z|da|k)?sh:\s*\d+:\s*\S+:\s*not found\b/,
+  // eslint stylish: the problem tally (non-zero — a clean run also prints "✖ 0 problems") and inline rows
+  /✖\s*[1-9]\d*\s+problems?/i,
+  /^\s*\d+:\d+\s+error\b/,
+  // flutter analyze: "error • 'x' isn't defined • lib/a.dart:3:5"
+  /^\s*error\s+•/,
+  // kubectl / docker daemon errors
+  /^Error (?:from server|response from daemon)/,
+  // go module resolution, NuGet restore
+  /\bno such (?:module|package)\b/,
+  /^NU\d{4}:/,
 ]
 
 /** Lines that read like a SUCCESS summary. Quoting one as a failure's "last
@@ -1304,6 +1385,8 @@ export function detectFailure(outputText: string): FailureDetection {
   // PowerShell colors errors with VT sequences — strip before scanning, or
   // the escapes persist into snippets/corrections shown to the agent.
   for (const line of stripControl(outputText).split("\n")) {
+    // a pass-summary line is never failure evidence ("All tests passed - panic: none")
+    if (looksLikeSuccess(line)) continue
     for (const signature of FAILURE_SIGNATURES) {
       if (signature.test(line)) {
         return { matched: true, snippet: line.trim().slice(0, 200) }
@@ -1366,8 +1449,6 @@ const NOISE_ERRORS: RegExp[] = [
   /lsp (?:server|daemon|process)[^.\n]*(?:unreachable|not running|disconnected|crashed|did not become reachable)/i,
   /\b(?:daemon|server)\b[^.\n]*(?:unreachable|did not become reachable)/i,
   /streamable ?http ?error/i, // MCP streamable-http transport failure
-  /\bmcp error\b/i, // MCP transport/protocol errors
-  /non.?2xx status code/i, // webfetch HTTP failure: the endpoint answered, the URL fetch didn't
   /\btransport error\b/i, // webfetch/gRPC transport failure: the connection itself never completed
   // Browser automation: the page/context/browser was already closed when the
   // action ran — a transient startup/state hiccup fixed by relaunching, not an
@@ -1379,6 +1460,10 @@ const NOISE_ERRORS: RegExp[] = [
 ]
 
 export function isNoiseError(errorText: string): boolean {
+  // a 4xx on the non-2xx mention is a CLIENT mistake — teachable; numberless/5xx stays server noise
+  if (/non.?2xx status code/i.test(errorText)) return !/non.?2xx status code[:\s]*4\d{2}/i.test(errorText)
+  // client-side JSON-RPC codes (parse error, invalid request/method/params) are agent mistakes
+  if (/\bmcp error\b/i.test(errorText)) return !/-3(?:2700|260[0-2])\b/.test(errorText)
   return NOISE_ERRORS.some((rule) => rule.test(errorText))
 }
 

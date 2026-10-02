@@ -11,6 +11,7 @@ import {
   isIntendedNonzero,
   looksLikeSuccess,
   normalizeCommand,
+  scrubSecrets,
   suggestCorrection,
 } from "../src/patterns"
 import { makeChecker } from "./helpers"
@@ -94,5 +95,70 @@ check("isIntendedNonzero: mvn test exit 2 still counts", !isIntendedNonzero("mvn
 const wrapped = bashSegmentSignatures("cmd /c mvn test")
 check("cmd /c unwrap reaches mvn test in segment signatures", wrapped.includes("bash:mvn test"))
 check("cmd /c mvn test signature is remind-tier, never blocking", canRemind("bash", "bash:mvn test") && !canBlock("bash", "bash:mvn test"))
+
+// --- D5: secret scrubber corpus (PAT-shaped positive + false-positive guards) ---
+const MUST_REDACT: Array<[string, string]> = [
+  ["aws configure set aws_secret_access_key wJalrXUtnFEMI/K7mdENG/bPxRfiCYEXAMPLEKEY", "aws space form"],
+  ["aws_secret_access_key=wJalrXUtnFEMI/K7mdENG/bPxRfiCYEXAMPLEKEY", "aws compound lowercase"],
+  ["AWS_SECRET_ACCESS_KEY=wJalrXUtnFEMI/K7mdENG/bPxRfiCYEXAMPLEKEY", "aws compound uppercase"],
+  ["export personal_access_token=ghp_16C7e42F292c6912E7710c838347Ae178B4a", "compound prefix"],
+  ["--token=abc123def456ghi789jkl012", "flag value form"],
+  ["--api-key=Zjk4NjMxYjctZmVmNy00Yzc0LTk0Zj", "dashed flag name"],
+  ["curl -H \"Authorization: Bearer sk-proj-abc123def456ghi789jkl\" https://api", "bearer + sk-proj"],
+  ["Authorization: Bearer eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiIxMjM0NTY3ODkwIn0.abc123def456", "bearer + jwt"],
+  ["postgres://user:secretpw@db.example.com:5432/prod", "db conn string"],
+  ["-----BEGIN RSA PRIVATE KEY-----\nMIIEowIBAAKCAQEA7d9J3fK8sL2m1\n-----END RSA PRIVATE KEY-----", "pem block"],
+  ["default_secret_access_key=abcdefghijklmnopqrst", "prefixed compound"],
+  ["api_key: Zjk4NjMxYjctZmVmNy00Yzc0LTk0Zj", "colon form"],
+]
+for (const [input, name] of MUST_REDACT) {
+  const out = scrubSecrets(input)
+  check(`scrubs ${name}`, !out.includes("wJalrXUtnFEMI") && !out.includes("ghp_16C7e") && !out.includes("sk-proj-abc123") && !out.includes("eyJhbGci") && !out.includes("secretpw") && !out.includes("MIIEowIB") && !out.includes("Zjk4NjMx") && !out.includes("abc123def456"))
+}
+const NOT_REDACT: Array<[string, string]> = [
+  ["PATH=/usr/local/bin:/usr/bin", "plain env path"],
+  ["tokenize=abcdefg123456789abcdefg", "token-like word"],
+  ["keyboard=qwertyuiopasdfghjklzxcvbnm", "key-like word"],
+  ["secrets_path=src/secrets/config.json", "path-valued config"],
+  ["aws configure set region us-east-1", "aws region set"],
+  ["mysql -u root -p production < dump.sql", "flag without value"],
+]
+for (const [input, name] of NOT_REDACT) {
+  check(`keeps ${name} readable`, scrubSecrets(input) === input)
+}
+const continuation = "curl -H \"Authorization: Bearer sk-proj-\\\r\nabc123def456ghi789jkl\" https://api"
+check("redacts the continuation body after sk-proj-\\", !scrubSecrets(continuation).includes("abc123def456"))
+check("scrubSecrets is idempotent", scrubSecrets(scrubSecrets(continuation)) === scrubSecrets(continuation) && scrubSecrets(scrubSecrets("aws_secret_access_key=wJalrXUtnFEMI/K7mdENG")) === scrubSecrets("aws_secret_access_key=wJalrXUtnFEMI/K7mdENG"))
+
+// --- D6: text-channel detection corpus (the only detector on exit-code-less harnesses) ---
+const TEXT_FAILURES: Array<[string, string]> = [
+  ["npm ERR! 404 Not Found - GET https://registry.npmjs.org/definitely-broken-xyz", "npm ERR! 404"],
+  ["npm error code E404", "npm v10+ error form"],
+  ["ERR_PNPM_NO_MATCHING_VERSION  No version with the requested range exists", "pnpm resolver"],
+  ["error https://registry.yarnpkg.com/definitely-broken-xyz: Not found", "yarn fetch"],
+  ["error Command failed with exit code 1", "yarn command failed"],
+  ["FAILED tests/test_x.py::test_y - AssertionError: expected 1", "pytest short mode"],
+  ["/bin/sh: 1: definitely-broken-xyz: not found", "debian dash"],
+  ["/usr/bin/dash: 2: broken-tool: not found", "path-prefixed dash"],
+  ["✖ 1 problem (1 error, 0 warnings)", "eslint problem tally"],
+  ["  3:10  error  'x' is not defined  no-undef", "eslint inline row"],
+  ["error • 'x' isn't defined • lib/a.dart:3:5", "flutter analyze"],
+  ["Error from server (NotFound): deployments.apps \"broken\" not found", "kubectl"],
+  ["Error response from daemon: manifest for broken:latest not found", "docker daemon"],
+  ["go: module github.com/broken/mod: no such module", "go mod"],
+  ["NU1101: Unable to find package broken-package", "nuget restore"],
+]
+for (const [line, name] of TEXT_FAILURES) {
+  check(`detects ${name}`, detectFailure(`${line}\nexit code 1`).matched)
+}
+const NOT_FAILURES: Array<[string, string]> = [
+  ["npm warn deprecated left-pad@1.3.0: use fpkg", "npm warn"],
+  ["10:30 session started", "time-prefixed line"],
+  ["go: downloading github.com/x/y v1.2.3", "go download"],
+  ["✖ 0 problems (0 errors, 0 warnings)", "eslint clean tally"],
+]
+for (const [line, name] of NOT_FAILURES) {
+  check(`ignores ${name}`, !detectFailure(line).matched)
+}
 
 report()

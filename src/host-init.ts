@@ -5,7 +5,7 @@
  * dialect; the init ORDER (reconcile → migrate → expire) is an invariant and
  * lives here exactly once.
  */
-import { GLOBAL_PROJECTS, NOISE_TTL_DAYS, PLUGIN_VERSION, TTL_DAYS, type Stores } from "./store"
+import { DEMOTE_RECURRENCES, GLOBAL_PROJECTS, NOISE_TTL_DAYS, PLUGIN_VERSION, TTL_DAYS, type Stores } from "./store"
 
 // --- Tunables ---------------------------------------------------------------
 
@@ -44,7 +44,7 @@ export async function initStores(stores: Stores, opts: InitStoresOptions): Promi
     if (opts.healthLog) {
       // surface non-automatable gate health to the durable log instead of letting it accumulate silently
       const enforced = await stores.enforcedGates()
-      const notTeaching = enforced.filter((g) => g.recurredAfterGate >= 3).length
+      const notTeaching = enforced.filter((g) => g.recurredAfterGate >= DEMOTE_RECURRENCES).length
       const review = enforced.filter((g) => g.review === true).length
       if (notTeaching > 0 || review > 0) {
         await stores.logAll({ type: "health", key: "dejavu", snippet: `not-teaching ${notTeaching}, review ${review}` })

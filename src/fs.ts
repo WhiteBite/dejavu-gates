@@ -92,6 +92,9 @@ export async function sweepStoreArtifacts(
       } else if (name.endsWith(".lock")) {
         const pid = Number((await readFile(ntPath(path), "utf8")).trim())
         if (!pidAlive(pid)) {
+          // re-read before unlink: a concurrent stale-steal may have re-created the lock with a live pid
+          const current = Number((await readFile(ntPath(path), "utf8")).trim())
+          if (current !== pid && pidAlive(current)) continue
           await unlink(ntPath(path))
           result.locks++
         }

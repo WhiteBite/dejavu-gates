@@ -7,7 +7,7 @@ import { canBlock, canRemind, fuzzySimilar, FUZZY_MAX_LEN, hasGenericResidualIde
 import { coerceGateShape, failedAtMs, repairGate } from "./validate"
 
 /** Bumped on behavior changes; stamped into init log events so stale sessions are visible. */
-export const PLUGIN_VERSION = "2.48.0"
+export const PLUGIN_VERSION = "2.49.0"
 
 /** Global store root — DEJAVU_HOME overrides it (testing, custom setups). */
 export function resolveGlobalDir(): string {
@@ -672,12 +672,13 @@ export class GateStore {
   }
 
   private async loadIndexFile(force: boolean): Promise<IndexFile> {
+    let raw = ""
     try {
       const info = await stat(ntPath(this.indexPath))
       if (!force && this.index !== null && info.mtimeMs === this.indexMtimeMs) {
         return this.index
       }
-      const raw = await readFile(ntPath(this.indexPath), "utf8")
+      raw = await readFile(ntPath(this.indexPath), "utf8")
       const parsed = JSON.parse(raw) as Partial<IndexFile>
       const keys = parsed.keys
       this.index = { version: 1, keys: keys !== null && typeof keys === "object" ? keys : {} }
@@ -685,15 +686,34 @@ export class GateStore {
       return this.index
     } catch (error) {
       const code = (error as { code?: string }).code ?? ""
-      // ENOENT and parse failures rebuild (the index is derived evidence);
-      // a transient read failure must not masquerade as an empty index —
-      // the next saveIndex() would clobber cross-project escalation evidence.
-      if (code !== "ENOENT" && !(error instanceof SyntaxError)) {
-        if (this.index !== null) return this.index
+      // index corruption quarantines under the lock, never silently rebuilds
+      if (error instanceof SyntaxError) {
+        if (force) await this.quarantineIndexFile(raw)
+        if (this.index === null) this.index = { version: 1, keys: {} }
+        return this.index
+      }
+      if (code !== "ENOENT") {
+        // warm cache only for peeks; mutation reads fail loud
+        if (!force && this.index !== null) return this.index
         throw new Error(`dejavu: index unreadable (${code || "unknown error"}): ${this.indexPath}`)
       }
       if (this.index === null) this.index = { version: 1, keys: {} }
       return this.index
+    }
+  }
+
+  /** Quarantine twin of quarantineGatesFile for index.json — caller must hold the index lock. */
+  private async quarantineIndexFile(raw: string): Promise<void> {
+    const quarantine = `${this.indexPath}.corrupt-${Date.now()}`
+    try {
+      await writeFile(ntPath(quarantine), scrubSecrets(raw), "utf8")
+      await unlink(ntPath(this.indexPath))
+      this.index = { version: 1, keys: {} }
+      this.indexMtimeMs = 0
+      await this.saveIndex()
+      this.deferEvent({ type: "quarantined", key: "index.json", snippet: `unparseable index file quarantined (scrubbed) to ${quarantine}` })
+    } catch {
+      // quarantine failure retries on the next force load
     }
   }
 
@@ -864,6 +884,8 @@ export class GateStore {
             this.enforcedCache = this.gates.filter((g) => g.status !== "watching")
             this.mtimeMs = mtimeMs
             this.cacheUntilMs = Date.now() + LOAD_CACHE_TTL_MS
+            // a version bump is a real change even on a quiet store — stamp once
+            if (parsed.lastInitVersion !== PLUGIN_VERSION) await this.save()
             return
           }
           this.gates = [...byKey.values()]
@@ -923,8 +945,8 @@ export class GateStore {
       for (const line of raw.split("\n")) {
         const trimmed = line.trim()
         if (trimmed === "") continue
-        // shape prefilter: truncated/interleaved corruption always breaks the {…} envelope
-        if (trimmed.startsWith("{") && trimmed.endsWith("}")) {
+        // glued objects ({a}{b}) keep the envelope — the glue check routes them to a full parse
+        if (trimmed.startsWith("{") && trimmed.endsWith("}") && !/\}\s*\{/.test(trimmed)) {
           good.push(line)
           continue
         }
@@ -1485,10 +1507,16 @@ export class Stores {
         )
       })
       if (toEscalate.length > 0) {
+        const escalateKeys = new Set(toEscalate.map((g) => g.key))
+        let escalated = 0
         await projectStore.runLocked(async () => {
+          // re-resolve from a mutation read under the lock — an unlocked peek must never feed a locked save()
+          const freshEscalate = (await projectStore.loadForMutation()).filter((g) => escalateKeys.has(g.key))
+          if (freshEscalate.length === 0) return
+          escalated = freshEscalate.length
           await this.globalStore.runLocked(async () => {
             const globalGates = await this.globalStore.loadForMutation()
-            for (const gate of toEscalate) {
+            for (const gate of freshEscalate) {
               const target = globalGates.find((g) => g.key === gate.key)
               if (target) {
                 mergeGate(target, gate)
@@ -1498,14 +1526,16 @@ export class Stores {
             }
             await this.globalStore.save()
           })
-          projectStore.extract(new Set(toEscalate.map((g) => g.key)))
+          projectStore.extract(new Set(freshEscalate.map((g) => g.key)))
           await projectStore.save()
         })
-        await this.globalStore.log({
-          type: "repaired",
-          key: "index.json",
-          snippet: `escalated ${toEscalate.length} gate(s) proven in ${globalProjects}+ project dirs`,
-        })
+        if (escalated > 0) {
+          await this.globalStore.log({
+            type: "repaired",
+            key: "index.json",
+            snippet: `escalated ${escalated} gate(s) proven in ${globalProjects}+ project dirs`,
+          })
+        }
       }
     }
 

@@ -149,54 +149,62 @@ export async function runHook(argv: string[]): Promise<number> {
     return 1
   }
   const adapter = ADAPTERS[args.harness]
-  const event = adapter.mapInbound(args.phase, readHookPayload())
-  if (event === null) {
-    // fail-open speaks the harness's own allow dialect (Kiro's silence included)
-    process.stdout.write(formatStdout(adapter.mapOutbound(args.phase, { action: "allow", reason: null, annotation: null })))
+  try {
+    const event = adapter.mapInbound(args.phase, readHookPayload())
+    if (event === null) {
+      // fail-open speaks the harness's own allow dialect (Kiro's silence included)
+      process.stdout.write(formatStdout(adapter.mapOutbound(args.phase, { action: "allow", reason: null, annotation: null })))
+      return 0
+    }
+    const projectDir = args.store ?? event.cwd ?? process.cwd()
+    const stores = createStores(projectDir)
+    // per-invocation init is the CLI's accepted cost — the three idempotent passes, nothing else
+    await initStores(stores, {
+      logInitEvent: false,
+      rotateLogs: false,
+      healthLog: false,
+      log: (_level, message) => {
+        process.stderr.write(`[dejavu] ${message}\n`)
+      },
+    })
+    const debug = process.env.DEJAVU_DEBUG !== undefined && process.env.DEJAVU_DEBUG !== "" && process.env.DEJAVU_DEBUG !== "0"
+    const ctx: EnforceContext = {
+      stores,
+      ephemeral: createEphemeralState(),
+      log: debug
+        ? (_service, level, message) => {
+            process.stderr.write(`[dejavu:${level}] ${message}\n`)
+          }
+        : () => {},
+      onHookError: (where, error) => {
+        process.stderr.write(`[dejavu] ${where} hook error: ${formatError(error)}\n`)
+      },
+      platform: process.platform,
+      projectDir,
+    }
+    let decision: OutboundDecision
+    try {
+      decision = await dispatch(adapter, event, ctx)
+    } catch (error) {
+      process.stderr.write(`[dejavu] dispatch error: ${formatError(error)}\n`)
+      decision = adapter.mapOutbound(event.phase, { action: "allow", reason: null, annotation: null })
+    }
+    try {
+      // deferred repair/retire events must reach the log before this process exits
+      await stores.flushDeferredAll()
+    } catch {
+      // losing a forensic line must not change the decision
+    }
+    process.stdout.write(formatStdout(decision))
+    if (decision.stderr !== null) process.stderr.write(`${decision.stderr}\n`)
+    return decision.exitCode
+  } catch (error) {
+    // fail-open in the harness's own dialect — Kiro injects a successful hook's stdout into agent context
+    process.stderr.write(`[dejavu] fatal: ${formatError(error)}\n`)
+    const fallback = adapter.mapOutbound(args.phase, { action: "allow", reason: null, annotation: null })
+    process.stdout.write(formatStdout(fallback))
     return 0
   }
-  const projectDir = args.store ?? event.cwd ?? process.cwd()
-  const stores = createStores(projectDir)
-  // per-invocation init is the CLI's accepted cost — the three idempotent passes, nothing else
-  await initStores(stores, {
-    logInitEvent: false,
-    rotateLogs: false,
-    healthLog: false,
-    log: (_level, message) => {
-      process.stderr.write(`[dejavu] ${message}\n`)
-    },
-  })
-  const debug = process.env.DEJAVU_DEBUG !== undefined && process.env.DEJAVU_DEBUG !== "" && process.env.DEJAVU_DEBUG !== "0"
-  const ctx: EnforceContext = {
-    stores,
-    ephemeral: createEphemeralState(),
-    log: debug
-      ? (_service, level, message) => {
-          process.stderr.write(`[dejavu:${level}] ${message}\n`)
-        }
-      : () => {},
-    onHookError: (where, error) => {
-      process.stderr.write(`[dejavu] ${where} hook error: ${formatError(error)}\n`)
-    },
-    platform: process.platform,
-    projectDir,
-  }
-  let decision: OutboundDecision
-  try {
-    decision = await dispatch(adapter, event, ctx)
-  } catch (error) {
-    process.stderr.write(`[dejavu] dispatch error: ${formatError(error)}\n`)
-    decision = adapter.mapOutbound(event.phase, { action: "allow", reason: null, annotation: null })
-  }
-  try {
-    // deferred repair/retire events must reach the log before this process exits
-    await stores.flushDeferredAll()
-  } catch {
-    // losing a forensic line must not change the decision
-  }
-  process.stdout.write(formatStdout(decision))
-  if (decision.stderr !== null) process.stderr.write(`${decision.stderr}\n`)
-  return decision.exitCode
 }
 
 // import.meta.main is a Bun extension absent from @types/node; false when imported (e.g. by src/main.ts)

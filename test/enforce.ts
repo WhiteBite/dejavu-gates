@@ -14,7 +14,23 @@ import {
   recordEventFailure,
   type EnforceContext,
 } from "../src/enforce"
-import { callSignature, canBlock, canRemind, hasGenericResidualIdentity, isRepoLocal, normalizeCommand, normalizeFilePath, patternKey, REPEAT_PROCEED, signRepeatedCall } from "../src/patterns"
+import {
+  bashSegmentSignatures,
+  callSignature,
+  canBlock,
+  canRemind,
+  detectFailure,
+  hasGenericResidualIdentity,
+  isIntendedNonzero,
+  isNoiseError,
+  isRepoLocal,
+  nonTransparentProducers,
+  normalizeCommand,
+  normalizeFilePath,
+  patternKey,
+  REPEAT_PROCEED,
+  signRepeatedCall,
+} from "../src/patterns"
 import { claudeAdapter } from "../src/adapters/claude"
 import { GateStore, GLOBAL_PROJECTS, PROMOTE_COUNT_PROBE, Stores, type Gate } from "../src/store"
 import { repairGate } from "../src/validate"
@@ -488,6 +504,42 @@ check("repeat-channel log keys never carry the secret", !rsLogText.includes("eyJ
 
 // --- om. a bare marker is data, not a bypass — it must not collapse signatures ---
 check("a bare marker as data does not collapse onto the unmarked signature", callSignature("bash", { command: "grep dejavu:proceed file.txt" }) !== callSignature("bash", { command: "grep file.txt" }))
+
+// --- au. audit follow-ups: normalization identity, immunity, noise tiers ---
+check(
+  "URLs converge to one <url> family token across hosts and schemes",
+  normalizeCommand("git clone https://github.com/a/b") === "git clone <url>" && normalizeCommand("git clone http://gitlab.com/c/d.git") === "git clone <url>",
+)
+check("wget URLs converge too", normalizeCommand("wget https://a.io/x.tar") === "wget <url>")
+check("interpreter one-liners fingerprint per script", callSignature("bash", { command: 'bash -c "deploy --prod --force"' }) !== callSignature("bash", { command: 'bash -c "echo a"' }))
+check("eval with a fully parameterized payload never blocks", canBlock("bash", "bash:eval <str>") === false && canRemind("bash", "bash:eval <str>") === false)
+check(
+  "versioned interpreters keep per-script identity",
+  callSignature("bash", { command: 'python3.11 -c "print(1)"' }) !== callSignature("bash", { command: 'python3.12 -c "print(2)"' }),
+)
+check(
+  "a chain's second one-liner fingerprints too",
+  callSignature("bash", { command: 'python -c "print(1)" && node -e "console.log(2)"' }) !== callSignature("bash", { command: 'python -c "print(1)" && node -e "console.log(99999)"' }),
+)
+check("node --eval canonicalizes onto -e", normalizeCommand("node --eval X") === normalizeCommand("node -e X"))
+check(
+  "$(…) substitutions keep exit-1 immunity while subshells still split",
+  isIntendedNonzero("grep -r TODO $(find src -name '*.ts')", 1) === true && isIntendedNonzero("tsc $(cat files.txt)", 1) === true && isIntendedNonzero("(deploy --prod && grep ok log.txt)", 1) === false,
+)
+check(
+  "cmd /c wrappers delegate exit-1 immunity and count expanded producers",
+  isIntendedNonzero('cmd /c "grep foo bar.txt"', 1) === true && isIntendedNonzero('pwsh -Command "Select-String foo bar.txt"', 1) === true && nonTransparentProducers('cmd /c "grep foo bar.txt && deploy.sh"') === 2,
+)
+check("bun and deno test are diagnostics", isIntendedNonzero("bun test", 1) === true && isIntendedNonzero("deno test", 1) === true)
+check("a success-shaped line is never failure evidence", detectFailure("All tests passed - panic: none").matched === false)
+check(
+  "client-side HTTP and MCP errors stay teachable, server-side stay noise",
+  isNoiseError("non-2xx status code: 404 Not Found") === false && isNoiseError("MCP error -32602: Invalid params") === false && isNoiseError("non-2xx status code: 502 Bad Gateway") === true && isNoiseError("MCP error: connection closed") === true,
+)
+check("trailing comments converge with the bare command", normalizeCommand("npm test # verify everything") === normalizeCommand("npm test") && normalizeCommand("npm test") === "run test")
+check("a quoted # is data, not a comment", normalizeCommand('grep "#include" file.ts') === "grep  <str>  file.ts".replace(/\s+/g, " "))
+check("backtick-escaped quotes keep the chain split", bashSegmentSignatures('echo "a `" b" && deploy.sh').length === 2)
+check("uuid arguments parameterize instead of fragmenting", normalizeCommand("mytool 550e8400-e29b-41d4-a716-446655440000") === "mytool <uuid>")
 
 // policy repair inherits the generic tiers: blocking generic -> reminding, identity-less -> watching
 const repairSeed = (signature: string): Gate =>

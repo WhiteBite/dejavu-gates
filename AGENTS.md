@@ -1,7 +1,7 @@
 # PROJECT KNOWLEDGE BASE
 
 **Generated:** 2026-08-22 (refreshed 2026-10-01)
-**Commit:** 2.48.0 (audit-fix batch: attribution/identity/iteration correctness, CLI-init perf, repeat-channel engine extraction + V2 parity, host-init unification)
+**Commit:** 2.49.0 (audit-fix batch 2: URL/one-liner identity, $(...) immunity, escalation lock discipline, index quarantine, errored wiring for V1)
 **Branch:** main
 
 ## OVERVIEW
@@ -94,7 +94,7 @@ Line numbers intentionally omitted — they rot every round; locate by symbol na
 | `looksLikeSuccess` / `looksLikeFailure` | fn | src/patterns.ts | evidence-quality classifiers — a pass summary is never failure evidence |
 | `isNoiseError` | fn | src/patterns.ts | infrastructure noise ≠ failure: aborted/cancelled/empty-result/dismissed + server-side unavailability (LSP daemon, MCP transport, non-2xx) |
 | `suggestCorrection` | fn | src/patterns.ts | mechanical default corrections by command family; never quotes a success-shaped snippet |
-| `nonTransparentProducers` | fn | src/patterns.ts | counts chain segments that can be the failing producer — single-producer rule for chain attribution |
+| `nonTransparentProducers` | fn | src/patterns.ts | counts producers AFTER full expansion (cmd /c, $(...)) - consistent with the attribution loop, single-producer rule for chain attribution |
 | `hasResidualIdentity` | fn | src/patterns.ts | over-generic shape guard — gates every enforcement tier (flag-only wrapper shapes have no identity) |
 | `GLOBAL_PROJECTS` | const | src/store.ts | cross-project escalation threshold |
 | `GateStore` | class | src/store.ts | one scope: gates.json + index.json + log.jsonl, TTL caches, key index; `load()` read-only vs `loadForMutation()` (write-capable, under lock) |

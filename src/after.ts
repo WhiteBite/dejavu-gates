@@ -6,7 +6,6 @@ import {
   isDiagnosticSignature,
   isIntendedNonzero,
   isNoiseError,
-  nonTransparentProducers,
   parameterizeError,
   patternKey,
   producerSegmentSignatures,
@@ -69,15 +68,13 @@ export async function enforceAfter(event: NormalizedEvent, ctx: EnforceContext):
   }
   if (!signature) return noneOutcome()
 
-  // chain attribution needs exactly ONE non-transparent producer — else record under the whole call
+  // chain attribution needs exactly ONE producer AFTER full expansion — else record under the whole call
   let recordSignature = signature
-  if (event.tool === "bash" && typeof args.command === "string" && nonTransparentProducers(args.command) === 1) {
-    for (const segSig of producerSegmentSignatures(args.command)) {
-      if (!hasResidualIdentity(segSig)) continue
-      if (await ctx.stores.hasKey(patternKey(segSig))) {
-        recordSignature = segSig
-        break
-      }
+  if (event.tool === "bash" && typeof args.command === "string") {
+    const producerSigs = producerSegmentSignatures(args.command)
+    if (producerSigs.length === 1) {
+      const segSig = producerSigs[0] ?? ""
+      if (hasResidualIdentity(segSig) && (await ctx.stores.hasKey(patternKey(segSig)))) recordSignature = segSig
     }
   }
   const key = patternKey(recordSignature)
@@ -89,13 +86,13 @@ export async function enforceAfter(event: NormalizedEvent, ctx: EnforceContext):
     return noneOutcome()
   }
 
-  // dedup on the WHOLE-CALL signature — the event channel signs the entire call
-  if (isCrossChannelDuplicate(ctx.ephemeral, patternKey(signature), session, "after")) return noneOutcome()
-
   const snippet = sanitizeForStore(detection.matched ? detection.snippet : failureSnippet(text, exitCode))
 
-  // infrastructure noise (service down, transport) is not an agent mistake
+  // noise must not occupy the dedup window — a noisy run would mute the event channel's record of the same call
   if (isNoiseError(snippet) || isNoiseError(text)) return noneOutcome()
+
+  // dedup on the WHOLE-CALL signature — the event channel signs the entire call
+  if (isCrossChannelDuplicate(ctx.ephemeral, patternKey(signature), session, "after")) return noneOutcome()
 
   const result = await ctx.stores.recordFailure({
     key,

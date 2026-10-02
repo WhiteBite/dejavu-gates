@@ -4,14 +4,14 @@
     {
       "name": "dejavu-gates-pre",
       "trigger": "PreToolUse",
-      "matcher": "shell|read|write",
+      "matcher": "shell|read|write|edit|apply_patch",
       "action": { "type": "command", "command": "{{CLI}} pre --harness kiro" },
       "timeout": 30
     },
     {
       "name": "dejavu-gates-post",
       "trigger": "PostToolUse",
-      "matcher": "shell|read|write",
+      "matcher": "shell|read|write|edit|apply_patch",
       "action": { "type": "command", "command": "{{CLI}} post --harness kiro" },
       "timeout": 30
     }

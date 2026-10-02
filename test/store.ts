@@ -6,13 +6,14 @@
  */
 import { spawnSync } from "node:child_process"
 import { existsSync } from "node:fs"
-import { mkdir, mkdtemp, readFile, stat, utimes, writeFile } from "node:fs/promises"
+import { mkdir, mkdtemp, readFile, readdir, stat, utimes, writeFile } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { fileURLToPath } from "node:url"
 import { atomicWrite, CORRUPT_DEFAULT_DAYS, ntPath, sweepStoreArtifacts, TMP_ORPHAN_MS } from "../src/fs"
-import { callSignature, patternKey } from "../src/patterns"
-import { createStores, GateStore, GLOBAL_PROJECTS, NOISE_TTL_DAYS, PLUGIN_VERSION, Stores, TTL_DAYS } from "../src/store"
+import { callSignature, patternKey, suggestCorrection } from "../src/patterns"
+import { createStores, GateStore, GLOBAL_PROJECTS, mergeGate, NOISE_TTL_DAYS, PLUGIN_VERSION, Stores, TTL_DAYS, type Gate } from "../src/store"
+import { coerceGateShape, isAutoCorrection, repairGate } from "../src/validate"
 import { makeChecker } from "./helpers"
 
 const { check, report } = makeChecker()
@@ -240,6 +241,114 @@ check("pruneCorrupt=false keeps quarantine artifacts", kept.corrupt === 0 && exi
 await backdate(sweepCorrupt, (CORRUPT_DEFAULT_DAYS + 1) * DAY_MS)
 const pruned = await sweepStoreArtifacts(sweepDir, { ...sweepOpts, pruneCorrupt: true })
 check("pruneCorrupt=true removes quarantine artifacts past the age window", pruned.corrupt === 1 && !existsSync(sweepCorrupt))
+
+// --- 13. audit follow-ups: glued log lines, index quarantine, force-read, version stamp ---
+const glueDir = join(tmp, "excise-glue")
+await mkdir(glueDir, { recursive: true })
+const glueLogPath = join(glueDir, "log.jsonl")
+const glueA = JSON.stringify({ ts: "2026-09-01T00:00:00.000Z", type: "detected", key: "g1" })
+const glueB = JSON.stringify({ ts: "2026-09-02T00:00:00.000Z", type: "detected", key: "g2" })
+await writeFile(glueLogPath, `${glueA}\n${glueA}${glueB}\n${glueB}\n`, "utf8")
+const glueStore = new GateStore(glueDir)
+await glueStore.reconcile()
+const glueLogAfter = await readFile(glueLogPath, "utf8")
+check("a glued {a}{b} log line is excised, not passed as good", !glueLogAfter.includes(`${glueA}${glueB}`) && glueLogAfter.includes(glueA) && glueLogAfter.includes(glueB))
+
+const qDir = join(tmp, "index-quarantine")
+await mkdir(qDir, { recursive: true })
+const qStore = new GateStore(qDir)
+await writeFile(join(qDir, "index.json"), "{not json", "utf8")
+await qStore.runLockedIndex(async () => {
+  await qStore.loadIndexForMutation()
+})
+const qQuarantine = await readdir(qDir)
+check("an unparseable index.json quarantines to a corrupt- twin", (await qQuarantine).some((f) => f.startsWith("index.json.corrupt-")))
+await qStore.flushDeferred()
+const qLog = await readFile(join(qDir, "log.jsonl"), "utf8")
+check("index quarantine defers a quarantined event", qLog.includes('"quarantined"') && qLog.includes("index.json"))
+
+const frDir = join(tmp, "index-force-read")
+await mkdir(join(frDir, "index.json"), { recursive: true })
+const frStore = new GateStore(frDir)
+let frThrew = false
+try {
+  await frStore.runLockedIndex(async () => {
+    await frStore.loadIndexForMutation()
+  })
+} catch {
+  frThrew = true
+}
+check("a transiently unreadable index throws on the mutation path (no cache clobber)", frThrew)
+
+const stampDir = join(tmp, "version-stamp")
+await mkdir(stampDir, { recursive: true })
+const stampPath = join(stampDir, "gates.json")
+await writeFile(stampPath, `${JSON.stringify({ version: 1, gates: [seedGate({ key: "ffff00000001" })], migrated: PLUGIN_VERSION, lastInitVersion: "2.28.0" }, null, 2)}\n`, "utf8")
+const stampStore = new GateStore(stampDir)
+await stampStore.reconcile()
+const stamped = JSON.parse(await readFile(stampPath, "utf8")) as { lastInitVersion?: string }
+check("a quiet store stamps lastInitVersion once on version change", stamped.lastInitVersion === PLUGIN_VERSION)
+const stampMtime = (await stat(stampPath)).mtimeMs
+await stampStore.reconcile()
+check("the stamp write happens once per version, not per init", (await stat(stampPath)).mtimeMs === stampMtime)
+
+// --- 14. correction lifecycle: mergeGate origin awareness, parse boundary, platform-neutral labels ---
+function makeGate(overrides: Partial<Gate>): Gate {
+  return {
+    key: "aaaa00000001",
+    signature: "bash:merge cmd",
+    tool: "bash",
+    status: "watching",
+    count: 2,
+    sessions: ["s1"],
+    projects: [tmp],
+    firstSeen: "2026-09-01T00:00:00.000Z",
+    lastSeen: "2026-09-20T00:00:00.000Z",
+    snippet: "Error: boom",
+    remindedCount: 0,
+    blockedCount: 0,
+    recurredAfterReminder: 0,
+    recurredAfterGate: 0,
+    overrideCount: 0,
+    ...overrides,
+  }
+}
+
+const humanKept = makeGate({ correction: "human fix", correctionOrigin: "human", correctionAt: 200, correctionBaseline: { recurred: 4, reminded: 5, overrides: 6 } })
+mergeGate(humanKept, makeGate({ correction: "machine default", correctionOrigin: "machine", correctionAt: 100 }))
+check("merge: a machine source never overwrites a human target", humanKept.correction === "human fix" && humanKept.correctionOrigin === "human" && humanKept.correctionAt === 200 && humanKept.correctionBaseline?.recurred === 4)
+
+const humanWins = makeGate({ correction: "machine default", correctionOrigin: "machine", correctionAt: 100, correctionBaseline: { recurred: 1, reminded: 2, overrides: 3 } })
+mergeGate(humanWins, makeGate({ correction: "human fix", correctionOrigin: "human", correctionAt: 200, correctionBaseline: { recurred: 4, reminded: 5, overrides: 6 } }))
+check("merge: a human source correction beats a machine target", humanWins.correction === "human fix" && humanWins.correctionOrigin === "human")
+check("merge: the human source's correctionAt and baseline win with it", humanWins.correctionAt === 200 && humanWins.correctionBaseline?.recurred === 4 && humanWins.correctionBaseline?.reminded === 5 && humanWins.correctionBaseline?.overrides === 6)
+
+const machineKept = makeGate({ correction: "target machine", correctionOrigin: "machine", correctionAt: 400 })
+mergeGate(machineKept, makeGate({ correction: "source machine", correctionOrigin: "machine", correctionAt: 500 }))
+check("merge: equal machine origins keep the target correction", machineKept.correction === "target machine" && machineKept.correctionAt === 400)
+
+const bareAdopt = makeGate({})
+mergeGate(bareAdopt, makeGate({ correction: "adopted", correctionOrigin: "machine", correctionAt: 700 }))
+check("merge: a target with no correction adopts the source's", bareAdopt.correction === "adopted" && bareAdopt.correctionOrigin === "machine" && bareAdopt.correctionAt === 700)
+
+const unixSig = "bash:tail -5 missing.log"
+const unixSnippet = "exit code 1"
+const linuxDerived = suggestCorrection(unixSig, unixSnippet, "linux")
+check("the unix-tool shape derives differently per platform", linuxDerived !== suggestCorrection(unixSig, unixSnippet, "win32"))
+check("a linux-generated correction is machine-labeled on any host", isAutoCorrection(makeGate({ signature: unixSig, snippet: unixSnippet, correction: linuxDerived })))
+
+const unknownOrigin = coerceGateShape(seedGate({ key: "123400000001", correction: "text", correctionOrigin: "future-origin" }))
+check("an unknown correctionOrigin string coerces to human", unknownOrigin?.correctionOrigin === "human")
+const absentOrigin = coerceGateShape(seedGate({ key: "123400000002", correction: "text" }))
+check("an absent correctionOrigin stays undefined", absentOrigin?.correctionOrigin === undefined && absentOrigin !== null)
+const stampedParse = coerceGateShape(seedGate({ key: "123400000003", correction: "text", correctionAt: 123.7, correctionBaseline: { recurred: 1, reminded: 2.9, overrides: 3 } }))
+check("correctionAt floors and correctionBaseline parses", stampedParse?.correctionAt === 123 && stampedParse?.correctionBaseline?.reminded === 2)
+const badBaseline = coerceGateShape(seedGate({ key: "123400000004", correction: "text", correctionBaseline: { recurred: 1, reminded: -2, overrides: 3 } }))
+check("an invalid correctionBaseline is dropped at the parse boundary", badBaseline !== null && badBaseline.correctionBaseline === undefined)
+
+const templateGate = makeGate({ correction: `Last error: "Error: boom" — address that specific error before retrying this exact call.` })
+repairGate(templateGate)
+check("repairGate stamps machine origin on a template correction", templateGate.correctionOrigin === "machine")
 
 if (process.env.BENCH === "1") {
   const benchProject = join(tmp, "bench-project")

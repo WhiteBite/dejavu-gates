@@ -12,6 +12,9 @@
     ],
     "postToolUse": [
       { "command": "{{CLI}} post --harness cursor", "timeout": 30 }
+    ],
+    "postToolUseFailure": [
+      { "command": "{{CLI}} post --harness cursor", "timeout": 30 }
     ]
   }
 }

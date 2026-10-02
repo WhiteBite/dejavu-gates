@@ -1,5 +1,40 @@
 # Changelog
 
+## 2.49.0 - 2026-10-02
+
+### Fixed
+- **URLs no longer shatter into garbage family keys** — a scheme URL (`git clone https://…`) parameterized to one `<url>` token BEFORE the drive-letter rule; previously `https://x` collapsed into an `http` remnant + `<path>` (every clone/wget shared one blocking-eligible key) and `http://` fragmented into a different family. UUID/IP/date tokens parameterize in `normalizeCommand` too (they were only in the error-channel `PARAM_RULES`), so argument noise no longer fragments bash keys.
+- **Shell one-liners fingerprint instead of blocking a family** — `bash/sh/zsh/dash/ksh -c "code"` payloads hash to `<code:…>` like `python -c`; versioned interpreters (`python3.11`, `python3.12`) fingerprint with version-tail matching; `eval`/`source` with a fully parameterized payload are watch-only (no identity). A chain's SECOND one-liner fingerprints too (`python -c "a" && node -e "b"` — both payloads hash, different scripts keep different keys).
+- **`$(…)` substitutions keep exit-1 immunity** — `grep -r TODO $(find …)` and `tsc $(cat files.txt)` stay ONE command for the diagnostic tier; previously the substitution was flattened into a separate segment, breaking immunity and producing `bash:tsc $` garbage signatures. Real subshells (`(deploy && grep)`) still split.
+- **`cmd /c` attribution counts producers AFTER expansion** — `cmd /c "grep … && deploy.sh"` has two producers, so its failure records under the whole call instead of inflating the first segment's gate; exit-1 immunity also unwraps `cmd /c` and decides interpreter one-liners (`pwsh -Command "Select-String …"`) on their RAW payload before fingerprinting.
+- **Repeat-channel log keys are sanitized** — `repeat.ts`'s `override`/`repeat-blocked` events cross `sanitizeForStore` before `logAll` (commit b835e0a covered only the transform channel; a `curl -H "Authorization: Bearer …"` series key no longer lands verbatim in the project AND global log).
+- **Probe failures of external harnesses record** — `NormalizedEvent.errored` now participates in the `failed` decision (not just iteration suppression), so a failing `Read` on Claude/Cline/Copilot counts toward promotion instead of being invisible; the snippet falls back to the tool's own error text.
+- **Noise no longer swallows client-side mistakes** — a 4xx on the "non-2xx status code" mention and client JSON-RPC codes (`-32700`, `-32600`..`-32602`: parse error/invalid request/method not found/invalid params) stay teachable; 5xx and transport-side MCP errors remain noise.
+- **After-hook registers the dedup window AFTER the noise filter** — a noisy run no longer mutes the event channel's record of the same call (order now mirrors `event.ts`).
+- **Success-shaped lines are never failure evidence in `detectFailure`** — "All tests passed - panic: none" no longer matches; `bun test`/`deno test` join the diagnostics (their exit 1 is the intended iteration outcome).
+- **Escalation healing re-reads the project store under the lock** — `reconcileAll`'s escalation now resolves from `loadForMutation()` inside the project lock instead of mutating an unlocked peek, so a neighbor window's save can no longer be clobbered.
+- **Index reads fail loud in mutation mode** — `loadIndexForMutation` throws on transient read errors (AV lock, EISDIR) instead of returning a warm cache that the next `saveIndex()` would write over; an unparseable `index.json` quarantines (`index.json.corrupt-<ts>`, logged) instead of silently rebuilding.
+- **`{a}{b}` glued log lines are excised** — the excise shape-prefilter routes envelope-preserving glues to a full parse instead of passing them as good.
+- **`error: ""` is not a failure signal** — `errorSignalled` ignores empty error strings (a successful generic/MCP result no longer feeds the failure scan).
+- **The V1 after-hook correlates `errored` by callId** — OpenCode V1 payloads carry no structural error status, so the hook reads the event channel's `handledParts` set: a tool-level failure already recorded as an error part can no longer slip through as a successful edit (the iteration-grace hole the audit suspected for V1).
+- **Machine-correction detection is platform-neutral** — a legacy no-origin correction matches the `suggestCorrection` derivation of ANY platform (the store is platform-neutral by design).
+- **Quiet stores stamp `lastInitVersion` once per version** — the no-op reconcile skip no longer leaves a version stamp frozen at the last real write, which made doctor report permanent VERSION DRIFT on healthy quiet stores.
+- **The Kiro hook matcher covers the edit family** (`shell|read|write|edit|apply_patch`) — edit-tool failures reach the engine instead of being filtered out at the hook config.
+- **The secret scrubber recognizes compound, flag and space forms** — `aws_secret_access_key=…` (any case, any prefix), `--token=…`/`--api-key=…`, and `aws configure set aws_secret_access_key <value>` no longer persist into the committable gates.json. New forms redact the VALUE only: the call keeps its identity instead of collapsing every secret-bearing command onto one `bash:<redacted>` family key. A PowerShell `\`-continuation key body (the split-paste artifact) is redacted by a second pass.
+- **The doctor lock sweep re-reads the pid before unlinking** — a lock re-created by a concurrent stale-steal (live pid) is never deleted by `--repair`.
+- **The text-channel detection corpus covers resolver/tool error forms** — npm (`npm ERR!`/`npm error`), pnpm (`ERR_PNPM_…`), yarn fetch/command errors, pytest `--tb=short` FAILED rows, Debian dash's numbered `not found`, eslint's problem tally (non-zero only) and inline rows, flutter analyze, kubectl/docker daemon errors, go module resolution and NuGet restore codes. On the seven exit-code-less harnesses these families previously never recorded — the reminder tier was dead for them on the text channel.
+- **Backtick-escaped quotes split chains correctly** — PowerShell `` `" `` inside double quotes no longer swallows the rest of the chain into one segment (`… && deploy.sh` stays reachable).
+- **Trailing `# …` comments are stripped** — retries differing only in commentary converge on one key; the override marker requires comment syntax with a word boundary in every channel (a bare `dejavu:proceed` token is data, `dejavu:proceeding` never matches).
+- **`apply_patch` payload paths are extracted** — codex/devin/cline patch bodies (`*** Update File: <path>`) feed `filePath`, so edit gates fire instead of signing `null`.
+- **Kiro's fatal-path stdout is dialect-correct** — the last-resort fail-open emits the harness's own allow dialect (empty for Kiro) instead of a literal `{}`.
+
+### Changed
+- `node --eval` canonicalizes to `-e`, `npm test` to the `run test` form, and `--flag=value` units match in the interpreter prefix — one key per call across spellings.
+- Health verdicts use `DEMOTE_RECURRENCES` (env-tunable) instead of a hardcoded 3, matching doctor.
+- All six plugin/extension manifests sync to the release version with `package.json`/`PLUGIN_VERSION` (2.49.0).
+- The hard-block message teaches `dejavu lesson set <key> "<fix>"` as the recording path.
+- The Cursor installer template registers `postToolUseFailure` (parity with the plugin-channel hook config).
+
 ## 2.48.0 - 2026-10-01
 
 ### Fixed
