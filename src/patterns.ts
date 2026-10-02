@@ -110,7 +110,10 @@ export function sanitizeForStore(text: string): string {
  * code flag itself. `py` is the Windows Python launcher (`py -3 -c ...`).
  */
 const INTERPRETER_ONELINER =
-  /(?:^|[|;&(\n]\s*)(?:\w+=\S+\s+)*(?:["']?\S*[\\/])?(bash|zsh|dash|ksh|python3?|py|node|bun|deno|perl|ruby|pwsh|powershell|php|julia|lua|rscript|sh)(?:\.(?:exe|\d[\w.]*))?["']?(?:\s+(?!-(?:encodedcommand|command|c|e)\b|--eval\b)--?[\w-]+(?:=\S+)?(?:\s+\S+)?)*\s+(-command|-encodedcommand|--eval|-c|-e|-r)\s*/i
+  /(?:^|[|;&(\n]\s*)(?:\w+=\S+\s+)*(?:["']?\S*[\\/])?(bash|zsh|dash|ksh|python3?|py|node|bun|deno|perl|ruby|pwsh|powershell|php|julia|lua|rscript|sh)(?:\.(?:exe|\d[\w.]*))?["']?(?:\s+(?!-(?:encodedcommand|command|c|e)\b|--eval\b)--?[\w-]+(?:=\S+)?(?:\s+(?!-(?:encodedcommand|command|c|e|r)\b|--eval\b)\S+)?)*\s+(-command|-encodedcommand|--eval|-c|-e|-r)\s*/i
+
+// placeholder debris in the payload position means the input is already normalized — data, not code
+const PLACEHOLDER_DEBRIS = /<(?:str|path|n|hash|uuid|sha|md5|ip|url|email|date)>/
 
 function hashInterpreterPayload(command: string): string {
   const match = INTERPRETER_ONELINER.exec(command)
@@ -130,7 +133,7 @@ function hashInterpreterPayload(command: string): string {
   if (/^<code:[0-9a-f]+>(?:\s\S.*)?$/.test(p)) return command
   // Already-parameterized placeholders are data, not code — never hash them
   // (idempotency: a second pass must not fingerprint a <str>).
-  if (/^(?:<(?:str|path|n|hash|uuid|sha|md5|ip|url|email|date)>\s*)+$/.test(p)) return command
+  if (PLACEHOLDER_DEBRIS.test(p)) return command
   // the quote layer is not identity — strip it so "x", 'x' and bare x share one key
   let code = p
   let rest = ""
@@ -207,6 +210,8 @@ export function normalizeCommand(command: string): string {
   // CRLF/CR commands (Windows pastes, agent multi-line) normalize to LF —
   // otherwise the same command fragments across line-ending styles.
   s = s.replace(/\r\n?/g, "\n")
+  // leading whitespace hides ^-anchored rules from the first pass — trim before any anchor runs
+  s = s.replace(/^\s+/, "")
   s = s.replace(COMMENT_LINE, "$1").toLowerCase()
   s = unwrapCmdWrapper(s)
   s = hashInterpreterPayload(s)

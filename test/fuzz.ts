@@ -13,7 +13,7 @@ import { hasNestedTokens } from "../src/validate"
 const seedArg = process.argv.find((a) => a.startsWith("--seed="))
 const runsArg = process.argv.find((a) => a.startsWith("--runs="))
 let seed = seedArg ? Number(seedArg.split("=")[1]) : 20260824
-const RUNS = runsArg ? Number(runsArg.split("=")[1]) : 5000
+const RUNS = runsArg ? Number(runsArg.split("=")[1]) : 50000
 function rnd(): number {
   seed ^= seed << 13
   seed ^= seed >>> 17

@@ -15,6 +15,12 @@ import type { NormalizedEvent } from "./types"
 export async function recordEventFailure(event: NormalizedEvent, ctx: EnforceContext): Promise<void> {
   if (event.callId !== null && partAlreadyHandled(ctx.ephemeral, event.callId)) return
 
+  // the error part proves the edit never landed — roll back its after-hook version bump (after-before-part ordering)
+  if (event.callId !== null && ctx.ephemeral.versionBumpedCalls.delete(event.callId)) {
+    const version = ctx.ephemeral.workspaceVersions.get(ctx.projectDir) ?? 0
+    if (version > 0) ctx.ephemeral.workspaceVersions.set(ctx.projectDir, version - 1)
+  }
+
   // never persist secrets or terminal control characters
   const errorText = sanitizeForStore(event.output ?? "unknown error")
   // never count our own gate signals — a thrown REMINDER/BLOCK comes back as a tool error

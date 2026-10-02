@@ -3070,6 +3070,41 @@ await r101FailWith(r107Hooks, R107_CMD, "r107a", "r107c3", "exit code 1")
 const r107Gate = (await readJson(join(r107Dir, ".opencode", "dejavu", "gates.json"))).find((g) => g.key === r107Key)
 check("V1: an errored edit correlated by callId is not workspace movement", r107Gate?.recurredAfterGate === 2 && !r107Gate?.movedOn)
 
+// --- 108. reverse event ordering: an error part arriving AFTER the after-hook rolls the false bump back ---
+const r108Dir = join(tmp, "r108-v1-reverse-order-project")
+const R108_CMD = "deploy-tool --verify-sigma"
+const r108Key = patternKey(callSignature("bash", { command: R108_CMD }) ?? "")
+await seedGates(r108Dir, [seedGate({ key: r108Key, signature: `bash:${R108_CMD}`, status: "blocking", snippet: "exit code 1" })])
+const r108Hooks = await Dejavu({ directory: r108Dir, client: { app: { log: async () => ({}) } } } as unknown as Ctx)
+const r108Attempt = async (callID: string): Promise<Error | null> => {
+  try {
+    await (r108Hooks["tool.execute.before"] as BeforeHook)(
+      { tool: "bash", sessionID: "r108a", callID } as unknown as BeforeInput,
+      { args: { command: R108_CMD } } as unknown as BeforeOutput,
+    )
+    return null
+  } catch (error) {
+    return error as Error
+  }
+}
+check("r108 setup: the first encounter throws the reminder", (await r108Attempt("r108b1")) !== null)
+await r101FailWith(r108Hooks, R108_CMD, "r108a", "r108c1", "exit code 1")
+const r108Armed = (await readJson(join(r108Dir, ".opencode", "dejavu", "gates.json"))).find((g) => g.key === r108Key)
+check("r108 setup: the failing retry armed the block chain", r108Armed?.failedSessions?.["r108a"] !== undefined)
+await (r108Hooks["tool.execute.after"] as AfterHook)(
+  { tool: "edit", sessionID: "r108a", callID: "r108e1", args: { filePath: "x.ts" } } as unknown as AfterInput,
+  { title: "x.ts", output: "ok", metadata: {} } as unknown as AfterOutput,
+)
+await (r108Hooks.event as EventHook)({
+  event: {
+    type: "message.part.updated",
+    properties: {
+      part: { id: "r108e1", type: "tool", tool: "edit", sessionID: "r108a", state: { status: "error", error: "Edit failed: conflict", input: { filePath: "x.ts" } } },
+    },
+  },
+} as unknown as EventInput)
+check("r108: the error part rolled the false bump back — the hard block holds", (await r108Attempt("r108b2")) !== null)
+
 await rm(tmp, { recursive: true, force: true })
 
 report()

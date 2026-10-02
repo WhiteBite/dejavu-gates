@@ -47,8 +47,10 @@ export interface EphemeralState {
   /** shape loops: session:shapeKey → times already noted (escalation ladder) */
   shapeLoopNotes: Map<string, number>
   /** iteration discriminator: projectDir → count of landed edit/write calls;
-   *  a failure with a moved version is debugging, not a blind retry */
+ *  a failure with a moved version is debugging, not a blind retry */
   workspaceVersions: Map<string, number>
+  /** edit/write callIds whose after-hook bumped the version — an error part for one rolls the bump back */
+  versionBumpedCalls: Set<string>
   /** message part IDs already counted as tool-level errors */
   handledParts: Set<string>
   /** (key|session) -> last recording channel/time, for the cross-channel dedup */
@@ -74,6 +76,7 @@ export function createEphemeralState(): EphemeralState {
     loopBreakInjected: new Set(),
     shapeLoopNotes: new Map(),
     workspaceVersions: new Map(),
+    versionBumpedCalls: new Set(),
     handledParts: new Set(),
     recentRecords: new Map(),
   }
@@ -139,6 +142,18 @@ export function trackPendingCall(eph: EphemeralState, callId: string, signature:
     const oldest = eph.pendingCalls.keys().next()
     if (oldest.done) break
     eph.pendingCalls.delete(oldest.value)
+  }
+}
+
+const VERSION_BUMP_CAP = 1000
+
+/** Remember an edit/write that bumped the workspace version — a later error part for the same callId rolls it back. */
+export function trackVersionBump(eph: EphemeralState, callId: string): void {
+  eph.versionBumpedCalls.add(callId)
+  while (eph.versionBumpedCalls.size > VERSION_BUMP_CAP) {
+    const oldest = eph.versionBumpedCalls.keys().next()
+    if (oldest.done) break
+    eph.versionBumpedCalls.delete(oldest.value)
   }
 }
 

@@ -13,7 +13,7 @@ import {
   sanitizeForStore,
 } from "./patterns"
 import { checkFeedbackDemotion, GLOBAL_PROJECTS, MAX_SESSIONS, retireAntiNag, retireTaught, type LogEvent } from "./store"
-import { ANTI_NAG_REMINDERS, ANTI_NAG_REOFFENSE, TAUGHT_REMINDERS, isCrossChannelDuplicate, scrubbedArgs, type AfterOutcome, type EnforceContext } from "./context"
+import { ANTI_NAG_REMINDERS, ANTI_NAG_REOFFENSE, TAUGHT_REMINDERS, isCrossChannelDuplicate, scrubbedArgs, trackVersionBump, type AfterOutcome, type EnforceContext } from "./context"
 import { remindNote } from "./messages"
 import type { NormalizedEvent } from "./types"
 
@@ -54,6 +54,7 @@ export async function enforceAfter(event: NormalizedEvent, ctx: EnforceContext):
   // only a landed edit/write is iteration evidence — a failed one must not lift the block
   if ((event.tool === "edit" || event.tool === "write") && !failed && event.errored !== true) {
     ctx.ephemeral.workspaceVersions.set(ctx.projectDir, (ctx.ephemeral.workspaceVersions.get(ctx.projectDir) ?? 0) + 1)
+    if (event.callId !== null) trackVersionBump(ctx.ephemeral, event.callId)
   }
 
   const args = scrubbedArgs(event.args)
