@@ -19,7 +19,7 @@ jobs:
   audit:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: WhiteBite/repo-aeo/action@7e557f1293c9734094ce09574d5bc7a02c9dd36d # v0.3.5
         with:
           min_score: ${{ github.event.inputs.min_score || vars.RDK_MIN_SCORE || 0 }}
