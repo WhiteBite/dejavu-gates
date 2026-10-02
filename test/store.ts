@@ -314,30 +314,46 @@ function makeGate(overrides: Partial<Gate>): Gate {
   }
 }
 
-const humanKept = makeGate({ correction: "human fix", correctionOrigin: "human", correctionAt: 200, correctionBaseline: { recurred: 4, reminded: 5, overrides: 6 } })
-mergeGate(humanKept, makeGate({ correction: "machine default", correctionOrigin: "machine", correctionAt: 100 }))
-check("merge: a machine source never overwrites a human target", humanKept.correction === "human fix" && humanKept.correctionOrigin === "human" && humanKept.correctionAt === 200 && humanKept.correctionBaseline?.recurred === 4)
+const ownerKept = makeGate({ correction: "owner fix", correctionOrigin: "owner", correctionAt: 200, correctionBaseline: { recurred: 4, reminded: 5, overrides: 6 } })
+mergeGate(ownerKept, makeGate({ correction: "machine default", correctionOrigin: "machine", correctionAt: 100 }))
+check("merge: a machine source never overwrites an owner target", ownerKept.correction === "owner fix" && ownerKept.correctionOrigin === "owner" && ownerKept.correctionAt === 200 && ownerKept.correctionBaseline?.recurred === 4)
 
-const humanWins = makeGate({ correction: "machine default", correctionOrigin: "machine", correctionAt: 100, correctionBaseline: { recurred: 1, reminded: 2, overrides: 3 } })
-mergeGate(humanWins, makeGate({ correction: "human fix", correctionOrigin: "human", correctionAt: 200, correctionBaseline: { recurred: 4, reminded: 5, overrides: 6 } }))
-check("merge: a human source correction beats a machine target", humanWins.correction === "human fix" && humanWins.correctionOrigin === "human")
-check("merge: the human source's correctionAt and baseline win with it", humanWins.correctionAt === 200 && humanWins.correctionBaseline?.recurred === 4 && humanWins.correctionBaseline?.reminded === 5 && humanWins.correctionBaseline?.overrides === 6)
+const ownerWins = makeGate({ correction: "machine default", correctionOrigin: "machine", correctionAt: 100, correctionBaseline: { recurred: 1, reminded: 2, overrides: 3 } })
+mergeGate(ownerWins, makeGate({ correction: "owner fix", correctionOrigin: "owner", correctionAt: 200, correctionBaseline: { recurred: 4, reminded: 5, overrides: 6 } }))
+check("merge: an owner source correction beats a machine target", ownerWins.correction === "owner fix" && ownerWins.correctionOrigin === "owner")
+check("merge: the owner source's correctionAt and baseline win with it", ownerWins.correctionAt === 200 && ownerWins.correctionBaseline?.recurred === 4 && ownerWins.correctionBaseline?.reminded === 5 && ownerWins.correctionBaseline?.overrides === 6)
+
+const ownerOverAgent = makeGate({ correction: "agent fix", correctionOrigin: "agent", correctionAt: 900 })
+mergeGate(ownerOverAgent, makeGate({ correction: "owner fix", correctionOrigin: "owner", correctionAt: 100 }))
+check("merge: an owner source beats an agent target", ownerOverAgent.correction === "owner fix" && ownerOverAgent.correctionOrigin === "owner")
+
+const agentOverMachine = makeGate({ correction: "machine default", correctionOrigin: "machine", correctionAt: 900 })
+mergeGate(agentOverMachine, makeGate({ correction: "agent fix", correctionOrigin: "agent", correctionAt: 100 }))
+check("merge: an agent source beats a machine target", agentOverMachine.correction === "agent fix" && agentOverMachine.correctionOrigin === "agent")
 
 const machineKept = makeGate({ correction: "target machine", correctionOrigin: "machine", correctionAt: 400 })
-mergeGate(machineKept, makeGate({ correction: "source machine", correctionOrigin: "machine", correctionAt: 500 }))
+mergeGate(machineKept, makeGate({ correction: "source machine", correctionOrigin: "machine" }))
 check("merge: equal machine origins keep the target correction", machineKept.correction === "target machine" && machineKept.correctionAt === 400)
+
+const machineNewer = makeGate({ correction: "target machine", correctionOrigin: "machine", correctionAt: 400 })
+mergeGate(machineNewer, makeGate({ correction: "source machine", correctionOrigin: "machine", correctionAt: 500 }))
+check("merge: equal machine origins with a newer source correctionAt adopt it", machineNewer.correction === "source machine" && machineNewer.correctionAt === 500)
 
 const bareAdopt = makeGate({})
 mergeGate(bareAdopt, makeGate({ correction: "adopted", correctionOrigin: "machine", correctionAt: 700 }))
 check("merge: a target with no correction adopts the source's", bareAdopt.correction === "adopted" && bareAdopt.correctionOrigin === "machine" && bareAdopt.correctionAt === 700)
 
-const humanNewer = makeGate({ correction: "older human fix", correctionOrigin: "human", correctionAt: 200, correctionBaseline: { recurred: 4, reminded: 5, overrides: 6 } })
-mergeGate(humanNewer, makeGate({ correction: "newer human fix", correctionOrigin: "human", correctionAt: 300, correctionBaseline: { recurred: 7, reminded: 8, overrides: 9 } }))
-check("merge: two human corrections pick the newer correctionAt", humanNewer.correction === "newer human fix" && humanNewer.correctionAt === 300 && humanNewer.correctionBaseline?.recurred === 7 && humanNewer.correctionBaseline?.reminded === 8 && humanNewer.correctionBaseline?.overrides === 9)
+const legacyAdopt = makeGate({ correction: "legacy text" })
+mergeGate(legacyAdopt, makeGate({ correction: "agent fix", correctionOrigin: "agent", correctionAt: 800 }))
+check("merge: an absent-origin target adopts a higher-rank source", legacyAdopt.correction === "agent fix" && legacyAdopt.correctionOrigin === "agent" && legacyAdopt.correctionAt === 800)
 
-const humanOlder = makeGate({ correction: "newer human fix", correctionOrigin: "human", correctionAt: 300, correctionBaseline: { recurred: 7, reminded: 8, overrides: 9 } })
-mergeGate(humanOlder, makeGate({ correction: "older human fix", correctionOrigin: "human", correctionAt: 200, correctionBaseline: { recurred: 4, reminded: 5, overrides: 6 } }))
-check("merge: an older human source correction loses to the newer target", humanOlder.correction === "newer human fix" && humanOlder.correctionAt === 300 && humanOlder.correctionBaseline?.recurred === 7)
+const agentNewer = makeGate({ correction: "older agent fix", correctionOrigin: "agent", correctionAt: 200, correctionBaseline: { recurred: 4, reminded: 5, overrides: 6 } })
+mergeGate(agentNewer, makeGate({ correction: "newer agent fix", correctionOrigin: "agent", correctionAt: 300, correctionBaseline: { recurred: 7, reminded: 8, overrides: 9 } }))
+check("merge: two agent corrections pick the newer correctionAt", agentNewer.correction === "newer agent fix" && agentNewer.correctionAt === 300 && agentNewer.correctionBaseline?.recurred === 7 && agentNewer.correctionBaseline?.reminded === 8 && agentNewer.correctionBaseline?.overrides === 9)
+
+const agentOlder = makeGate({ correction: "newer agent fix", correctionOrigin: "agent", correctionAt: 300, correctionBaseline: { recurred: 7, reminded: 8, overrides: 9 } })
+mergeGate(agentOlder, makeGate({ correction: "older agent fix", correctionOrigin: "agent", correctionAt: 200, correctionBaseline: { recurred: 4, reminded: 5, overrides: 6 } }))
+check("merge: an older agent source correction loses to the newer target", agentOlder.correction === "newer agent fix" && agentOlder.correctionAt === 300 && agentOlder.correctionBaseline?.recurred === 7)
 
 const provenSum = makeGate({ correctionsProven: 2 })
 mergeGate(provenSum, makeGate({ correctionsProven: 3 }))
@@ -350,7 +366,9 @@ check("the unix-tool shape derives differently per platform", linuxDerived !== s
 check("a linux-generated correction is machine-labeled on any host", isAutoCorrection(makeGate({ signature: unixSig, snippet: unixSnippet, correction: linuxDerived })))
 
 const unknownOrigin = coerceGateShape(seedGate({ key: "123400000001", correction: "text", correctionOrigin: "future-origin" }))
-check("an unknown correctionOrigin string coerces to human", unknownOrigin?.correctionOrigin === "human")
+check("an unknown correctionOrigin string coerces to agent", unknownOrigin?.correctionOrigin === "agent")
+const legacyOrigin = coerceGateShape(seedGate({ key: "123400000006", correction: "text", correctionOrigin: "human" }))
+check("a legacy human correctionOrigin coerces to owner", legacyOrigin?.correctionOrigin === "owner")
 const absentOrigin = coerceGateShape(seedGate({ key: "123400000002", correction: "text" }))
 check("an absent correctionOrigin stays undefined", absentOrigin?.correctionOrigin === undefined && absentOrigin !== null)
 const stampedParse = coerceGateShape(seedGate({ key: "123400000003", correction: "text", correctionAt: 123.7, correctionBaseline: { recurred: 1, reminded: 2.9, overrides: 3 } }))
@@ -382,22 +400,26 @@ check("a never-promoted corrected gate expires as expired", rhEvents.some((e) =>
 check("a never-promoted corrected gate never claims retired-healed", !rhEvents.some((e) => e.key === "a1b200000001" && e.type === "retired-healed"))
 check("a promoted corrected gate with zero recurrence still logs retired-healed", rhEvents.some((e) => e.key === "b2c300000001" && e.type === "retired-healed"))
 
-// --- 16. recordSuccess proves human corrections ---
+// --- 16. recordSuccess proves authored corrections ---
 const rsGlobal = join(tmp, "rs-global")
 const rsProjectStore = join(tmp, "rs-project", ".opencode", "dejavu")
 await mkdir(rsGlobal, { recursive: true })
 await mkdir(rsProjectStore, { recursive: true })
 const rsHumanSig = callSignature("bash", { command: "proven-lesson-tool --run" }) ?? ""
+const rsAgentSig = callSignature("bash", { command: "agent-lesson-tool --run" }) ?? ""
 const rsMachineSig = callSignature("bash", { command: "machine-lesson-tool --run" }) ?? ""
 await writeFile(join(rsProjectStore, "gates.json"), JSON.stringify({ version: 1, gates: [
-  seedGate({ key: patternKey(rsHumanSig), signature: rsHumanSig, status: "blocking", count: 3, correction: "human fix", correctionOrigin: "human" }),
+  seedGate({ key: patternKey(rsHumanSig), signature: rsHumanSig, status: "blocking", count: 3, correction: "owner fix", correctionOrigin: "human" }),
+  seedGate({ key: patternKey(rsAgentSig), signature: rsAgentSig, status: "blocking", count: 3, correction: "agent fix", correctionOrigin: "agent" }),
   seedGate({ key: patternKey(rsMachineSig), signature: rsMachineSig, status: "blocking", count: 3, correction: "machine default", correctionOrigin: "machine" }),
 ] }), "utf8")
 const rsStores = new Stores(new GateStore(rsGlobal), new GateStore(rsProjectStore))
 await rsStores.recordSuccess({ key: patternKey(rsHumanSig), signature: rsHumanSig, tool: "bash", sessionID: "rs1" })
+await rsStores.recordSuccess({ key: patternKey(rsAgentSig), signature: rsAgentSig, tool: "bash", sessionID: "rs1" })
 await rsStores.recordSuccess({ key: patternKey(rsMachineSig), signature: rsMachineSig, tool: "bash", sessionID: "rs1" })
 const rsRows = await readGates(rsProjectStore)
-check("a success on a human-corrected enforced gate increments correctionsProven", rsRows.find((g) => g.key === patternKey(rsHumanSig))?.correctionsProven === 1)
+check("a success on a legacy human-corrected gate (coerced to owner) increments correctionsProven", rsRows.find((g) => g.key === patternKey(rsHumanSig))?.correctionsProven === 1)
+check("a success on an agent-corrected enforced gate increments correctionsProven", rsRows.find((g) => g.key === patternKey(rsAgentSig))?.correctionsProven === 1)
 check("a success on a machine-corrected gate leaves correctionsProven unset", rsRows.find((g) => g.key === patternKey(rsMachineSig))?.correctionsProven === undefined)
 
 // --- 17. retire_when parse boundary + lesson staleness verdicts ---
@@ -429,18 +451,18 @@ check(
   lessonStaleness(makeGate({ correctionsProven: 1, recurredAfterGate: 9, promotionCount: 5, correctionBaseline: { recurred: 0, reminded: 0, overrides: 0, promoted: 0 } }), now) === "proven",
 )
 check(
-  "lessonStaleness: repromoted after the human lesson",
-  lessonStaleness(makeGate({ correction: "human fix", correctionOrigin: "human", promotionCount: 2, correctionBaseline: { recurred: 0, reminded: 0, overrides: 0, promoted: 1 } }), now) === "repromoted",
+  "lessonStaleness: repromoted after the owner lesson",
+  lessonStaleness(makeGate({ correction: "owner fix", correctionOrigin: "owner", promotionCount: 2, correctionBaseline: { recurred: 0, reminded: 0, overrides: 0, promoted: 1 } }), now) === "repromoted",
 )
 check(
   "lessonStaleness: stale on post-correction recurrences",
-  lessonStaleness(makeGate({ correction: "human fix", correctionOrigin: "human", recurredAfterGate: 4, correctionBaseline: { recurred: 1, reminded: 0, overrides: 0 } }), now) === "stale",
+  lessonStaleness(makeGate({ correction: "owner fix", correctionOrigin: "owner", recurredAfterGate: 4, correctionBaseline: { recurred: 1, reminded: 0, overrides: 0 } }), now) === "stale",
 )
 check(
   "lessonStaleness: dormant past STALE_LESSON_DAYS",
-  lessonStaleness(makeGate({ status: "watching", correction: "human fix", correctionOrigin: "human", correctionAt: now - (STALE_LESSON_DAYS + 1) * DAY_MS }), now) === "dormant",
+  lessonStaleness(makeGate({ status: "watching", correction: "owner fix", correctionOrigin: "owner", correctionAt: now - (STALE_LESSON_DAYS + 1) * DAY_MS }), now) === "dormant",
 )
-check("lessonStaleness: fresh otherwise", lessonStaleness(makeGate({ correction: "human fix", correctionOrigin: "human", correctionAt: now }), now) === "fresh")
+check("lessonStaleness: fresh otherwise", lessonStaleness(makeGate({ correction: "owner fix", correctionOrigin: "owner", correctionAt: now }), now) === "fresh")
 check(
   "lessonStaleness: machine corrections never stale or repromoted",
   lessonStaleness(makeGate({ correction: "machine default", correctionOrigin: "machine", recurredAfterGate: 9, promotionCount: 4 }), now) === "fresh",

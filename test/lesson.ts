@@ -100,6 +100,7 @@ check("family gate persisted a non-template machine correction", (await correcti
 
 const written = runLesson(["--store", projectDir, "set", key, "Use npm ci in CI"])
 check("set writes the correction → exit 0", written.exitCode === 0)
+check("set without --author prints the agent-default hint", written.stderr.includes(`author defaulted to "agent"`))
 check("persisted correction equals the text", (await persistedCorrection()) === "Use npm ci in CI")
 const stamped = await gateRow(gatesPath, key)
 check("set persists correctionAt as epoch ms", typeof stamped?.correctionAt === "number" && stamped.correctionAt > 0)
@@ -112,8 +113,15 @@ check(
 )
 check("set emits a corrected event in the project log", (await readFile(join(projectDir, ".opencode", "dejavu", "log.jsonl"), "utf8")).includes('"corrected"'))
 
-const humanList = runLesson([`--store=${projectDir}`, "list"])
-check("list after a set shows correction=human (--store= form)", humanList.exitCode === 0 && lineFor(humanList.stdout, key)?.includes("correction=human") === true)
+const agentList = runLesson([`--store=${projectDir}`, "list"])
+check("list after a default set shows correction=agent (--store= form)", agentList.exitCode === 0 && lineFor(agentList.stdout, key)?.includes("correction=agent") === true)
+
+const ownerSet = runLesson(["--store", projectDir, "--author", "owner", "set", key, "owner-written fix"])
+check("set --author owner → exit 0 with no default-author hint", ownerSet.exitCode === 0 && !ownerSet.stderr.includes("author defaulted"))
+check("list after --author owner shows correction=owner", lineFor(runLesson(["--store", projectDir, "list"]).stdout, key)?.includes("correction=owner") === true)
+
+const badAuthor = runLesson(["--store", projectDir, "--author", "human", "set", key, "x"])
+check("an invalid --author value → exit 1 usage error", badAuthor.exitCode === 1 && badAuthor.stderr.includes("usage:"))
 
 const missing = runLesson(["--store", projectDir, "set", "000000000000", "x"])
 check("set on an unknown key → exit 1", missing.exitCode === 1)
@@ -164,9 +172,12 @@ check("dual-scope set updates both copies", (await correctionIn(gatesPath, key))
 
 const templateText = `Last error: "Error: boom" — address that specific error before retrying this exact call.`
 const templateSet = runLesson(["--store", projectDir, "set", key, templateText])
-check("human correction matching the machine template → exit 0", templateSet.exitCode === 0)
+check("agent correction matching the machine template → exit 0", templateSet.exitCode === 0)
 const templateList = runLesson(["--store", projectDir, "list"])
-check("template-matching human correction stays human after load()", templateList.exitCode === 0 && lineFor(templateList.stdout, key)?.includes("correction=human") === true)
+check("template-matching agent correction re-derives to machine after load()", templateList.exitCode === 0 && lineFor(templateList.stdout, key)?.includes("correction=machine") === true)
+const templateOwnerSet = runLesson(["--store", projectDir, "--author=owner", "set", key, templateText])
+const templateOwnerList = runLesson(["--store", projectDir, "list"])
+check("template-matching owner correction stays owner after load()", templateOwnerSet.exitCode === 0 && templateOwnerList.exitCode === 0 && lineFor(templateOwnerList.stdout, key)?.includes("correction=owner") === true)
 
 const emojiSet = runLesson(["--store", projectDir, "set", key, "a".repeat(199) + "\u{1F600}"])
 check("surrogate-boundary set → exit 0 with a truncation warning", emojiSet.exitCode === 0 && emojiSet.stderr.includes("truncated"))

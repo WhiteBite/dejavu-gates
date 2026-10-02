@@ -32,11 +32,11 @@ export function sliceSafe(text: string, max: number): string {
 
 /** True when the correction is machine-made: absent, origin-tagged machine, or
  * (legacy records with no origin) byte-equal to any platform's derivation —
- * anything else is a human edit. */
+ * anything else is authored (agent or owner). */
 export function isAutoCorrection(gate: Gate): boolean {
   if (gate.correction === undefined) return true
   if (gate.correctionOrigin === "machine") return true
-  if (gate.correctionOrigin === "human") return false
+  if (gate.correctionOrigin === "agent" || gate.correctionOrigin === "owner") return false
   return (
     gate.correction === suggestCorrection(gate.signature, gate.snippet, "win32") ||
     gate.correction === suggestCorrection(gate.signature, gate.snippet, "linux")
@@ -103,9 +103,14 @@ export function coerceGateShape(raw: unknown): Gate | null {
     gate.movedOn = Math.floor(r.movedOn)
   }
   if (typeof r.correction === "string") gate.correction = r.correction
-  if (r.correctionOrigin === "machine" || r.correctionOrigin === "human") gate.correctionOrigin = r.correctionOrigin
-  // an unknown origin value must never fall into machine re-derivation — human is the safe side
-  else if (typeof r.correctionOrigin === "string") gate.correctionOrigin = "human"
+  if (r.correctionOrigin === "machine" || r.correctionOrigin === "agent" || r.correctionOrigin === "owner") {
+    gate.correctionOrigin = r.correctionOrigin
+  } else if (r.correctionOrigin === "human") {
+    gate.correctionOrigin = "owner"
+  } else if (typeof r.correctionOrigin === "string") {
+    // an unknown origin value must never fall into machine re-derivation — agent is the safe side
+    gate.correctionOrigin = "agent"
+  }
   if (typeof r.correctionAt === "number" && Number.isFinite(r.correctionAt) && r.correctionAt >= 0) {
     gate.correctionAt = Math.floor(r.correctionAt)
   }
@@ -225,8 +230,8 @@ export function repairGate(gate: Gate): boolean {
     gate.snippet = ""
     changed = true
   }
-  // AUTO_TEMPLATE corrections are machine-made, so re-derive from current evidence on every repair: success-shaped quotes and stale platform advice reach old gates; human edits never match the template byte-for-byte and are untouched.
-  if (gate.correction !== undefined && gate.correctionOrigin !== "human" && AUTO_TEMPLATE_CORRECTION.test(gate.correction)) {
+  // template-shaped text is machine-made — re-derive on repair; owner text never matches byte-for-byte
+  if (gate.correction !== undefined && gate.correctionOrigin !== "owner" && AUTO_TEMPLATE_CORRECTION.test(gate.correction)) {
     const rederived = suggestCorrection(gate.signature, gate.snippet)
     if (rederived !== gate.correction) {
       gate.correction = rederived

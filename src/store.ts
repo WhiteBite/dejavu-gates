@@ -57,15 +57,16 @@ export interface Gate {
   snippet: string
   /** optional human/agent-written guidance shown in reminder/block messages */
   correction?: string
-  /** who wrote the correction: machine (suggestCorrection at promotion/backfill)
-   * or human (lesson set / gates.json edit). Gates the machine/human label and
-   * protects human text from template re-derivation; absent on legacy records. */
-  correctionOrigin?: "machine" | "human"
-  /** epoch ms when the human correction was written */
+  /** who wrote the correction: machine (suggestCorrection at promotion/backfill),
+   * agent (lesson set run by the AI agent) or owner (the human — lesson set
+   * --author owner / gates.json edit). Drives merge precedence and protects
+   * owner text from template re-derivation; absent on legacy records. */
+  correctionOrigin?: "machine" | "agent" | "owner"
+  /** epoch ms when the authored correction was written */
   correctionAt?: number
   /** the gate's counters at lesson-write time, so recurrence-since-correction stays computable */
   correctionBaseline?: { recurred: number; reminded: number; overrides: number; promoted?: number }
-  /** lifetime successes on a gate carrying a human correction — the "lesson proven" signal */
+  /** lifetime successes on a gate carrying an authored correction — the "lesson proven" signal */
   correctionsProven?: number
   remindedCount: number
   blockedCount: number
@@ -260,7 +261,7 @@ const DEMOTE_OVERRIDE_SESSIONS = 2
  * reoffended after a reminder — one bad session (or one bad model in a shared
  * store) must not be able to demote a gate for everyone else */
 const DEMOTE_REOFFENSE_SESSIONS = 2
-/** a human lesson unproven and unrecurred past this many days is dormant — the pattern died out */
+/** an authored lesson unproven and unrecurred past this many days is dormant — the pattern died out */
 export const STALE_LESSON_DAYS = 120
 /** prune an index key absent from every scope visible to the sweeper after this many days (a live gate in an unopened project clears its own candidacy) */
 const ORPHAN_CANDIDATE_DAYS = 7
@@ -1030,13 +1031,14 @@ export function mergeGate(target: Gate, source: Gate): void {
   }
   if (source.movedOn !== undefined) target.movedOn = (target.movedOn ?? 0) + source.movedOn
   if (source.iteratedVersion !== undefined) target.iteratedVersion = Math.max(target.iteratedVersion ?? 0, source.iteratedVersion)
-  // human beats machine; two human edits pick the newer one
+  // owner beats agent beats machine; equal ranks pick the newer correctionAt
+  const originRank = (origin: Gate["correctionOrigin"]): number => (origin === "owner" ? 2 : origin === "agent" ? 1 : 0)
   if (
     source.correction !== undefined &&
     (target.correction === undefined ||
-      (source.correctionOrigin === "human" &&
-        (target.correctionOrigin !== "human" ||
-          (source.correctionAt ?? Number.NEGATIVE_INFINITY) > (target.correctionAt ?? Number.NEGATIVE_INFINITY))))
+      originRank(source.correctionOrigin) > originRank(target.correctionOrigin) ||
+      (originRank(source.correctionOrigin) === originRank(target.correctionOrigin) &&
+        (source.correctionAt ?? Number.NEGATIVE_INFINITY) > (target.correctionAt ?? Number.NEGATIVE_INFINITY)))
   ) {
     target.correction = source.correction
     target.correctionOrigin = source.correctionOrigin
@@ -1168,7 +1170,7 @@ export function retireAntiNag(gate: Gate): { reminded: number; reoffended: numbe
 
 /**
  * Lesson lifecycle verdict for a gate's correction (report-only signal):
- * proven — a success followed the human correction; repromoted — the gate
+ * proven — a success followed the authored correction; repromoted — the gate
  * re-enforced since the correction was written, so the text may predate the
  * current failure mode; stale — recurrences continued despite it; dormant —
  * watching, quiet and past STALE_LESSON_DAYS; else fresh.
@@ -2010,7 +2012,7 @@ export class Stores {
       const fresh = (await store.loadForMutation()).find((g) => g.key === gateKey)
       if (fresh === undefined || fresh.status === "watching") return
       fresh.succeededAfterGate = (fresh.succeededAfterGate ?? 0) + 1
-      if (fresh.correctionOrigin === "human") fresh.correctionsProven = (fresh.correctionsProven ?? 0) + 1
+      if (fresh.correctionOrigin === "agent" || fresh.correctionOrigin === "owner") fresh.correctionsProven = (fresh.correctionsProven ?? 0) + 1
       if (fresh.remindedSessions !== undefined && fresh.remindedSessions[input.sessionID] !== undefined) {
         delete fresh.remindedSessions[input.sessionID]
         if (Object.keys(fresh.remindedSessions).length === 0) delete fresh.remindedSessions

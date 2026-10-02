@@ -1,6 +1,6 @@
 /**
  * `dejavu lesson` — the user-facing gate surface: list enforced gates, show
- * one gate's evidence, set a human correction. Reads are read-only loads;
+ * one gate's evidence, set a correction. Reads are read-only loads;
  * the only write is the correction edit, under the store lock.
  */
 import { join } from "node:path"
@@ -10,14 +10,15 @@ import { isAutoCorrection, sliceSafe, SNIPPET_MAX } from "./validate"
 
 const KEY_SHAPE = /^[0-9a-f]{12}$/
 
-const USAGE = `usage: dejavu lesson [--store <dir>] [--all] <command> [args]
+const USAGE = `usage: dejavu lesson [--store <dir>] [--all] [--author owner|agent] <command> [args]
   list                    enforced gates, highest count first
   show <key>              one gate's evidence and correction
-  set <key> <text...>     write a human correction (sanitized, capped at ${SNIPPET_MAX} chars)
+  set <key> <text...>     write a correction (sanitized, capped at ${SNIPPET_MAX} chars)
   retire-when <key> <spec>   set a retirement condition: dep:<name>@>=<min> | path-present:<path> | path-absent:<path> | tag:<name>
   retire-when <key> --clear  remove the retirement condition
   --store <dir>           project dir to read (default: cwd); must precede <command>
-  --all                   list watching gates too, marked enforced=no; must precede <command>`
+  --all                   list watching gates too, marked enforced=no; must precede <command>
+  --author owner|agent    who wrote the correction (default: agent); must precede <command>`
 
 function scopes(stores: Stores): GateStore[] {
   return stores.projectStore !== null ? [stores.projectStore, stores.globalStore] : [stores.globalStore]
@@ -87,7 +88,7 @@ async function runList(projectDir: string, args: readonly string[], all: boolean
   }
   rows.sort((a, b) => b.gate.count - a.gate.count)
   for (const { gate, scope } of rows) {
-    const correction = gate.correction === undefined ? "none" : isAutoCorrection(gate) ? "machine" : "human"
+    const correction = gate.correction === undefined ? "none" : gate.correctionOrigin ?? (isAutoCorrection(gate) ? "machine" : "agent")
     const enforced = gate.status === "watching" ? "  enforced=no" : ""
     const verdict = lessonStaleness(gate, Date.now())
     const stale = verdict !== "fresh" ? `  stale=${verdict}` : ""
@@ -124,7 +125,7 @@ async function runShow(projectDir: string, args: readonly string[]): Promise<num
   return 0
 }
 
-async function runSet(projectDir: string, args: readonly string[]): Promise<number> {
+async function runSet(projectDir: string, args: readonly string[], author: "agent" | "owner" | undefined): Promise<number> {
   const key = args[0]
   if (key === undefined || !KEY_SHAPE.test(key)) {
     process.stderr.write(`error: set requires a 12-hex gate key\n${USAGE}\n`)
@@ -137,6 +138,9 @@ async function runSet(projectDir: string, args: readonly string[]): Promise<numb
   }
   if (/(^|\s)--store(?=[\s=]|$)/.test(text)) {
     process.stderr.write(`[dejavu] note: --store must precede the subcommand — a --store token inside the correction text is stored verbatim\n`)
+  }
+  if (author === undefined) {
+    process.stderr.write(`[dejavu] note: author defaulted to "agent"; pass --author owner if a human wrote this\n`)
   }
   const stores = createStores(projectDir)
   const owners: GateStore[] = []
@@ -173,7 +177,7 @@ async function runSet(projectDir: string, args: readonly string[]): Promise<numb
       if (gate === undefined) return null
       const prior = gate.correction
       gate.correction = clean
-      gate.correctionOrigin = "human"
+      gate.correctionOrigin = author ?? "agent"
       gate.correctionAt = Date.now()
       gate.correctionBaseline = {
         recurred: gate.recurredAfterGate,
@@ -264,6 +268,7 @@ export async function runLesson(argv: readonly string[]): Promise<number> {
   // flags only before the subcommand: correction text may contain "--store" or "--all" verbatim
   let storeDir: string | null = null
   let all = false
+  let author: "agent" | "owner" | undefined
   let i = 0
   while (i < argv.length) {
     const arg = argv[i]
@@ -292,6 +297,26 @@ export async function runLesson(argv: readonly string[]): Promise<number> {
       i += 1
       continue
     }
+    if (arg === "--author") {
+      const value = argv[i + 1]
+      if (value !== "owner" && value !== "agent") {
+        process.stderr.write(`error: --author requires owner or agent\n${USAGE}\n`)
+        return 1
+      }
+      author = value
+      i += 2
+      continue
+    }
+    if (arg.startsWith("--author=")) {
+      const value = arg.slice("--author=".length)
+      if (value !== "owner" && value !== "agent") {
+        process.stderr.write(`error: --author requires owner or agent\n${USAGE}\n`)
+        return 1
+      }
+      author = value
+      i += 1
+      continue
+    }
     if (arg === "--all") {
       all = true
       i += 1
@@ -303,7 +328,7 @@ export async function runLesson(argv: readonly string[]): Promise<number> {
   const [sub, ...args] = argv.slice(i)
   if (sub === "list") return runList(projectDir, args, all)
   if (sub === "show") return runShow(projectDir, args)
-  if (sub === "set") return runSet(projectDir, args)
+  if (sub === "set") return runSet(projectDir, args, author)
   if (sub === "retire-when") return runRetireWhen(projectDir, args)
   process.stderr.write(`${USAGE}\n`)
   return 1

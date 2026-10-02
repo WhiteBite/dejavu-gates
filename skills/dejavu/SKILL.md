@@ -35,7 +35,7 @@ Gates live in `.opencode/dejavu/gates.json` (project) and `~/.config/opencode/de
 
 When you discover the **root cause** of a gated failure, update the gate's `correction` field with a one-line actionable instruction (what to do instead, not what to avoid). Example: `"correction": "Use 'npm install --legacy-peer-deps' — this repo has conflicting peer deps"`.
 
-The supported way to review and write that field without hand-editing JSON is `dejavu lesson list` (shows which corrections are still machine-generated) and `dejavu lesson set <key> "<fix>"` — it can only write onto an existing gate, never create one.
+The supported way to review and write that field without hand-editing JSON is `dejavu lesson list` (shows which corrections are still machine-generated) and `dejavu lesson --author agent set <key> "<fix>"` (you are the agent, not the owner) — it can only write onto an existing gate, never create one.
 
 Do NOT:
 - create gates manually (promotion is mechanical: 3 failures across 2 sessions),

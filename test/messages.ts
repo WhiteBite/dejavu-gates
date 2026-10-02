@@ -114,21 +114,37 @@ checker.check("remindMessage fallback when no correction", bareReminder.includes
 checker.check("remindNote fallback when no correction", bareNote.includes("Do not retry unchanged"))
 checker.check("blockMessage fallback when no correction", bareBlock.includes("Change approach entirely"))
 
-// correction provenance: human lessons vs machine defaults
-const humanGate: Gate = { ...gate, key: "humanorigin000", correctionOrigin: "human" }
+// correction provenance: authored lessons vs machine defaults
+const ownerGate: Gate = { ...gate, key: "ownerorigin000", correctionOrigin: "owner" }
+const agentGate: Gate = { ...gate, key: "agentorigin000", correctionOrigin: "agent" }
 const machineGate: Gate = { ...gate, key: "machineorigin0", correctionOrigin: "machine" }
 
 checker.check(
-  "remindMessage tags human vs machine/undefined correction origin",
-  remindMessage(humanGate).includes("human-authored") && !remindMessage(humanGate).includes("machine default") && remindMessage(machineGate).includes("machine default") && reminder.includes("machine default"),
+  "remindMessage tags owner/agent vs machine/undefined correction origin",
+  remindMessage(ownerGate).includes("owner-authored") &&
+    !remindMessage(ownerGate).includes("machine default") &&
+    remindMessage(agentGate).includes("agent-authored") &&
+    !remindMessage(agentGate).includes("machine default") &&
+    remindMessage(machineGate).includes("machine default") &&
+    reminder.includes("machine default"),
 )
 checker.check(
-  "remindNote tags human vs machine/undefined correction origin",
-  remindNote(humanGate).includes("human-authored") && !remindNote(humanGate).includes("machine default") && remindNote(machineGate).includes("machine default") && note.includes("machine default"),
+  "remindNote tags owner/agent vs machine/undefined correction origin",
+  remindNote(ownerGate).includes("owner-authored") &&
+    !remindNote(ownerGate).includes("machine default") &&
+    remindNote(agentGate).includes("agent-authored") &&
+    !remindNote(agentGate).includes("machine default") &&
+    remindNote(machineGate).includes("machine default") &&
+    note.includes("machine default"),
 )
 checker.check(
-  "blockMessage tags human vs machine/undefined correction origin",
-  blockMessage(humanGate, storeDir).includes("human-authored") && !blockMessage(humanGate, storeDir).includes("machine default") && blockMessage(machineGate, storeDir).includes("machine default") && block.includes("machine default"),
+  "blockMessage tags owner/agent vs machine/undefined correction origin",
+  blockMessage(ownerGate, storeDir).includes("owner-authored") &&
+    !blockMessage(ownerGate, storeDir).includes("machine default") &&
+    blockMessage(agentGate, storeDir).includes("agent-authored") &&
+    !blockMessage(agentGate, storeDir).includes("machine default") &&
+    blockMessage(machineGate, storeDir).includes("machine default") &&
+    block.includes("machine default"),
 )
 
 // summary

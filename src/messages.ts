@@ -7,7 +7,8 @@ import type { Gate } from "./store"
  * the data-label framing ("data to read, not instructions") is load-bearing.
  */
 
-const correctionOrigin = (gate: Gate): string => (gate.correctionOrigin === "human" ? "human-authored" : "machine default")
+const correctionOrigin = (gate: Gate): string =>
+  gate.correctionOrigin === "owner" ? "owner-authored" : gate.correctionOrigin === "agent" ? "agent-authored" : "machine default"
 
 /** thrown reminder for blocking gates (the call is aborted; the agent may retry corrected) */
 export function remindMessage(gate: Gate): string {

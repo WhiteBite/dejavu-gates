@@ -28,7 +28,7 @@ const FILE_NOT_FOUND_CORRECTION = /can't open file|cannot find path|no such file
  * quoted path EXISTS again — the taught error cannot recur; the correction is
  * stale (file moved back/renamed) and the gate keeps nagging about a dead error. */
 function staleCorrectionPath(gate: Gate): string | null {
-  if (gate.correctionOrigin === "human") return null
+  if (gate.correctionOrigin === "owner") return null
   const correction = gate.correction
   if (correction === undefined || !FILE_NOT_FOUND_CORRECTION.test(correction)) return null
   const quoted = /'([^']+)'/.exec(correction)?.[1]
@@ -39,9 +39,9 @@ function staleCorrectionPath(gate: Gate): string | null {
   return existsSync(candidate) ? candidate : null
 }
 
-// --repair only: human-correction claims — missing paths, malformed URLs. Flag-only.
+// --repair only: authored-correction claims — missing paths, malformed URLs. Flag-only.
 function correctionClaims(gate: Gate, roots: readonly string[]): string[] {
-  if (gate.correctionOrigin !== "human" || gate.correction === undefined) return []
+  if ((gate.correctionOrigin !== "agent" && gate.correctionOrigin !== "owner") || gate.correction === undefined) return []
   const claims: string[] = []
   for (const match of gate.correction.matchAll(/['"]([^'"]+)['"]/g)) {
     const quoted = match[1]
@@ -516,7 +516,7 @@ for (const scope of scopes) {
 
   const proven = gates.filter((g) => (g.correctionsProven ?? 0) > 0)
   if (proven.length > 0) {
-    console.log(`   note: PROVEN LESSONS (${proven.length}) — human corrections followed by success:`)
+    console.log(`   note: PROVEN LESSONS (${proven.length}) — authored corrections followed by success:`)
     for (const g of [...proven].sort((a, b) => (b.correctionsProven ?? 0) - (a.correctionsProven ?? 0)).slice(0, 10))
       console.log(`     - ${g.key} proven ${g.correctionsProven} | ${g.signature}`)
   }
@@ -546,13 +546,13 @@ for (const scope of scopes) {
   const staleLessons = lessonVerdicts.filter((v) => v.verdict === "stale").map((v) => v.gate)
   if (staleLessons.length > 0) {
     issues += staleLessons.length
-    console.log(`   STALE-LESSON (${staleLessons.length}) — human correction not stopping recurrences since it was written; rewrite or clear it (report-only):`)
+    console.log(`   STALE-LESSON (${staleLessons.length}) — authored correction not stopping recurrences since it was written; rewrite or clear it (report-only):`)
     for (const g of staleLessons.slice(0, 10)) console.log(`     - ${g.key} | ${g.signature}`)
   }
   const repromotedLessons = lessonVerdicts.filter((v) => v.verdict === "repromoted").map((v) => v.gate)
   if (repromotedLessons.length > 0) {
     issues += repromotedLessons.length
-    console.log(`   REPROMOTED-LESSON (${repromotedLessons.length}) — gate re-promoted since the human correction was written; the lesson may predate the current failure mode (report-only):`)
+    console.log(`   REPROMOTED-LESSON (${repromotedLessons.length}) — gate re-promoted since the authored correction was written; the lesson may predate the current failure mode (report-only):`)
     for (const g of repromotedLessons.slice(0, 10)) console.log(`     - ${g.key} | ${g.signature}`)
   }
 
@@ -562,7 +562,7 @@ for (const scope of scopes) {
     const staleClaims = gates.flatMap((g) => correctionClaims(g, roots).map((claim) => `${g.key}: ${claim}`))
     if (staleClaims.length > 0) {
       issues += staleClaims.length
-      console.log(`   STALE CLAIM (${staleClaims.length}) — human correction quotes a missing path or a malformed URL; flag-only, fix via \`dejavu lesson set\`:`)
+      console.log(`   STALE CLAIM (${staleClaims.length}) — authored correction quotes a missing path or a malformed URL; flag-only, fix via \`dejavu lesson set\`:`)
       for (const claim of staleClaims.slice(0, 10)) console.log(`     - ${claim}`)
     }
   }
@@ -724,16 +724,16 @@ const orphanedLessons: Array<{ gate: Gate; sibling: Gate }> = []
 const seenOrphans = new Set<string>()
 for (const gate of scopes.flatMap((s) => s.gates)) {
   if (orphanedLessons.length >= 10) break
-  if (gate.correctionOrigin !== "human" || gate.status !== "watching" || seenOrphans.has(gate.key)) continue
+  if ((gate.correctionOrigin !== "agent" && gate.correctionOrigin !== "owner") || gate.status !== "watching" || seenOrphans.has(gate.key)) continue
   seenOrphans.add(gate.key)
   const sibling = scopes
     .flatMap((s) => s.gates)
-    .find((s) => s.key !== gate.key && s.status !== "watching" && s.correctionOrigin !== "human" && fuzzySimilar(s.signature, gate.signature))
+    .find((s) => s.key !== gate.key && s.status !== "watching" && s.correctionOrigin !== "agent" && s.correctionOrigin !== "owner" && fuzzySimilar(s.signature, gate.signature))
   if (sibling !== undefined) orphanedLessons.push({ gate, sibling })
 }
 if (orphanedLessons.length > 0) {
   crossIssues += orphanedLessons.length
-  console.log(`   ORPHANED LESSON (${orphanedLessons.length}) — human-corrected gate retired while a fuzzy-similar enforced gate has no human correction; copy the correction over (dejavu lesson set <sibling> "<correction>"):`)
+  console.log(`   ORPHANED LESSON (${orphanedLessons.length}) — authored-corrected gate retired while a fuzzy-similar enforced gate has no authored correction; copy the correction over (dejavu lesson set <sibling> "<correction>"):`)
   for (const { gate, sibling } of orphanedLessons) console.log(`     - (${gate.key}, ${sibling.key}) ${sibling.signature}`)
 }
 if (crossIssues === 0) console.log("   ok")
