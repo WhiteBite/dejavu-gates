@@ -8,7 +8,7 @@
         "@opencode-ai/plugin": "^1.18.0",
         "@opencode/plugin": "^2.0.18",
         "@types/node": "^24.0.0",
-        "repo-aeo": "^0.3.0",
+        "repo-aeo": "^0.3.4",
         "typescript": "^5.5.0",
       },
     },
@@ -464,7 +464,7 @@
 
     "redis": ["redis@6.2.1", "", { "dependencies": { "@redis/bloom": "6.2.1", "@redis/client": "6.2.1", "@redis/json": "6.2.1", "@redis/search": "6.2.1", "@redis/time-series": "6.2.1" } }, "sha512-Z9VHtgYs48PiQC77X9O2Er8Hj4T+5BtFjT91/vi5Is1D04N72cA946ZslM1ImJw8ZctFBZWAVjM7S5wJNeHMpg=="],
 
-    "repo-aeo": ["repo-aeo@0.3.0", "", { "bin": { "rdk": "bin/rdk.js", "repo-aeo": "bin/rdk.js" } }, "sha512-gP+qMwf2T0leIP+KZqHkNzuGRXpMHLddRn1Zl4kmUleymk1GyEbCXEAmjOGm6GdgRsMKl7jLsA3G50ZhuVhfCA=="],
+    "repo-aeo": ["repo-aeo@0.3.5", "", { "bin": { "rdk": "bin/rdk.js", "repo-aeo": "bin/rdk.js" } }, "sha512-YQ/aNdL4MIeH0jkdTMay2rSZPgYPgVGMhBnWkzOcbNGztXwquWTiaBCUY4gRRu+VDOpxaM8jtKjNQ5qa5fwqhw=="],
 
     "rimraf": ["rimraf@5.0.10", "", { "dependencies": { "glob": "^10.3.7" }, "bin": { "rimraf": "dist/esm/bin.mjs" } }, "sha512-l0OE8wL34P4nJH/H2ffoaniAokM2qSmrtXHmlpvYr5AVVX8msAyW0l8NVJFDxlSK4u3Uh/f41cQheDVdnYijwQ=="],
 
