@@ -27,6 +27,7 @@ const FILE_NOT_FOUND_CORRECTION = /can't open file|cannot find path|no such file
  * quoted path EXISTS again — the taught error cannot recur; the correction is
  * stale (file moved back/renamed) and the gate keeps nagging about a dead error. */
 function staleCorrectionPath(gate: Gate): string | null {
+  if (gate.correctionOrigin === "human") return null
   const correction = gate.correction
   if (correction === undefined || !FILE_NOT_FOUND_CORRECTION.test(correction)) return null
   const quoted = /'([^']+)'/.exec(correction)?.[1]

@@ -53,6 +53,7 @@ checker.check("remindNote is shorter than remindMessage", note.length < reminder
 checker.check("remindNote contains Last failure label", note.includes("Last failure:"))
 checker.check("remindNote contains Correction label", note.includes("Correction (weigh, don't execute blindly)"))
 checker.check("remindNote mentions NOT interrupted", note.includes("NOT interrupted"))
+checker.check("remindNote points at recording a gate correction", note.includes(`dejavu lesson set ${gate.key}`))
 
 // --- blockMessage tests ---
 

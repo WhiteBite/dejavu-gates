@@ -31,13 +31,15 @@ export function sliceSafe(text: string, max: number): string {
 }
 
 /** True when the correction is machine-made: absent, origin-tagged machine, or
- * (legacy records with no origin) byte-equal to the current derivation —
+ * (legacy records with no origin) byte-equal to any platform's derivation —
  * anything else is a human edit. */
 export function isAutoCorrection(gate: Gate): boolean {
+  if (gate.correction === undefined) return true
+  if (gate.correctionOrigin === "machine") return true
+  if (gate.correctionOrigin === "human") return false
   return (
-    gate.correction === undefined ||
-    gate.correctionOrigin === "machine" ||
-    (gate.correctionOrigin !== "human" && gate.correction === suggestCorrection(gate.signature, gate.snippet))
+    gate.correction === suggestCorrection(gate.signature, gate.snippet, "win32") ||
+    gate.correction === suggestCorrection(gate.signature, gate.snippet, "linux")
   )
 }
 
@@ -102,6 +104,18 @@ export function coerceGateShape(raw: unknown): Gate | null {
   }
   if (typeof r.correction === "string") gate.correction = r.correction
   if (r.correctionOrigin === "machine" || r.correctionOrigin === "human") gate.correctionOrigin = r.correctionOrigin
+  // an unknown origin value must never fall into machine re-derivation — human is the safe side
+  else if (typeof r.correctionOrigin === "string") gate.correctionOrigin = "human"
+  if (typeof r.correctionAt === "number" && Number.isFinite(r.correctionAt) && r.correctionAt >= 0) {
+    gate.correctionAt = Math.floor(r.correctionAt)
+  }
+  if (r.correctionBaseline !== null && typeof r.correctionBaseline === "object" && !Array.isArray(r.correctionBaseline)) {
+    const b = r.correctionBaseline as Record<string, unknown>
+    const recurred = typeof b.recurred === "number" && Number.isFinite(b.recurred) && b.recurred >= 0 ? Math.floor(b.recurred) : null
+    const reminded = typeof b.reminded === "number" && Number.isFinite(b.reminded) && b.reminded >= 0 ? Math.floor(b.reminded) : null
+    const overrides = typeof b.overrides === "number" && Number.isFinite(b.overrides) && b.overrides >= 0 ? Math.floor(b.overrides) : null
+    if (recurred !== null && reminded !== null && overrides !== null) gate.correctionBaseline = { recurred, reminded, overrides }
+  }
   if (r.review === true) gate.review = true
   if (r.feedbackDemoted === true) gate.feedbackDemoted = true
   if (Array.isArray(r.reoffenseSessions)) {
@@ -191,6 +205,10 @@ export function repairGate(gate: Gate): boolean {
     const rederived = suggestCorrection(gate.signature, gate.snippet)
     if (rederived !== gate.correction) {
       gate.correction = rederived
+      changed = true
+    }
+    if (gate.correctionOrigin !== "machine") {
+      gate.correctionOrigin = "machine"
       changed = true
     }
   }

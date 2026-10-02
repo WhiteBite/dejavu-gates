@@ -53,6 +53,10 @@ export interface Gate {
    * or human (lesson set / gates.json edit). Gates the machine/human label and
    * protects human text from template re-derivation; absent on legacy records. */
   correctionOrigin?: "machine" | "human"
+  /** epoch ms when the human correction was written */
+  correctionAt?: number
+  /** the gate's counters at lesson-write time, so recurrence-since-correction stays computable */
+  correctionBaseline?: { recurred: number; reminded: number; overrides: number }
   remindedCount: number
   blockedCount: number
   recurredAfterReminder: number
@@ -153,6 +157,7 @@ export type LogEventType =
   | "retired-healed"
   | "retired-taught"
   | "healed"
+  | "corrected"
   | "repeat-detected"
   | "repeat-reminded"
   | "repeat-blocked"
@@ -173,6 +178,7 @@ const GLOBAL_LOG_EVENTS = new Set<LogEventType>([
   "retired-healed",
   "retired-taught",
   "override",
+  "corrected",
 ])
 
 export interface LogEvent {
@@ -972,9 +978,15 @@ export function mergeGate(target: Gate, source: Gate): void {
   }
   if (source.movedOn !== undefined) target.movedOn = (target.movedOn ?? 0) + source.movedOn
   if (source.iteratedVersion !== undefined) target.iteratedVersion = Math.max(target.iteratedVersion ?? 0, source.iteratedVersion)
-  if (target.correction === undefined && source.correction !== undefined) {
+  // human beats machine: a human correction replaces a machine default, never the reverse
+  if (
+    source.correction !== undefined &&
+    (target.correction === undefined || (source.correctionOrigin === "human" && target.correctionOrigin !== "human"))
+  ) {
     target.correction = source.correction
     target.correctionOrigin = source.correctionOrigin
+    target.correctionAt = source.correctionAt
+    target.correctionBaseline = source.correctionBaseline
   }
   if (source.review === true) target.review = true
   // A demotion is earned behavior — merging must never launder it away.

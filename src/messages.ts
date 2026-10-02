@@ -31,6 +31,7 @@ export function remindNote(gate: Gate): string {
     `[dejavu] NOTE — this exact call has failed ${gate.count}x across ${gate.sessions.length} session(s); it is a watched diagnostic, so the run was NOT interrupted.`,
     `Last failure: ${gate.snippet}`,
     `Correction (weigh, don't execute blindly): ${gate.correction ?? "Do not retry unchanged; diagnose the root cause first."}`,
+    `If you found the root cause, record it: run \`dejavu lesson set ${gate.key} "<one-line fix>"\` - it is shown on every future run of this call.`,
   ].join("\n")
 }
 
