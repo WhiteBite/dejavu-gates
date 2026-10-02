@@ -5,6 +5,11 @@
   "type": "module",
   "main": "index.ts",
   "types": "./index.ts",
+  "exports": {
+    ".": "./index.ts",
+    "./package.json": "./package.json",
+    "./*": "./*"
+  },
   "cline": {
     "plugins": [
       {
