@@ -382,6 +382,23 @@ const templateGate = makeGate({ correction: `Last error: "Error: boom" — addre
 repairGate(templateGate)
 check("repairGate stamps machine origin on a template correction", templateGate.correctionOrigin === "machine")
 
+const OLD_GENERIC = "This exact call keeps failing — inspect the last output line and change approach before retrying."
+const wcSig = "bash:wc -l <str>"
+const staleGeneric = makeGate({ signature: wcSig, snippet: "exit code 1", correction: OLD_GENERIC, correctionOrigin: "machine" })
+check("repairGate re-derives a stale old-generation generic correction", repairGate(staleGeneric) === true && staleGeneric.correction !== OLD_GENERIC && staleGeneric.correction === suggestCorrection(wcSig, "exit code 1"))
+
+const hyphenGeneric = makeGate({ signature: wcSig, snippet: "exit code 1", correction: "This exact call keeps failing - inspect the last output line and change approach before retrying." })
+check("repairGate re-derives a hyphen-dash generic correction and stamps machine origin", repairGate(hyphenGeneric) === true && hyphenGeneric.correction === suggestCorrection(wcSig, "exit code 1") && hyphenGeneric.correctionOrigin === "machine")
+
+const deploySig = "bash:deploy <str>"
+const genericText = suggestCorrection(deploySig, "exit code 1")
+check("the deploy shape derives the generic correction on both platforms", genericText === suggestCorrection(deploySig, "exit code 1", "win32") && genericText === suggestCorrection(deploySig, "exit code 1", "linux") && genericText.startsWith("This exact call keeps failing"))
+const currentGeneric = makeGate({ signature: deploySig, snippet: "exit code 1", correction: genericText, correctionOrigin: "machine" })
+check("repairGate leaves the current generic correction untouched", repairGate(currentGeneric) === false && repairGate(currentGeneric) === false)
+
+const ownerGeneric = makeGate({ signature: wcSig, snippet: "exit code 1", correction: OLD_GENERIC, correctionOrigin: "owner" })
+check("repairGate never re-derives an owner's generic-shaped correction", repairGate(ownerGeneric) === false && ownerGeneric.correction === OLD_GENERIC && ownerGeneric.correctionOrigin === "owner")
+
 // --- 15. retired-healed requires promotion: a never-enforced corrected gate expires plainly ---
 const rhGlobal = join(tmp, "rh-global")
 const rhProjectStore = join(tmp, "rh-project", ".opencode", "dejavu")

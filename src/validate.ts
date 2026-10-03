@@ -17,6 +17,8 @@ const SESSION_STATE_TTL_MS = 24 * 60 * 60 * 1000
 const SESSION_STATE_CAP = 50
 /** fixed machine template shape — a byte-equal match around the quoted snippet is machine-generated, never a human edit */
 const AUTO_TEMPLATE_CORRECTION = /^Last error: "(.*)" — address that specific error before retrying this exact call\.$/
+/** fixed machine generic shape — a prefix match over both stale generations (em-dash or hyphen), never owner prose */
+const GENERIC_TEMPLATE_CORRECTION = /^This exact call keeps failing [—-]/
 
 /** Truncate at a UTF-16 code-unit boundary without splitting a surrogate pair:
  * ending on a lone high surrogate would persist invalid JSON escapes. */
@@ -232,6 +234,18 @@ export function repairGate(gate: Gate): boolean {
   }
   // template-shaped text is machine-made — re-derive on repair; owner text never matches byte-for-byte
   if (gate.correction !== undefined && gate.correctionOrigin !== "owner" && AUTO_TEMPLATE_CORRECTION.test(gate.correction)) {
+    const rederived = suggestCorrection(gate.signature, gate.snippet)
+    if (rederived !== gate.correction) {
+      gate.correction = rederived
+      changed = true
+    }
+    if (gate.correctionOrigin !== "machine") {
+      gate.correctionOrigin = "machine"
+      changed = true
+    }
+  }
+  // generic fallback text is machine-made too — prefix match catches generations the AUTO shape misses
+  if (gate.correction !== undefined && gate.correctionOrigin !== "owner" && GENERIC_TEMPLATE_CORRECTION.test(gate.correction)) {
     const rederived = suggestCorrection(gate.signature, gate.snippet)
     if (rederived !== gate.correction) {
       gate.correction = rederived
