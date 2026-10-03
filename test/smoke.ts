@@ -2414,6 +2414,19 @@ await attemptWith(hooksOVS)(`${OVS_CMD} # dejavu:proceed`, "ovs-other", "ovsX")
 const ovsGate2 = (await readJson(join(ov1Dir, ".opencode", "dejavu", "gates.json"))).find((g) => g.key === ovsKey)
 check("overrides across 2 distinct sessions demote the gate", ovsGate2?.status === "watching" && ovsGate2?.feedbackDemoted === true)
 
+// --- 92b. two preserved override votes + one post-promotion bypass reach the demotion bar ---
+const lcDir = join(tmp, "override-loop-closure")
+const LC_CMD = "deploy --to loop-closure"
+const lcKey = patternKey(callSignature("bash", { command: LC_CMD }) ?? "")
+await seedGates(lcDir, [seedGate({ key: lcKey, signature: `bash:${LC_CMD}`, status: "watching", count: 2, overrideCount: 2, overrideSessions: ["lc-old"] })])
+const hooksLC = await Dejavu({ directory: lcDir, client: { app: { log: async () => ({}) } } } as unknown as Ctx)
+await failOn(hooksLC)(LC_CMD, "lc-fail", "lc1")
+const lcPromoted = (await readJson(join(lcDir, ".opencode", "dejavu", "gates.json"))).find((g) => g.key === lcKey)
+check("loop-closure: promotion keeps the two prior override votes", lcPromoted?.status === "blocking" && lcPromoted?.overrideCount === 2)
+await attemptWith(hooksLC)(`${LC_CMD} # dejavu:proceed`, "lc-new", "lc2")
+const lcDemoted = (await readJson(join(lcDir, ".opencode", "dejavu", "gates.json"))).find((g) => g.key === lcKey)
+check("loop-closure: one post-promotion bypass reaches the demotion bar", lcDemoted?.status === "watching" && lcDemoted?.feedbackDemoted === true)
+
 // --- 93. a pattern failing once per project is an agent habit: the index churn gate
 // must not starve cross-project escalation (first failure of count<2 was skipped) ---
 const escGlobal = join(tmp, "escalate-global")

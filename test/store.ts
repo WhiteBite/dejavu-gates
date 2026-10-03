@@ -545,6 +545,25 @@ check("promotion re-derives a stale machine-origin correction", prMachineRes.pro
 check("promotion preserves an agent-authored correction", prAgentRes.promoted === true && prAgent?.correction === "custom agent fix" && prAgent?.correctionOrigin === "agent")
 check("promotion derives a correction when none exists", prBareRes.promoted === true && prBare?.correction === suggestCorrection(prBareSig, "exit code 1") && prBare?.correctionOrigin === "machine")
 
+// --- 19b. promotion preserves lifetime override friction (below the demotion bar) ---
+const ofGlobal = join(tmp, "of-global")
+const ofProject = join(tmp, "of-project")
+const ofProjectStore = join(ofProject, ".opencode", "dejavu")
+await mkdir(ofGlobal, { recursive: true })
+await mkdir(ofProjectStore, { recursive: true })
+const ofSig = "bash:friction-lesson-tool --apply"
+const ofKey = patternKey(ofSig)
+await writeFile(join(ofProjectStore, "gates.json"), JSON.stringify({ version: 1, gates: [
+  seedGate({ key: ofKey, signature: ofSig, snippet: "exit code 1", count: 2, overrideCount: 2, overrideSessions: ["old-s"] }),
+] }), "utf8")
+const ofStores = new Stores(new GateStore(ofGlobal), new GateStore(ofProjectStore))
+const ofRes = await ofStores.recordFailure({ key: ofKey, signature: ofSig, tool: "bash", sessionID: "s3", projectDir: ofProject, snippet: "exit code 1", globalProjects: GLOBAL_PROJECTS })
+const ofRow = (await readGates(ofProjectStore)).find((g) => g.key === ofKey)
+check(
+  "promotion preserves lifetime override friction",
+  ofRes.promoted === true && ofRow?.overrideCount === 2 && (ofRow?.overrideSessions as string[] | undefined)?.includes("old-s") === true,
+)
+
 // --- 20. promotion ADVANCES the retirement baseline instead of deleting it ---
 const rbGlobal = join(tmp, "rb-global")
 const rbProject = join(tmp, "rb-project")

@@ -1888,23 +1888,15 @@ export class Stores {
           gate.correction = suggestCorrection(gate.signature, gate.snippet)
           gate.correctionOrigin = "machine"
         }
-        // Fresh enforcement lifecycle: re-promotion (after heal/taught
-        // retirement) must not inherit the previous round's counters — stale
-        // cumulative zeros caused retire↔re-promote oscillation (a re-promoted
-        // gate re-retired on its first reminder) and permanently locked out
-        // taught retirement after any early recurrence. Session chains are
-        // cleared too: a stale remindedSessions entry from the retiring round
-        // would let the session skip its reminder with "one retry allowed".
+        // Fresh enforcement round resets round counters + chains; override friction is lifetime like promotionCount.
         if (promoted) {
           gate.promotionCount = (gate.promotionCount ?? 0) + 1
           gate.remindedCount = 0
           gate.recurredAfterReminder = 0
           gate.recurredAfterGate = 0
-          gate.overrideCount = 0
           gate.succeededAfterGate = 0
           delete gate.feedbackBaseline
           delete gate.reoffenseSessions
-          delete gate.overrideSessions
           delete gate.remindedSessions
           delete gate.failedSessions
           // Advance the damper to this promotion — re-promotion needs a full fresh bar.
