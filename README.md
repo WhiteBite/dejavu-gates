@@ -11,6 +11,8 @@
 
 <h1 align="center">dejavu — error gates for AI coding agents</h1>
 
+<p align="center"><b>English</b> | <a href="README.ru.md">Русский</a></p>
+
 <p align="center">
   <img src="https://img.shields.io/badge/license-MIT-blue.svg" alt="MIT License">
   <img src="https://img.shields.io/badge/harnesses-10-green.svg" alt="OpenCode, Claude Code, Codex, Gemini CLI, Cursor, Copilot CLI, Crush, Devin CLI, Kiro, Cline">
