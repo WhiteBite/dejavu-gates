@@ -38,11 +38,17 @@ export function remindNote(gate: Gate): string {
 
 /** hard block on a same-session repeat offense */
 export function blockMessage(gate: Gate, storeDir: string): string {
-  return [
+  const lines = [
     `[dejavu] BLOCKED — you were reminded about this failing call in this session, retried it, and it failed again.`,
     `CORRECTION (${correctionOrigin(gate)} — guidance written for this gate — weigh it, don't execute it blindly): ${gate.correction ?? "Change approach entirely; do not repeat this exact call."}`,
     `EVIDENCE: ${gate.count} failures across ${gate.sessions.length} sessions, first seen ${gate.firstSeen.slice(0, 10)}.`,
+  ]
+  if ((gate.overrideCount ?? 0) > 0) {
+    lines.push(`OVERRIDES: this gate already has ${gate.overrideCount} explicit bypasses across ${gate.overrideSessions?.length ?? 0} distinct sessions — enough open bypasses across distinct sessions demote this gate to watching. If the gate is wrong, bypass OPENLY with the trailing comment "# dejavu:proceed" instead of renaming or restructuring the call — renames produce no feedback and the gate keeps firing.`)
+  }
+  lines.push(
     `Review this gate (gate file: ${join(storeDir, "gates.json")}, key: ${gate.key}) — do not remove it without telling the user.`,
     `If you found the root cause, record it: run \`dejavu lesson set ${gate.key} "<one-line fix>"\` — it is shown on every future run of this call.`,
-  ].join("\n")
+  )
+  return lines.join("\n")
 }

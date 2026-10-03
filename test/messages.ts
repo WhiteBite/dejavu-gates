@@ -147,5 +147,13 @@ checker.check(
     block.includes("machine default"),
 )
 
+// override history: bypass acknowledgment line
+const overriddenGate: Gate = { ...gate, key: "overrider00000", overrideCount: 4, overrideSessions: ["a", "b"] }
+const overriddenBlock = blockMessage(overriddenGate, storeDir)
+
+checker.check("blockMessage mentions bypass history when gate has overrides", overriddenBlock.includes("bypass") && overriddenBlock.includes("# dejavu:proceed"))
+checker.check("blockMessage reports override count and distinct sessions", overriddenBlock.includes("4") && overriddenBlock.includes("2"))
+checker.check("blockMessage with no overrides does not mention bypass", !block.includes("bypass") && !blockMessage({ ...gate, overrideSessions: undefined }, storeDir).includes("bypass"))
+
 // summary
 checker.report()
