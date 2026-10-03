@@ -512,6 +512,39 @@ const dfvFail = await dfvStores.recordFailure({ key: patternKey(dfvOmegaSig), si
 check("a vetoed failure records under its own key instead of consolidating", dfvFail.gate.key === patternKey(dfvOmegaSig) && dfvFail.gate.count === 1)
 check("the alpha gate's evidence is untouched by the vetoed sibling", ((await readGates(dfvProjectStore)).find((g) => g.key === patternKey(dfvAlphaSig))?.count ?? 0) === 3)
 
+// --- 19. promotion re-derives machine corrections, preserves authored ones ---
+const prGlobal = join(tmp, "pr-global")
+const prProject = join(tmp, "pr-project")
+const prProjectStore = join(prProject, ".opencode", "dejavu")
+await mkdir(prGlobal, { recursive: true })
+await mkdir(prProjectStore, { recursive: true })
+const prMachineSig = wcSig
+const prMachineKey = patternKey(prMachineSig)
+// outside repairGate's load-time heal templates — only promotion can refresh it
+const prStaleMachine = "This call has failed repeatedly — try a different approach."
+const prAgentSig = "bash:agent-lesson-tool --apply"
+const prAgentKey = patternKey(prAgentSig)
+const prBareSig = "bash:bare-lesson-tool --apply"
+const prBareKey = patternKey(prBareSig)
+await writeFile(join(prProjectStore, "gates.json"), JSON.stringify({ version: 1, gates: [
+  seedGate({ key: prMachineKey, signature: prMachineSig, snippet: "exit code 1", count: 2, correction: prStaleMachine, correctionOrigin: "machine" }),
+  seedGate({ key: prAgentKey, signature: prAgentSig, snippet: "exit code 1", count: 2, correction: "custom agent fix", correctionOrigin: "agent" }),
+  seedGate({ key: prBareKey, signature: prBareSig, snippet: "exit code 1", count: 2 }),
+] }), "utf8")
+const prStores = new Stores(new GateStore(prGlobal), new GateStore(prProjectStore))
+const drivePromotion = (key: string, signature: string): Promise<{ promoted: boolean }> =>
+  prStores.recordFailure({ key, signature, tool: "bash", sessionID: "s3", projectDir: prProject, snippet: "exit code 1", globalProjects: GLOBAL_PROJECTS })
+const prMachineRes = await drivePromotion(prMachineKey, prMachineSig)
+const prAgentRes = await drivePromotion(prAgentKey, prAgentSig)
+const prBareRes = await drivePromotion(prBareKey, prBareSig)
+const prRows = await readGates(prProjectStore)
+const prMachine = prRows.find((g) => g.key === prMachineKey)
+const prAgent = prRows.find((g) => g.key === prAgentKey)
+const prBare = prRows.find((g) => g.key === prBareKey)
+check("promotion re-derives a stale machine-origin correction", prMachineRes.promoted === true && prMachine?.correction === suggestCorrection(prMachineSig, "exit code 1") && prMachine?.correctionOrigin === "machine")
+check("promotion preserves an agent-authored correction", prAgentRes.promoted === true && prAgent?.correction === "custom agent fix" && prAgent?.correctionOrigin === "agent")
+check("promotion derives a correction when none exists", prBareRes.promoted === true && prBare?.correction === suggestCorrection(prBareSig, "exit code 1") && prBare?.correctionOrigin === "machine")
+
 if (process.env.BENCH === "1") {
   const benchProject = join(tmp, "bench-project")
   const benchGlobal = join(tmp, "bench-global")

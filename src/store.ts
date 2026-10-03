@@ -1877,7 +1877,7 @@ export class Stores {
         }
         // A promoted gate always ships with SOME teaching text (mechanical
         // default, overridable) so it never sits "NOT TEACHING" awaiting a human.
-        if (promoted && gate.correction === undefined) {
+        if (promoted && (gate.correction === undefined || gate.correctionOrigin === "machine")) {
           gate.correction = suggestCorrection(gate.signature, gate.snippet)
           gate.correctionOrigin = "machine"
         }
