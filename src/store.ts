@@ -176,6 +176,7 @@ export type LogEventType =
   | "repeat-blocked"
   | "repeat-sanitized"
   | "repeat-windowed"
+  | "repeat-override"
   | "loop-break"
   | "shape-loop"
 

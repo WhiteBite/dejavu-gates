@@ -504,9 +504,15 @@ check(
 rs.ctx.ephemeral.repeatSeries.set("rs-override", { key: signRepeatedCall("bash", { command: rsCommand }), length: 2, logged: 0, blocked: 0, lastBlockAt: 0 })
 const rsOverride = await enforceBefore(ev({ tool: "bash", sessionId: "rs-override", args: { command: rsCommand, [REPEAT_PROCEED]: true } }), rs.ctx)
 check("the repeat override falls through to gate processing", rsOverride.verdict.action === "allow")
-const rsLogText = `${await readFile(join(rs.projectStoreDir, "log.jsonl"), "utf8")}\n${await readFile(join(rs.globalDir, "log.jsonl"), "utf8")}`
-check("repeat-channel log events exist for both paths", rsLogText.includes('"repeat-blocked"') && rsLogText.includes('"override"'))
+const rsProjectLog = await readFile(join(rs.projectStoreDir, "log.jsonl"), "utf8")
+const rsGlobalLog = await readFile(join(rs.globalDir, "log.jsonl"), "utf8").catch(() => "")
+const rsLogText = `${rsProjectLog}\n${rsGlobalLog}`
+check("repeat-channel log events exist for both paths", rsLogText.includes('"repeat-blocked"') && rsLogText.includes('"repeat-override"'))
 check("repeat-channel log keys never carry the secret", !rsLogText.includes("eyJhbGci"))
+const rsEvents = rsProjectLog.split("\n").filter((l) => l !== "").map((l) => JSON.parse(l) as { type?: string; session?: string })
+check("a bypassed repeat series logs a repeat-override event", rsEvents.some((e) => e.type === "repeat-override" && e.session === "rs-override"))
+check("the repeat bypass never logs a gate-level override event", rsEvents.every((e) => e.type !== "override"))
+check("repeat-override stays project-local (not mirrored to the global log)", !rsGlobalLog.includes('"repeat-override"'))
 
 // --- om. a bare marker is data, not a bypass — it must not collapse signatures ---
 check("a bare marker as data does not collapse onto the unmarked signature", callSignature("bash", { command: "grep dejavu:proceed file.txt" }) !== callSignature("bash", { command: "grep file.txt" }))
