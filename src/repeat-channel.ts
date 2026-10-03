@@ -16,6 +16,14 @@ export const SHAPE_LOOP_MIN = 3
 /** a prompt-path block older than this is stale — compaction clones re-fire the channel on a cloned head */
 const BLOCK_LIVE_MS = 120_000
 
+/** Repeat-note correction advice — names only the params the repeated tool actually has. */
+export function repeatAdvice(tool: string): string {
+  if (tool === "bash" || tool === "shell") return "change the command or its args"
+  if (tool === "read" || tool === "glob" || tool === "grep") return "adjust filePath/offset/limit or the pattern"
+  if (tool === "background_output" || tool === "session_read" || tool === "task" || tool === "task_output") return "stop polling — wait for the completion notification"
+  return "change the args or take a different approach"
+}
+
 /** Structural message shape the repeat channel operates on. Hosts cast their
  *  typed payloads to this interface — the channel's contract is in-place
  *  mutation of parts (marker insertion into state.input, notes appended to
@@ -106,7 +114,7 @@ export async function applyRepeatChannel(messages: RepeatChannelMessage[], ctx: 
     if (lastOcc === undefined) continue
     const part = messages[lastOcc.messageIndex]?.parts[lastOcc.partIndex]
     if (part === undefined || part.type !== "tool" || part.state == null) continue
-    const note = `\n\n[dejavu] REPETITION — this exact call has now repeated ${s.occurrences.length} rounds in a row.\nCORRECTION: change the call's args — for background_output/session_read use since_message_id / from_end / limit instead of re-polling with identical params; do not poll background tasks — wait for the completion notification. One more identical repeat and this session dies at the provider (repetitive-call 400).`
+    const note = `\n\n[dejavu] REPETITION — this exact call has now repeated ${s.occurrences.length} rounds in a row.\nCORRECTION: ${repeatAdvice(s.tool)}. One more identical repeat and this session dies at the provider (repetitive-call 400).`
     if (part.state.status === "error" && typeof part.state.error === "string") {
       part.state.error += note
       noted += 1
@@ -134,8 +142,8 @@ export async function applyRepeatChannel(messages: RepeatChannelMessage[], ctx: 
     const advice =
       failingFile !== null
         ? `re-run ONLY the failing file instead of the whole suite: ${failingFile}`
-        : "change the args or take a different approach entirely"
-    const note = `\n\n[dejavu] REPETITION — this exact call ran ${w.count} times in the last ${REPEAT_WINDOW_ROUNDS} rounds.\nCORRECTION: ${advice}; if you are waiting on a background task, wait for its completion notification instead of re-polling.`
+        : repeatAdvice(w.tool)
+    const note = `\n\n[dejavu] REPETITION — this exact call ran ${w.count} times in the last ${REPEAT_WINDOW_ROUNDS} rounds.\nCORRECTION: ${advice}.`
     if ("output" in lastPart.state && typeof lastPart.state.output === "string") {
       lastPart.state.output += note
       windowedNoted += 1
@@ -173,7 +181,7 @@ export async function applyRepeatChannel(messages: RepeatChannelMessage[], ctx: 
         }
         continue
       }
-      const note = `\n\n[dejavu] SHAPE LOOP — this call has run ${sw.count} times in the last ${REPEAT_WINDOW_ROUNDS} rounds with only cosmetic variations (trailing comments, offsets, ordering). It is the same call; re-running it will not produce new information. If you are verifying work, verify once and move on; if you are paging a file, read the whole file once with a bigger limit instead of slices.`
+      const note = `\n\n[dejavu] SHAPE LOOP — this call has run ${sw.count} times in the last ${REPEAT_WINDOW_ROUNDS} rounds with only cosmetic variations (trailing comments, offsets, ordering). It is the same call; re-running it will not produce new information. If you are verifying work, verify once and move on; ${repeatAdvice(sw.tool)}.`
       let attached = false
       if ("output" in lastPart.state && typeof lastPart.state.output === "string") {
         lastPart.state.output += note

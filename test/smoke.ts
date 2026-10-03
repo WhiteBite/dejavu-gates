@@ -2597,6 +2597,18 @@ const r99Msgs12: R99Msg[] = [r99User(), r99Asst({ task_id: "t1" }), r99Asst({ ta
 await r99Transform?.({} as never, { messages: r99Msgs12 } as never)
 const r99NoteOut = r99Msgs12[2]?.parts[0]?.state?.output ?? ""
 check("remind NOTE appended on tail series of length 2", r99TransformReady && r99NoteOut.includes("[dejavu] REPETITION") && r99NoteOut.includes("CORRECTION"))
+check("repeat NOTE advice is tool-keyed: a polling series gets the wait-for-notification advice", r99TransformReady && r99NoteOut.includes("stop polling — wait for the completion notification"))
+const r99MsgsRead: R99Msg[] = [
+  r99User("r99r"),
+  { info: { role: "assistant", sessionID: "r99r" }, parts: [{ type: "tool", tool: "read", state: { status: "completed", output: "ok", input: { filePath: "a.ts" } } }] },
+  { info: { role: "assistant", sessionID: "r99r" }, parts: [{ type: "tool", tool: "read", state: { status: "completed", output: "ok", input: { filePath: "a.ts" } } }] },
+]
+await r99Transform?.({} as never, { messages: r99MsgsRead } as never)
+const r99NoteRead = r99MsgsRead[2]?.parts[0]?.state?.output ?? ""
+check(
+  "repeat NOTE advice is tool-keyed: a read series gets read-family advice, not polling reader params",
+  r99TransformReady && r99NoteRead.includes("adjust filePath/offset/limit or the pattern") && !r99NoteRead.includes("since_message_id"),
+)
 const r99Msgs13: R99Msg[] = [r99User(), r99AsstErr({ task_id: "t1" }), r99AsstErr({ task_id: "t1" })]
 await r99Transform?.({} as never, { messages: r99Msgs13 } as never)
 const r99NoteErr = r99Msgs13[2]?.parts[0]?.state?.error ?? ""

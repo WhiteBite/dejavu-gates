@@ -495,6 +495,11 @@ const rsCommand = "curl -H 'Authorization: Bearer eyJhbGciOiJIUzI1NiJ9.eyJzdWIiO
 rs.ctx.ephemeral.repeatSeries.set("rs-block", { key: signRepeatedCall("bash", { command: rsCommand }), length: 2, logged: 0, blocked: 0, lastBlockAt: 0 })
 const rsBlock = await enforceBefore(ev({ tool: "bash", sessionId: "rs-block", args: { command: rsCommand } }), rs.ctx)
 check("a live tail series at the threshold is repeat-blocked", rsBlock.signalKind === "repeat")
+const rsBlockReason = rsBlock.verdict.reason ?? ""
+check(
+  "a bash repeat-block message carries bash-family advice, not other tools' reader params or a provider brand",
+  !rsBlockReason.includes("since_message_id") && !rsBlockReason.includes("DashScope") && rsBlockReason.includes("the provider hard-rejects") && rsBlockReason.includes("change the command or its args"),
+)
 rs.ctx.ephemeral.repeatSeries.set("rs-override", { key: signRepeatedCall("bash", { command: rsCommand }), length: 2, logged: 0, blocked: 0, lastBlockAt: 0 })
 const rsOverride = await enforceBefore(ev({ tool: "bash", sessionId: "rs-override", args: { command: rsCommand, [REPEAT_PROCEED]: true } }), rs.ctx)
 check("the repeat override falls through to gate processing", rsOverride.verdict.action === "allow")

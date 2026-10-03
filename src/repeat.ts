@@ -1,4 +1,5 @@
 import { REPEAT_MARKER, REPEAT_PROCEED, sanitizeForStore, signRepeatedCall, stripQuotedSpans } from "./patterns"
+import { repeatAdvice } from "./repeat-channel"
 import type { EnforceContext } from "./context"
 import type { NormalizedEvent } from "./types"
 
@@ -46,6 +47,6 @@ export async function repeatSeriesDecision(event: NormalizedEvent, ctx: EnforceC
   }
   return {
     kind: "block",
-    message: `[dejavu] REPEAT BLOCKED — this would be identical call #${entry.length + 1} in a row; DashScope hard-rejects consecutive identical tool calls (HTTP 400) and the session is one repeat away from dying.\nCORRECTION: change the args (readers: since_message_id / from_end / limit) or take a different approach entirely; do not re-issue this call unchanged.\nEVIDENCE: ${entry.length} consecutive identical calls already in this session's history.\nBypass (logged): _dejavu_proceed: true in the call args (or the trailing "# dejavu:proceed" comment for bash).`,
+    message: `[dejavu] REPEAT BLOCKED — this would be identical call #${entry.length + 1} in a row; the provider hard-rejects consecutive identical tool calls (HTTP 400) and the session is one repeat away from dying.\nCORRECTION: ${repeatAdvice(event.tool)}; do not re-issue this call unchanged.\nEVIDENCE: ${entry.length} consecutive identical calls already in this session's history.\nBypass (logged): _dejavu_proceed: true in the call args (or the trailing "# dejavu:proceed" comment for bash).`,
   }
 }
