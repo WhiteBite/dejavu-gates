@@ -3001,6 +3001,7 @@ const r106Populate = async (extra: R99Msg[] = []): Promise<R99Msg[]> => {
 }
 const r106First = await r106Populate()
 check("shape loop: same call with comment churn earns a SHAPE LOOP note", r106First.some((m) => r106ShapeText(m).includes("SHAPE LOOP")))
+check("shape loop: an identical-call churn keeps the no-new-information claim", r106First.some((m) => r106ShapeText(m).includes("will not produce new information")))
 check("shape loop: first detection does not inject", !r106First.some((m) => r106ShapeText(m).includes("loop protection")))
 const r106Second = await r106Populate()
 check("shape loop: a repeated detection injects a loop break", r106Second.some((m) => r106ShapeText(m).includes("loop protection")))
@@ -3020,6 +3021,22 @@ const r106Page: R99Msg[] = [
 ]
 await r106Transform?.({} as never, { messages: r106Page } as never)
 check("shape loop: pagination with moving offsets is one shape", r106Page.some((m) => r106ShapeText(m).includes("SHAPE LOOP")))
+// paging reads produce new content per slice — the note must stay truthful about that
+const r106Read = (input: Record<string, unknown>, sessionID = "r106r"): R99Msg => ({
+  info: { role: "assistant", sessionID },
+  parts: [{ type: "tool", tool: "read", state: { status: "completed", output: "chunk", input } }],
+})
+const r106Chunk: R99Msg[] = [
+  r99User("r106r"),
+  r106Read({ filePath: "a.ts", offset: 0, limit: 50 }),
+  r106Read({ filePath: "a.ts", offset: 100, limit: 50 }),
+  r106Read({ filePath: "a.ts", offset: 200, limit: 50 }),
+]
+await r106Transform?.({} as never, { messages: r106Chunk } as never)
+const r106ChunkNote = r106Chunk.map((m) => r106ShapeText(m)).find((t) => t.includes("SHAPE LOOP")) ?? ""
+check("shape loop: a chunked read note drops the no-new-information claim", r106ChunkNote.includes("SHAPE LOOP") && !r106ChunkNote.includes("will not produce new information"))
+check("shape loop: a chunked read note advises reading the whole file once", r106ChunkNote.includes("whole file") && r106ChunkNote.includes("bigger limit"))
+check("shape loop: a comment-churn bash note keeps the no-new-information claim", r106First.some((m) => r106ShapeText(m).includes("SHAPE LOOP") && r106ShapeText(m).includes("will not produce new information")))
 // different commits stay different shapes — git archaeology is not a loop
 const r106Git: R99Msg[] = [
   r99User("r106g"),

@@ -181,7 +181,9 @@ export async function applyRepeatChannel(messages: RepeatChannelMessage[], ctx: 
         }
         continue
       }
-      const note = `\n\n[dejavu] SHAPE LOOP — this call has run ${sw.count} times in the last ${REPEAT_WINDOW_ROUNDS} rounds with only cosmetic variations (trailing comments, offsets, ordering). It is the same call; re-running it will not produce new information. If you are verifying work, verify once and move on; ${repeatAdvice(sw.tool)}.`
+      // a paged file read returns new content per slice — the identical-call claim would be false there
+      const paging = (sw.tool === "read" || sw.tool === "glob" || sw.tool === "grep") && lastPart.state.input != null && ("offset" in lastPart.state.input || "limit" in lastPart.state.input || "skip" in lastPart.state.input || "from_end" in lastPart.state.input)
+      const note = `\n\n[dejavu] SHAPE LOOP — this call has run ${sw.count} times in the last ${REPEAT_WINDOW_ROUNDS} rounds with only cosmetic variations (trailing comments, offsets, ordering). ${paging ? `This is the same file read in slices (${sw.tool} offset/limit churn) — read the whole file once with a bigger limit instead of re-issuing per-slice reads.` : "It is the same call; re-running it will not produce new information."} If you are verifying work, verify once and move on; ${repeatAdvice(sw.tool)}.`
       let attached = false
       if ("output" in lastPart.state && typeof lastPart.state.output === "string") {
         lastPart.state.output += note
