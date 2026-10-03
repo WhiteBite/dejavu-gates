@@ -258,6 +258,9 @@ export const DEMOTE_OVERRIDES = envInt("DEJAVU_DEMOTE_OVERRIDES", 3, 1, 100)
  * sessions — mirror of DEMOTE_REOFFENSE_SESSIONS: one stubborn/injected
  * session must not disarm a gate for everyone */
 const DEMOTE_OVERRIDE_SESSIONS = 2
+/** reminding-tier demotion is session-vote only (no raw-count bar): bypassing a
+ *  gate that never interrupts is weaker friction, so it needs 5 distinct sessions */
+const DEMOTE_OVERRIDES_REMINDING = 5
 /** recurrence demotion additionally requires this many DISTINCT sessions that
  * reoffended after a reminder — one bad session (or one bad model in a shared
  * store) must not be able to demote a gate for everyone else */
@@ -1160,7 +1163,10 @@ export function checkFeedbackDemotion(gate: Gate): boolean {
   // on current data — first-encounter failures never vote — so recurrence keeps
   // the strict session requirement.)
   const overrideVotes = gate.overrideSessions === undefined ? DEMOTE_OVERRIDE_SESSIONS : gate.overrideSessions.length
-  const overridesEnough = gate.overrideCount - baseOverrides >= DEMOTE_OVERRIDES && overrideVotes >= DEMOTE_OVERRIDE_SESSIONS
+  const overridesEnough =
+    gate.status === "reminding"
+      ? (gate.overrideSessions?.length ?? 0) >= DEMOTE_OVERRIDES_REMINDING
+      : gate.overrideCount - baseOverrides >= DEMOTE_OVERRIDES && overrideVotes >= DEMOTE_OVERRIDE_SESSIONS
   if ((recurredEnough && reoffenseVotes >= DEMOTE_REOFFENSE_SESSIONS) || overridesEnough) {
     gate.status = "watching"
     gate.feedbackDemoted = true

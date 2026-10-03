@@ -1230,18 +1230,33 @@ await (hooksIT["tool.execute.after"] as AfterHook)(
 )
 check("reminding-tier note says the run was NOT interrupted", dartOut.output.includes("NOT interrupted"))
 
-// --- 57. overrides of reminding gates are not counted toward demotion ---
+// --- 57. reminding-gate overrides count and demote by distinct-session vote ---
 const ovRemDir = join(tmp, "override-reminding-project")
 const OV_REM_SIG = "bash:pytest tests/test_x.py"
 await seedGates(ovRemDir, [seedGate({ key: patternKey(OV_REM_SIG), signature: OV_REM_SIG, status: "reminding" })])
 const hooksOR = await Dejavu({ directory: ovRemDir, client: { app: { log: async () => ({}) } } } as unknown as Ctx)
-for (let i = 0; i < DEMOTE_OVERRIDES + 1; i++) {
-  await attemptWith(hooksOR)(`pytest tests/test_x.py # dejavu:proceed`, `or${i}`, `or${i}`)
+for (let i = 0; i < 4; i++) {
+  await attemptWith(hooksOR)(`pytest tests/test_x.py # dejavu:proceed`, `or-s${i}`, `or${i}`)
 }
-const orGates = await readJson(join(ovRemDir, ".opencode", "dejavu", "gates.json"))
-const orGate = orGates.find((g) => g.key === patternKey(OV_REM_SIG))
-check("reminding-tier overrides are not counted on the gate", orGate?.overrideCount === 0)
-check("reminding gate survives mass overrides (no demotion)", orGate?.status === "reminding" && orGate?.feedbackDemoted !== true)
+const orGate = (await readJson(join(ovRemDir, ".opencode", "dejavu", "gates.json"))).find((g) => g.key === patternKey(OV_REM_SIG))
+check("reminding-tier overrides are counted on the gate", orGate?.overrideCount === 4 && (orGate?.overrideSessions?.length ?? 0) === 4)
+check("four distinct sessions stay below the reminding demotion bar", orGate?.status === "reminding" && orGate?.feedbackDemoted !== true)
+await attemptWith(hooksOR)(`pytest tests/test_x.py # dejavu:proceed`, "or-s4", "or4")
+const orDemoted = (await readJson(join(ovRemDir, ".opencode", "dejavu", "gates.json"))).find((g) => g.key === patternKey(OV_REM_SIG))
+check("five distinct bypassing sessions demote a reminding gate", orDemoted?.status === "watching" && orDemoted?.feedbackDemoted === true)
+
+// one stubborn or prompt-injected session cannot reach the 5-session bar alone
+const ovRemOneDir = join(tmp, "override-reminding-one-session")
+await seedGates(ovRemOneDir, [seedGate({ key: patternKey(OV_REM_SIG), signature: OV_REM_SIG, status: "reminding" })])
+const hooksOR1 = await Dejavu({ directory: ovRemOneDir, client: { app: { log: async () => ({}) } } } as unknown as Ctx)
+for (let i = 0; i < 6; i++) {
+  await attemptWith(hooksOR1)(`pytest tests/test_x.py # dejavu:proceed`, "or-same", `or1-${i}`)
+}
+const orOne = (await readJson(join(ovRemOneDir, ".opencode", "dejavu", "gates.json"))).find((g) => g.key === patternKey(OV_REM_SIG))
+check(
+  "reminding overrides from ONE session count but never demote",
+  orOne?.overrideCount === 6 && (orOne?.overrideSessions?.length ?? 0) === 1 && orOne?.status === "reminding" && orOne?.feedbackDemoted !== true,
+)
 
 // --- 58. index churn: EVERY failure is indexed (the old count<2 skip starved
 // once-per-project patterns of cross-project escalation evidence) ---

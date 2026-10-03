@@ -95,11 +95,10 @@ export async function enforceBefore(event: NormalizedEvent, ctx: EnforceContext)
     await ctx.stores.logAll({ type: "override", key: gate.key, tool: gate.tool, session, project: ctx.projectDir })
     // overrides are the sanctioned bypass — surface them loudly (prompt-injection visibility)
     await ctx.log("dejavu", "warn", `dejavu: override (dejavu:proceed) for gate ${gate.key} "${gate.signature}" in session ${session}`)
-    // overrides demote blocking gates (friction); reminding gates never interrupt, so exempt
     let demotedEvent: LogEvent | null = null
     await target.store.runLocked(async () => {
       const fresh = (await target.store.loadForMutation()).find((g) => g.key === gate.key)
-      if (fresh === undefined || fresh.status !== "blocking") return
+      if (fresh === undefined || (fresh.status !== "blocking" && fresh.status !== "reminding")) return
       fresh.overrideCount += 1
       // distinct-session votes: one stubborn/injected session must not disarm the gate
       if (fresh.overrideSessions === undefined) fresh.overrideSessions = []
