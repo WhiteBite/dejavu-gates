@@ -1637,7 +1637,7 @@ check("suggestCorrection: type-error branch", suggestCorrection("bash:npx tsc --
 check("suggestCorrection: network branch", suggestCorrection("bash:curl https://api.example.com", "timeout").startsWith("Network/endpoint"))
 check("suggestCorrection: install branch", suggestCorrection("bash:npm install --legacy-peer-deps", "ERESOLVE").startsWith("Dependency install"))
 check("suggestCorrection: snippet fallback", suggestCorrection("bash:weird custom cmd", "ENOENT: no such file").includes("ENOENT"))
-check("suggestCorrection: generic fallback", suggestCorrection("bash:weird custom cmd", "exit code 1").startsWith("This exact call keeps failing"))
+check("suggestCorrection: generic fallback", suggestCorrection("bash:weird custom cmd", "exit code 1").startsWith("This exact call keeps failing") && suggestCorrection("bash:weird custom cmd", "exit code 1").includes("re-run"))
 
 // --- 78. migration stamp: second start of the same version skips the scan ---
 const stampDir = join(tmp, "stamp-project")

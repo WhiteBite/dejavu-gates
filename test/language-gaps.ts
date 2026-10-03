@@ -78,6 +78,11 @@ expectFamily("make", "bash:make <str>", "make/cmake")
 
 check("suggestCorrection still routes pytest to the test-runner family", suggestCorrection("bash:pytest <path>", "exit code 1").includes("test is failing"))
 
+check("bare exit code null on a unix-only tool teaches the PowerShell form", suggestCorrection("bash:wc -l <str>", "exit code null", "win32").includes("Unix tool"))
+check("exit code null is never quoted as evidence", !suggestCorrection("bash:somecmd <str>", "exit code null", "win32").startsWith('Last error: "exit code'))
+check("exit code unknown is never quoted as evidence", !suggestCorrection("bash:somecmd <str>", "exit code unknown", "win32").startsWith('Last error: "exit code'))
+check("generic fallback is heal-safe (re-run once)", suggestCorrection("bash:somecmd <str>", "", "win32").includes("re-run"))
+
 // --- D4: diagnostic verbs (exit-1 immunity) ---
 check("isIntendedNonzero: mvn test exit 1 is intended", isIntendedNonzero("mvn test"))
 check("isIntendedNonzero: bare mvn exit 1 is NOT intended", !isIntendedNonzero("mvn"))
