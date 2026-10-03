@@ -417,6 +417,45 @@ check("a never-promoted corrected gate expires as expired", rhEvents.some((e) =>
 check("a never-promoted corrected gate never claims retired-healed", !rhEvents.some((e) => e.key === "a1b200000001" && e.type === "retired-healed"))
 check("a promoted corrected gate with zero recurrence still logs retired-healed", rhEvents.some((e) => e.key === "b2c300000001" && e.type === "retired-healed"))
 
+// --- 15b. expired events carry the FP-forensics tombstone ---
+const tbGlobal = join(tmp, "tb-global")
+const tbProjectStore = join(tmp, "tb-project", ".opencode", "dejavu")
+await mkdir(tbGlobal, { recursive: true })
+await mkdir(tbProjectStore, { recursive: true })
+const tbStale = new Date(Date.now() - 90 * 24 * 60 * 60 * 1000).toISOString()
+await writeFile(join(tbProjectStore, "gates.json"), JSON.stringify({ version: 1, gates: [
+  seedGate({ key: "c3d400000001", signature: "bash:human-fix cmd", status: "blocking", count: 3, overrideCount: 4, recurredAfterGate: 2, correction: "human fix text", correctionOrigin: "owner", firstSeen: tbStale, lastSeen: tbStale }),
+  seedGate({ key: "d4e500000001", signature: "bash:machine-fix cmd", count: 3, correction: "machine default text", correctionOrigin: "machine", firstSeen: tbStale, lastSeen: tbStale }),
+] }), "utf8")
+const tbStores = new Stores(new GateStore(tbGlobal), new GateStore(tbProjectStore))
+await tbStores.expireAll(TTL_DAYS, NOISE_TTL_DAYS)
+await tbStores.flushDeferredAll()
+type TombstoneEvent = { type: string; key: string; status?: string; overrideCount?: number; recurredAfterGate?: number; machineDefaultCorrection?: boolean; correction?: string; snippet?: string }
+const tbEvents = (await readFile(join(tbProjectStore, "log.jsonl"), "utf8")).split("\n").filter((l) => l !== "").map((l) => JSON.parse(l) as TombstoneEvent)
+const tbHuman = tbEvents.find((e) => e.key === "c3d400000001" && e.type === "expired")
+check("expired tombstone carries status, counters and the correction", tbHuman !== undefined && tbHuman.status === "blocking" && tbHuman.overrideCount === 4 && tbHuman.recurredAfterGate === 2 && tbHuman.correction === "human fix text")
+check("expired tombstone flags a human correction as not machine-default", tbHuman?.machineDefaultCorrection === false)
+const tbMachine = tbEvents.find((e) => e.key === "d4e500000001" && e.type === "expired")
+check("expired tombstone flags a machine correction as machine-default", tbMachine !== undefined && tbMachine.machineDefaultCorrection === true && tbMachine.correction === "machine default text")
+
+// --- 15c. flood eviction carries the tombstone alongside its snippet ---
+const flGlobal = join(tmp, "fl2-global")
+const flProject = join(tmp, "fl2-project")
+const flProjectStore = join(flProject, ".opencode", "dejavu")
+await mkdir(flGlobal, { recursive: true })
+await mkdir(flProjectStore, { recursive: true })
+const flSeed: GateRow[] = [
+  seedGate({ key: "f10000000001", signature: "bash:fl2 demoted victim", status: "watching", count: 99, feedbackDemoted: true, overrideCount: 4, recurredAfterGate: 2, correction: "human fix text", correctionOrigin: "owner" }),
+  ...Array.from({ length: 1999 }, (_, i) => seedGate({ key: (i + 1).toString(16).padStart(12, "0"), signature: `bash:fl2 filler cmd ${i}` })),
+]
+await writeFile(join(flProjectStore, "gates.json"), JSON.stringify({ version: 1, gates: flSeed }), "utf8")
+const flStores = new Stores(new GateStore(flGlobal), new GateStore(flProjectStore))
+const flSig = "bash:fl2 new pattern cmd"
+await flStores.recordFailure({ key: patternKey(flSig), signature: flSig, tool: "bash", sessionID: "fl2s", projectDir: flProject, snippet: "Error: boom", globalProjects: GLOBAL_PROJECTS })
+await flStores.flushDeferredAll()
+const flEvent = (await readFile(join(flProjectStore, "log.jsonl"), "utf8")).split("\n").filter((l) => l !== "").map((l) => JSON.parse(l) as TombstoneEvent).find((e) => e.type === "expired")
+check("flood eviction keeps its snippet and carries the tombstone", flEvent !== undefined && (flEvent.snippet ?? "").includes("flood guard evicted") && flEvent.key === "f10000000001" && flEvent.overrideCount === 4 && flEvent.recurredAfterGate === 2 && flEvent.correction === "human fix text" && flEvent.machineDefaultCorrection === false)
+
 // --- 16. recordSuccess proves authored corrections ---
 const rsGlobal = join(tmp, "rs-global")
 const rsProjectStore = join(tmp, "rs-project", ".opencode", "dejavu")

@@ -243,6 +243,8 @@ interface Scope {
   quarantineFiles: number
   /** keys promoted ≥2 AND resolved (healed/retired-*) ≥2 times — oscillation */
   flappy: Array<{ key: string; promoted: number; resolved: number }>
+  /** expired events carrying FP evidence (overrides or a machine-default correction) — the tombstone outlives the gate */
+  expiredForensics: Array<{ key: string; tool: string; overrideCount: number; recurredAfterGate: number; correction: string | null }>
   /** version of the process that last SAVED gates.json — durable drift signal */
   lastInitVersion: string | null
 }
@@ -269,6 +271,7 @@ async function loadScope(dir: string, isGlobal: boolean): Promise<Scope> {
   let corruptLogLines = 0
   let degradedEvents = 0
   let floodEvictions = 0
+  const expiredForensics: Scope["expiredForensics"] = []
   // Cross-channel double-count monitor: the same failure recorded by two
   // channels (exit/text AND event) within a short window inflates counts and
   // demotion math. Latent today (channels are disjoint by construction); if
@@ -289,6 +292,16 @@ async function loadScope(dir: string, isGlobal: boolean): Promise<Scope> {
       if (line.trim() === "") continue
       if (line.includes('"type":"degraded"')) degradedEvents++
       if (line.includes("flood guard evicted")) floodEvictions++
+      if (line.includes('"type":"expired"')) {
+        try {
+          const e = JSON.parse(line) as { key?: string; tool?: string; overrideCount?: number; recurredAfterGate?: number; machineDefaultCorrection?: boolean; correction?: string }
+          if (e.key !== undefined && ((e.overrideCount ?? 0) > 0 || e.machineDefaultCorrection === true)) {
+            expiredForensics.push({ key: e.key, tool: e.tool ?? "?", overrideCount: e.overrideCount ?? 0, recurredAfterGate: e.recurredAfterGate ?? 0, correction: e.correction ?? null })
+          }
+        } catch {
+          // counted as corrupt below if unparseable
+        }
+      }
       if (
         line.includes('"type":"promoted"') ||
         line.includes('"type":"healed"') ||
@@ -367,6 +380,7 @@ async function loadScope(dir: string, isGlobal: boolean): Promise<Scope> {
     quarantineBytes,
     quarantineFiles,
     flappy,
+    expiredForensics,
     lastInitVersion,
   }
 }
@@ -404,6 +418,12 @@ for (const scope of scopes) {
   }
   if (scope.floodEvictions > 0) {
     console.log(`   note: FLOOD EVICTIONS (${scope.floodEvictions}) — watching gates evicted to stay at the cap (evidence lost)`)
+  }
+
+  if (scope.expiredForensics.length > 0) {
+    console.log(`   note: EXPIRED-FORENSICS (${scope.expiredForensics.length}) — gates that expired carrying FP evidence (overrides or a machine-default correction); the tombstone outlives the gate:`)
+    for (const t of [...scope.expiredForensics].sort((a, b) => b.overrideCount - a.overrideCount).slice(0, 10))
+      console.log(`     - override x${t.overrideCount} | recurred ${t.recurredAfterGate} | ${t.tool} | ${t.key}${t.correction !== null ? ` | ${t.correction}` : ""}`)
   }
   if (scope.quarantineFiles > 0) {
     console.log(`   note: QUARANTINE ARTIFACTS (${scope.quarantineFiles} file(s), ${(scope.quarantineBytes / 1024).toFixed(1)} KB) — inspect, then safe to delete`)

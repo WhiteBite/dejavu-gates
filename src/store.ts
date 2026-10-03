@@ -214,6 +214,12 @@ export interface LogEvent {
   version?: string
   /** length of the consecutive-identical-call series (repeat channel) */
   repeatCount?: number
+  /** expired-gate tombstone: posthumous FP forensics — the counters and correction vanish with the gate */
+  status?: Gate["status"]
+  overrideCount?: number
+  recurredAfterGate?: number
+  machineDefaultCorrection?: boolean
+  correction?: string
 }
 
 export const MAX_SESSIONS = 50
@@ -283,6 +289,17 @@ function gateExpirable(gate: Gate, ttlDays: number, noiseTtlDays: number, now: n
   // noise TTL is for TRUE one-offs; a twice-seen pattern earns the full TTL so slow recurrences still promote
   const ttl = gate.status !== "watching" || gate.count >= 2 ? ttlDays : noiseTtlDays
   return Date.parse(gate.lastSeen) < now - ttl * DAY_MS
+}
+
+/** Posthumous FP forensics: the override/correction history vanishes with the expired gate — the tombstone keeps it auditable. */
+function expiryTombstone(gate: Gate): Pick<LogEvent, "status" | "overrideCount" | "recurredAfterGate" | "machineDefaultCorrection" | "correction"> {
+  return {
+    status: gate.status,
+    overrideCount: gate.overrideCount,
+    recurredAfterGate: gate.recurredAfterGate,
+    machineDefaultCorrection: gate.correctionOrigin === "machine" || gate.correction === undefined,
+    correction: gate.correction?.slice(0, 200),
+  }
 }
 
 // --- Windows-safe fs helpers -------------------------------------------------
@@ -1343,7 +1360,7 @@ export class Stores {
           if (gate.correction !== undefined && gate.recurredAfterGate === 0 && (gate.promotionCount ?? 0) > 0) {
             store.deferEvent({ type: "retired-healed", key: gate.key, tool: gate.tool, snippet: gate.correction.slice(0, 200) })
           } else {
-            store.deferEvent({ type: "expired", key: gate.key, tool: gate.tool })
+            store.deferEvent({ type: "expired", key: gate.key, tool: gate.tool, ...expiryTombstone(gate) })
           }
         }
       })
@@ -1719,8 +1736,7 @@ export class Stores {
     const phase1 = await store.runLocked(async (): Promise<{ moved: Gate | null; ephemeral: Gate | null; promoted: boolean; iterated: boolean }> => {
       let promoted = false
       let iterated = false
-      let evictedKey: string | null = null
-      let evictedTool = ""
+      let evictedGate: Gate | null = null
       let ephemeral: Gate | null = null
       const gates = await store.loadForMutation()
       let gate = gates.find((g) => g.key === input.key)
@@ -1787,11 +1803,7 @@ export class Stores {
             }
             return { moved: null, ephemeral, promoted: false, iterated: false }
           }
-          const evicted = gates[victimIdx]
-          if (evicted !== undefined) {
-            evictedKey = evicted.key
-            evictedTool = evicted.tool
-          }
+          evictedGate = gates[victimIdx] ?? null
         }
         gate = {
           key: input.key,
@@ -1817,13 +1829,14 @@ export class Stores {
         // index and the enforced cache — a bare splice left byKey() returning
         // the removed gate, and the pattern's next failure re-landed on a
         // detached duplicate (lost evidence).
-        if (evictedKey !== null) {
-          store.extract(new Set([evictedKey]))
+        if (evictedGate !== null) {
+          store.extract(new Set([evictedGate.key]))
           store.deferEvent({
             type: "expired",
-            key: evictedKey,
-            tool: evictedTool,
+            key: evictedGate.key,
+            tool: evictedGate.tool,
             snippet: `flood guard evicted this watching gate to stay at ${MAX_GATES}`,
+            ...expiryTombstone(evictedGate),
           })
         }
       }
