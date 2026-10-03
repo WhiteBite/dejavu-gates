@@ -545,6 +545,59 @@ check("promotion re-derives a stale machine-origin correction", prMachineRes.pro
 check("promotion preserves an agent-authored correction", prAgentRes.promoted === true && prAgent?.correction === "custom agent fix" && prAgent?.correctionOrigin === "agent")
 check("promotion derives a correction when none exists", prBareRes.promoted === true && prBare?.correction === suggestCorrection(prBareSig, "exit code 1") && prBare?.correctionOrigin === "machine")
 
+// --- 20. promotion ADVANCES the retirement baseline instead of deleting it ---
+const rbGlobal = join(tmp, "rb-global")
+const rbProject = join(tmp, "rb-project")
+const rbProjectStore = join(rbProject, ".opencode", "dejavu")
+await mkdir(rbGlobal, { recursive: true })
+await mkdir(rbProjectStore, { recursive: true })
+const rbSig = "bash:cycle-tool --run"
+const rbKey = patternKey(rbSig)
+await writeFile(join(rbProjectStore, "gates.json"), JSON.stringify({ version: 1, gates: [
+  seedGate({ key: rbKey, signature: rbSig, count: 0, sessions: [], snippet: "exit code 1" }),
+] }), "utf8")
+const rbStores = new Stores(new GateStore(rbGlobal), new GateStore(rbProjectStore))
+const rbFail = (sessionID: string): Promise<{ promoted: boolean }> =>
+  rbStores.recordFailure({ key: rbKey, signature: rbSig, tool: "bash", sessionID, projectDir: rbProject, snippet: "exit code 1", globalProjects: GLOBAL_PROJECTS })
+const rbSuccess = (sessionID: string): Promise<void> => rbStores.recordSuccess({ key: rbKey, signature: rbSig, tool: "bash", sessionID })
+const rbRow = async (): Promise<GateRow | undefined> => (await readGates(rbProjectStore)).find((g) => g.key === rbKey)
+const rbBaseline = (row: GateRow | undefined): number | undefined =>
+  row?.retireBaseline === undefined ? undefined : (row.retireBaseline as { count: number }).count
+
+await rbFail("c1")
+await rbFail("c2")
+const rbPromote1 = await rbFail("c2")
+const rbAfter1 = await rbRow()
+check("damping cycle: the first promotion fires at the lifetime bar", rbPromote1.promoted === true)
+check("damping cycle: promotion advances the baseline to the lifetime count", rbBaseline(rbAfter1) === 3)
+
+await rbSuccess("h1")
+await rbSuccess("h1")
+await rbSuccess("h1")
+check("damping cycle: heal retires to watching", (await rbRow())?.status === "watching")
+
+await rbFail("c3")
+await rbFail("c4")
+const rbPromote2 = await rbFail("c4")
+const rbAfter2 = await rbRow()
+check("damping cycle: re-promotion earns a full fresh bar", rbPromote2.promoted === true)
+check("damping cycle: re-promotion ADVANCES the baseline instead of deleting it", rbBaseline(rbAfter2) === 6)
+check("damping cycle: a failure right after re-promotion does not re-promote again", (await rbFail("c5")).promoted === false)
+
+await rbSuccess("h2")
+await rbSuccess("h2")
+await rbSuccess("h2")
+const rbAfter3 = await rbRow()
+check("damping cycle: the second retirement keeps a baseline", rbAfter3?.status === "watching" && rbBaseline(rbAfter3) === 7)
+
+const rbFail6 = await rbFail("c6")
+const rbFail7 = await rbFail("c7")
+const rbAfter4 = await rbRow()
+check("damping cycle: the retired gate does not re-promote before the threshold", rbFail6.promoted === false && rbFail7.promoted === false && rbAfter4?.status === "watching")
+const rbPromote3 = await rbFail("c7")
+const rbAfter5 = await rbRow()
+check("damping cycle: a third promotion fires and advances the baseline again", rbPromote3.promoted === true && rbBaseline(rbAfter5) === 10)
+
 if (process.env.BENCH === "1") {
   const benchProject = join(tmp, "bench-project")
   const benchGlobal = join(tmp, "bench-global")

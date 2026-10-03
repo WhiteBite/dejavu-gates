@@ -1900,9 +1900,8 @@ export class Stores {
           delete gate.overrideSessions
           delete gate.remindedSessions
           delete gate.failedSessions
-          // The damping baseline is consumed by this promotion — the next
-          // retirement will capture a fresh one.
-          delete gate.retireBaseline
+          // Advance the damper to this promotion — re-promotion needs a full fresh bar.
+          gate.retireBaseline = { ...gate.retireBaseline, count: gate.count }
         }
       }
 
