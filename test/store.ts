@@ -656,6 +656,46 @@ const rbPromote3 = await rbFail("c7")
 const rbAfter5 = await rbRow()
 check("damping cycle: a third promotion fires and advances the baseline again", rbPromote3.promoted === true && rbBaseline(rbAfter5) === 10)
 
+// --- 21. promotion flags evidence-poor machine corrections (advisory review) ---
+const sqGlobal = join(tmp, "sq-global")
+const sqProject = join(tmp, "sq-project")
+const sqProjectStore = join(sqProject, ".opencode", "dejavu")
+await mkdir(sqGlobal, { recursive: true })
+await mkdir(sqProjectStore, { recursive: true })
+const sqQuoteSig = "bash:weirdtool <str>"
+const sqQuoteKey = patternKey(sqQuoteSig)
+const sqTscSig = "bash:tsc --noEmit"
+const sqTscKey = patternKey(sqTscSig)
+const sqMakeSig = "bash:make build <str>"
+const sqMakeKey = patternKey(sqMakeSig)
+const sqAgentSig = "bash:agent-weirdtool <str>"
+const sqAgentKey = patternKey(sqAgentSig)
+const sqQuoteSnippet = "Error: weirdtool exploded"
+const sqTscSnippet = "error TS2304: Cannot find name 'x'"
+const sqMakeSnippet = "Error: build target failed"
+await writeFile(join(sqProjectStore, "gates.json"), JSON.stringify({ version: 1, gates: [
+  seedGate({ key: sqQuoteKey, signature: sqQuoteSig, snippet: sqQuoteSnippet, count: 2 }),
+  seedGate({ key: sqTscKey, signature: sqTscSig, snippet: sqTscSnippet, count: 2 }),
+  seedGate({ key: sqMakeKey, signature: sqMakeSig, snippet: sqMakeSnippet, count: 2 }),
+  seedGate({ key: sqAgentKey, signature: sqAgentSig, snippet: sqQuoteSnippet, count: 2, correction: sqQuoteSnippet, correctionOrigin: "agent" }),
+] }), "utf8")
+const sqStores = new Stores(new GateStore(sqGlobal), new GateStore(sqProjectStore))
+const sqFail = (key: string, signature: string, snippet: string): Promise<{ promoted: boolean }> =>
+  sqStores.recordFailure({ key, signature, tool: "bash", sessionID: "s3", projectDir: sqProject, snippet, globalProjects: GLOBAL_PROJECTS })
+const sqQuoteRes = await sqFail(sqQuoteKey, sqQuoteSig, sqQuoteSnippet)
+const sqTscRes = await sqFail(sqTscKey, sqTscSig, sqTscSnippet)
+const sqMakeRes = await sqFail(sqMakeKey, sqMakeSig, sqMakeSnippet)
+const sqAgentRes = await sqFail(sqAgentKey, sqAgentSig, sqQuoteSnippet)
+const sqRows = await readGates(sqProjectStore)
+const sqQuote = sqRows.find((g) => g.key === sqQuoteKey)
+const sqTsc = sqRows.find((g) => g.key === sqTscKey)
+const sqMake = sqRows.find((g) => g.key === sqMakeKey)
+const sqAgent = sqRows.find((g) => g.key === sqAgentKey)
+check("quote-template restate flags review at promotion", sqQuoteRes.promoted === true && sqQuote?.correction === suggestCorrection(sqQuoteSig, sqQuoteSnippet) && sqQuote?.review === true)
+check("family correction with zero signature-token overlap flags review (documented over-fire)", sqTscRes.promoted === true && sqTsc?.correction === suggestCorrection(sqTscSig, sqTscSnippet) && sqTsc?.review === true)
+check("family correction sharing a real token does not flag review", sqMakeRes.promoted === true && sqMake?.correction === suggestCorrection(sqMakeSig, sqMakeSnippet) && sqMake?.review !== true)
+check("an agent-authored correction is never flagged by the evidence rule", sqAgentRes.promoted === true && sqAgent?.correction === sqQuoteSnippet && sqAgent?.correctionOrigin === "agent" && sqAgent?.review !== true)
+
 if (process.env.BENCH === "1") {
   const benchProject = join(tmp, "bench-project")
   const benchGlobal = join(tmp, "bench-global")

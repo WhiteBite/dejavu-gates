@@ -11,7 +11,7 @@ import { readFile, readdir, stat } from "node:fs/promises"
 import { join } from "node:path"
 import { CORRUPT_DEFAULT_DAYS, sweepStoreArtifacts, TMP_ORPHAN_MS } from "../src/fs"
 import { canBlock, canRemind, fuzzySimilar, isRepoLocal, sanitizeForStore } from "../src/patterns"
-import { createStores, DEMOTE_RECURRENCES, GateStore, GLOBAL_PROJECTS, lessonStaleness, MAX_GATES, NOISE_TTL_DAYS, resolveGlobalDir, retireTaught, PLUGIN_VERSION, PROMOTE_SESSIONS, TTL_DAYS, type Gate } from "../src/store"
+import { correctionEvidencePoor, createStores, DEMOTE_RECURRENCES, GateStore, GLOBAL_PROJECTS, lessonStaleness, MAX_GATES, NOISE_TTL_DAYS, resolveGlobalDir, retireTaught, PLUGIN_VERSION, PROMOTE_SESSIONS, TTL_DAYS, type Gate } from "../src/store"
 import { coerceGateShape, hasNestedTokens } from "../src/validate"
 
 const repair = process.argv.includes("--repair")
@@ -595,7 +595,14 @@ for (const scope of scopes) {
   if (reviewFlagged.length > 0) {
     issues += reviewFlagged.length
     console.log(`   REVIEW-FLAGGED (${reviewFlagged.length}) — blocked repeatedly without killing the error; inspect and rewrite the correction:`)
-    for (const g of reviewFlagged.slice(0, 10)) console.log(`     - blocked ${g.blockedCount} | ${g.signature}`)
+    for (const g of reviewFlagged.slice(0, 10)) {
+      const poor =
+        g.correction !== undefined &&
+        g.correctionOrigin !== "owner" &&
+        g.correctionOrigin !== "agent" &&
+        correctionEvidencePoor(g.signature, g.snippet, g.correction)
+      console.log(`     - blocked ${g.blockedCount} | ${poor ? "SUGGESTION-QUALITY (evidence-poor correction) | " : ""}${g.signature}`)
+    }
   }
 
   // Correction-quality signal from the in-session metric: reminders the agent

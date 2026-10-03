@@ -284,6 +284,25 @@ function promotionThreshold(tool: string): number {
   return tool === "bash" ? PROMOTE_COUNT : PROMOTE_COUNT_PROBE
 }
 
+/** A machine correction that restates the failing line or shares no content token with the signature teaches nothing — advisory review flag, never a block. */
+export function correctionEvidencePoor(signature: string, snippet: string, correction: string): boolean {
+  // dequote: parameterizeError eats quoted spans into <str>
+  const dequoted = (s: string): string => s.replace(/["']/g, "")
+  const snippetParam = parameterizeError(dequoted(snippet))
+  if (snippetParam !== "" && parameterizeError(dequoted(correction)).includes(snippetParam)) return true
+  const contentTokens = (s: string): Set<string> =>
+    new Set(
+      s
+        .toLowerCase()
+        .replace(/^[a-z-]+:/, "")
+        .split(/\s+/)
+        .filter((t) => t !== "" && !t.startsWith("-") && !(t.startsWith("<") && t.endsWith(">"))),
+    )
+  const sigTokens = contentTokens(signature)
+  const correctionTokens = contentTokens(correction)
+  return correctionTokens.size > 0 && [...correctionTokens].every((t) => !sigTokens.has(t))
+}
+
 /** Shared expiry rule — expire() and the expireAll unlocked peek must never diverge. */
 function gateExpirable(gate: Gate, ttlDays: number, noiseTtlDays: number, now: number): boolean {
   // noise TTL is for TRUE one-offs; a twice-seen pattern earns the full TTL so slow recurrences still promote
@@ -1900,6 +1919,7 @@ export class Stores {
         if (promoted && (gate.correction === undefined || gate.correctionOrigin === "machine")) {
           gate.correction = suggestCorrection(gate.signature, gate.snippet)
           gate.correctionOrigin = "machine"
+          if (correctionEvidencePoor(gate.signature, gate.snippet, gate.correction)) gate.review = true
         }
         // Fresh enforcement round resets round counters + chains; override friction is lifetime like promotionCount.
         if (promoted) {
