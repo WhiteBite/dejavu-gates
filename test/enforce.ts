@@ -29,6 +29,7 @@ import {
   normalizeFilePath,
   patternKey,
   REPEAT_PROCEED,
+  sanitizeForStore,
   signRepeatedCall,
   suggestCorrection,
 } from "../src/patterns"
@@ -513,6 +514,15 @@ const rsEvents = rsProjectLog.split("\n").filter((l) => l !== "").map((l) => JSO
 check("a bypassed repeat series logs a repeat-override event", rsEvents.some((e) => e.type === "repeat-override" && e.session === "rs-override"))
 check("the repeat bypass never logs a gate-level override event", rsEvents.every((e) => e.type !== "override"))
 check("repeat-override stays project-local (not mirrored to the global log)", !rsGlobalLog.includes('"repeat-override"'))
+
+rs.ctx.ephemeral.repeatSeries.set("rs-comment", { key: signRepeatedCall("bash", { command: rsCommand }), length: 2, logged: 0, blocked: 0, lastBlockAt: 0 })
+const rsComment = await enforceBefore(ev({ tool: "bash", sessionId: "rs-comment", args: { command: `${rsCommand} # dejavu:proceed` } }), rs.ctx)
+check("the comment-form bypass is allowed, not repeat-blocked", rsComment.verdict.action === "allow")
+await rs.stores.flushDeferredAll()
+const rsCommentLog = await readFile(join(rs.projectStoreDir, "log.jsonl"), "utf8")
+const rsCommentEvents = rsCommentLog.split("\n").filter((l) => l !== "").map((l) => JSON.parse(l) as { type?: string; session?: string; key?: string })
+check("the comment-form bypass is recognized as an override of its live series", rsCommentEvents.some((e) => e.type === "repeat-override" && e.session === "rs-comment"))
+check("the comment-form override logs the plain-command series key without the secret", rsCommentEvents.some((e) => e.type === "repeat-override" && e.session === "rs-comment" && e.key === sanitizeForStore(`bash:{"command":"${rsCommand}"}`).slice(0, 80)) && !rsCommentLog.includes("eyJhbGci"))
 
 // --- om. a bare marker is data, not a bypass — it must not collapse signatures ---
 check("a bare marker as data does not collapse onto the unmarked signature", callSignature("bash", { command: "grep dejavu:proceed file.txt" }) !== callSignature("bash", { command: "grep file.txt" }))

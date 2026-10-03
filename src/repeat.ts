@@ -30,8 +30,10 @@ export async function repeatSeriesDecision(event: NormalizedEvent, ctx: EnforceC
     (typeof rawArgs.command === "string" && /#[ \t]*dejavu:proceed\b/.test(stripQuotedSpans(rawArgs.command)))
   delete rawArgs[REPEAT_MARKER]
   delete rawArgs[REPEAT_PROCEED]
+  // comment bypass must not fragment the series key — same strip as the gate tier
+  const identArgs = event.tool === "bash" && typeof rawArgs.command === "string" ? { ...rawArgs, command: rawArgs.command.replace(/\s*#[ \t]*dejavu:proceed\b/gi, "") } : rawArgs
   const entry = ctx.ephemeral.repeatSeries.get(event.sessionId)
-  if (entry === undefined || entry.length < REPEAT_BLOCK_AT - 1 || signRepeatedCall(event.tool, rawArgs) !== entry.key) return null
+  if (entry === undefined || entry.length < REPEAT_BLOCK_AT - 1 || signRepeatedCall(event.tool, identArgs) !== entry.key) return null
   if (bypass) {
     await ctx.stores.logAll({ type: "repeat-override", key: sanitizeForStore(entry.key).slice(0, 80), tool: event.tool, session: event.sessionId, project: ctx.projectDir, repeatCount: entry.length })
     return { kind: "override" }
