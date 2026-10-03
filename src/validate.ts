@@ -16,7 +16,7 @@ const SESSION_STATE_TTL_MS = 24 * 60 * 60 * 1000
 /** bound per-gate session state so long-lived gates cannot bloat */
 const SESSION_STATE_CAP = 50
 /** fixed machine template shape — a byte-equal match around the quoted snippet is machine-generated, never a human edit */
-const AUTO_TEMPLATE_CORRECTION = /^Last error: "(.*)" — address that specific error before retrying this exact call\.$/
+const AUTO_TEMPLATE_CORRECTION = /^Last error: "(.*)" [—-] address that specific error before retrying this exact call\.$/
 /** fixed machine generic shape — a prefix match over both stale generations (em-dash or hyphen), never owner prose */
 const GENERIC_TEMPLATE_CORRECTION = /^This exact call keeps failing [—-]/
 

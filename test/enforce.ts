@@ -30,6 +30,7 @@ import {
   patternKey,
   REPEAT_PROCEED,
   signRepeatedCall,
+  suggestCorrection,
 } from "../src/patterns"
 import { claudeAdapter } from "../src/adapters/claude"
 import { GateStore, GLOBAL_PROJECTS, PROMOTE_COUNT_PROBE, Stores, type Gate } from "../src/store"
@@ -555,6 +556,19 @@ check("repairGate demotes an out-of-policy blocking generic gate to reminding", 
 const repairNoIdentity = repairSeed("mcp__srv__tool:a=<n>")
 repairGate(repairNoIdentity)
 check("repairGate demotes an identity-less generic gate to watching", repairNoIdentity.status === "watching")
+
+// AUTO template corrections survive both dash generations: a hyphen-dash legacy record re-derives like the em-dash one
+const autoDashSig = "bash:deploy <str>"
+const autoDashSeed = (correction: string): Gate => ({ ...repairSeed(autoDashSig), correction })
+const autoHyphen = autoDashSeed('Last error: "Error: boom" - address that specific error before retrying this exact call.')
+check(
+  "repairGate re-derives a hyphen-dashed AUTO template correction and stamps machine origin",
+  repairGate(autoHyphen) === true &&
+    autoHyphen.correction === suggestCorrection(autoDashSig, "Error: boom") &&
+    autoHyphen.correctionOrigin === "machine",
+)
+const autoEmDash = autoDashSeed('Last error: "Error: boom" — address that specific error before retrying this exact call.')
+check("the em-dash AUTO template still re-derives after the flex", repairGate(autoEmDash) === true && autoEmDash.correction === suggestCorrection(autoDashSig, "Error: boom"))
 
 await rm(tmp, { recursive: true, force: true })
 
