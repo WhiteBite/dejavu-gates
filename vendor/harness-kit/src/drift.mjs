@@ -1,8 +1,13 @@
 /** Drift classification for installed hook commands: broken config, missing hooks, or a rotted cli path. Returns facts only. */
 import { entryCommands } from './merge.mjs';
 
-export function extractCliPath(command) {
+export function extractCliPath(command, matcher) {
   if (typeof command !== 'string') return null;
+  if (matcher !== undefined) {
+    const match = command.match(matcher);
+    if (match === null) return null;
+    return match[1] ?? match[0];
+  }
   const quoted = command.match(/"([^"]+\.ts)"/);
   if (quoted !== null) return quoted[1];
   const bare = command.match(/[^\s"]+\.ts/);
@@ -35,13 +40,13 @@ export function collectCommands(config, { shape } = {}) {
 
 export function checkDrift(input, opts) {
   if (!input || input.parseError === true) return { status: 'broken', detail: null };
-  const { shape, identify, pathExists } = opts;
+  const { shape, identify, pathExists, extract = extractCliPath } = opts;
   const config = input.config;
   if (config === undefined || config === null) return { status: 'missing', detail: null };
   const matched = collectCommands(config, { shape }).filter((command) => identify(command));
   if (matched.length === 0) return { status: 'missing', detail: null };
   for (const command of matched) {
-    const cliPath = extractCliPath(command);
+    const cliPath = extract(command);
     if (cliPath === null) return { status: 'stale', detail: null };
     if (pathExists(cliPath) === false) return { status: 'stale', detail: cliPath };
   }

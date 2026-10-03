@@ -1,4 +1,4 @@
-/** Marker-block writers: byte-identical no-op on unchanged content, caller-owned i18n, no message strings in the kit. */
+/** Marker-block writers plus the shell-block reader share one marker regex; no message strings in the kit. */
 import { chmodSync, existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { dirname } from 'node:path';
 
@@ -8,6 +8,11 @@ function requireString(value, name) {
 
 function escapeRegExp(value) {
   return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+function shellBlockRegExp(id) {
+  const escaped = escapeRegExp(id);
+  return new RegExp(`# >>> ${escaped} >>>[\\s\\S]*?# <<< ${escaped} <<<\\r?\\n?`);
 }
 
 function readCurrent(path) {
@@ -21,8 +26,7 @@ function write(path, content) {
 
 function writeShellBlock(path, block, opts) {
   requireString(opts.id, 'id');
-  const escaped = escapeRegExp(opts.id);
-  const pattern = new RegExp(`# >>> ${escaped} >>>[\\s\\S]*?# <<< ${escaped} <<<\\r?\\n?`);
+  const pattern = shellBlockRegExp(opts.id);
   const shebang = typeof opts.shebang === 'string' ? opts.shebang : '#!/bin/sh\n';
   const current = readCurrent(path);
   let action;
@@ -110,4 +114,16 @@ export function writeMarkerBlock(path, block, opts = {}) {
     default:
       throw new Error(`writeMarkerBlock: unknown variant ${JSON.stringify(opts.variant)}`);
   }
+}
+
+/** v1 reads shell blocks only; the matched `text` spans the markers so callers extract inside the block. */
+export function readMarkerBlock(content, { variant, id } = {}) {
+  if (variant !== 'shell-block') {
+    throw new Error(`readMarkerBlock: unsupported variant ${JSON.stringify(variant)}`);
+  }
+  if (typeof id !== 'string' || id === '') throw new Error('readMarkerBlock: opts.id is required');
+  if (typeof content !== 'string') return { present: false, text: null };
+  const match = content.match(shellBlockRegExp(id));
+  if (match === null) return { present: false, text: null };
+  return { present: true, text: match[0] };
 }

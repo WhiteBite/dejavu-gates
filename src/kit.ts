@@ -5,6 +5,7 @@
  */
 import type {
   checkDrift as CheckDriftFn,
+  checkInstall as CheckInstallFn,
   collectCommands as CollectCommandsFn,
   mergeHooks as MergeHooksFn,
   renderTemplate as RenderTemplateFn,
@@ -18,4 +19,5 @@ export const renderTemplate: typeof RenderTemplateFn = kit.renderTemplate
 export const collectCommands: typeof CollectCommandsFn = kit.collectCommands
 // allowJs infers checkDrift's status as plain string; the kit's own .d.mts is the authoritative type
 export const checkDrift: typeof CheckDriftFn = kit.checkDrift as typeof CheckDriftFn
+export const checkInstall: typeof CheckInstallFn = kit.checkInstall as typeof CheckInstallFn
 export type { CheckDriftInput, MergeShape }

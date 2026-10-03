@@ -98,6 +98,14 @@ export type WriteMarkerBlockOpts = ShellBlockOpts | HtmlBlockOpts | FirstLineMar
 /** `block` is the full caller-assembled text for shell/html/first-line; mdc-frontmatter builds bytes from fields + body and ignores it. */
 export function writeMarkerBlock(path: string, block: string, opts: WriteMarkerBlockOpts): MarkerBlockResult;
 
+export interface MarkerReadResult {
+  present: boolean;
+  text: string | null;
+}
+
+/** v1 reads shell blocks only; `text` spans the markers so callers extract inside the block. */
+export function readMarkerBlock(content: string, opts: { variant: 'shell-block'; id: string }): MarkerReadResult;
+
 export type DriftStatus = 'broken' | 'missing' | 'stale' | 'ok';
 export interface DriftResult {
   status: DriftStatus;
@@ -112,11 +120,46 @@ export interface CheckDriftOpts {
   identify: (command: unknown) => boolean;
   pathExists: (cliPath: string) => boolean;
   isMine?: (command: unknown) => boolean;
+  extract?: (command: unknown) => string | null;
 }
 
-export function extractCliPath(command: unknown): string | null;
+export function extractCliPath(command: unknown, matcher?: RegExp): string | null;
 export function collectCommands(config: Record<string, unknown>, options: { shape: MergeShape }): string[];
 export function checkDrift(input: CheckDriftInput, options: CheckDriftOpts): DriftResult;
+
+export interface Finding {
+  surface: string;
+  status: DriftStatus;
+  detail: string | null;
+}
+
+export interface HookConfigSurface {
+  id: string;
+  kind: 'hook-config';
+  path: string;
+  shape: MergeShape;
+  identify: (command: unknown) => boolean;
+  extract?: (command: unknown) => string | null;
+}
+
+export interface MarkerBlockSurface {
+  id: string;
+  kind: 'marker-block';
+  path: string;
+  variant: 'shell-block';
+  markerId: string;
+  extract?: (text: string) => string | null;
+}
+
+export type InstallSurface = HookConfigSurface | MarkerBlockSurface;
+
+export interface CheckInstallOpts {
+  surfaces?: InstallSurface[];
+  pathExists?: (path: string) => boolean;
+}
+
+export function checkInstall(root: string, opts?: CheckInstallOpts): Finding[];
+export function resolveHooksDir(root: string, opts?: { exec?: (args: string[], cwd: string) => string }): string | null;
 
 export declare class ConfigParseError extends Error {
   path: string;
