@@ -1414,6 +1414,15 @@ export function looksLikeFailure(line: string): boolean {
   return FAILURE_SIGNATURES.some((rule) => rule.test(line) || rule.test(bare))
 }
 
+/** True when the text carries 2+ U+FFFD replacement chars: console-codepage mojibake, unreadable as evidence. */
+export function looksLikeMojibake(text: string): boolean {
+  let count = 0
+  for (const ch of text) {
+    if (ch === "\uFFFD") count += 1
+  }
+  return count >= 2
+}
+
 export function detectFailure(outputText: string): FailureDetection {
   // PowerShell colors errors with VT sequences — strip before scanning, or
   // the escapes persist into snippets/corrections shown to the agent.
@@ -1782,6 +1791,10 @@ export function suggestCorrection(signature: string, snippet: string, platform: 
   }
   if (/\b(?:make|cmake)\b/i.test(signature)) {
     return "make/cmake build failed — read the first Error line in the build log (the failing target), fix it, and re-run."
+  }
+  // Quoting mojibake teaches nothing — the correction must point at the real output instead.
+  if (looksLikeMojibake(snippet)) {
+    return "The captured error text is console-codepage mojibake and unreadable — the stored evidence is unreliable; re-run this call and read the actual output this time."
   }
   // A success-shaped snippet is never an error — quoting it ("Last error:
   // '17 passed'") teaches the agent to fix something that worked. Likewise a

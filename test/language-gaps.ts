@@ -9,6 +9,7 @@ import {
   detectFailure,
   hasResidualIdentity,
   isIntendedNonzero,
+  looksLikeMojibake,
   looksLikeSuccess,
   normalizeCommand,
   scrubSecrets,
@@ -82,6 +83,16 @@ check("bare exit code null on a unix-only tool teaches the PowerShell form", sug
 check("exit code null is never quoted as evidence", !suggestCorrection("bash:somecmd <str>", "exit code null", "win32").startsWith('Last error: "exit code'))
 check("exit code unknown is never quoted as evidence", !suggestCorrection("bash:somecmd <str>", "exit code unknown", "win32").startsWith('Last error: "exit code'))
 check("generic fallback is heal-safe (re-run once)", suggestCorrection("bash:somecmd <str>", "", "win32").includes("re-run"))
+
+const mojibakeSnippet = "New-Item: \uFFFD\uFFFD \uFFFD\uFFFD\uFFFD path"
+const mojibakeCorrection = suggestCorrection("bash:new-item <path>", mojibakeSnippet)
+check("mojibake snippet is never quoted as evidence", !mojibakeCorrection.startsWith('Last error: "'))
+check("mojibake correction diagnoses the codepage damage", mojibakeCorrection.includes("mojibake"))
+check("mojibake correction is heal-safe (re-run)", mojibakeCorrection.includes("re-run"))
+check("a single incidental U+FFFD still quotes the readable error", suggestCorrection("bash:somecmd <str>", "Error: cannot read \uFFFDconfig").startsWith('Last error: "'))
+check("looksLikeMojibake: 2+ replacement chars is mojibake", looksLikeMojibake("a\uFFFD\uFFFDb"))
+check("looksLikeMojibake: one replacement char is not mojibake-class", !looksLikeMojibake("a\uFFFDb"))
+check("looksLikeMojibake: plain text is never mojibake", !looksLikeMojibake("plain"))
 
 // --- D4: diagnostic verbs (exit-1 immunity) ---
 check("isIntendedNonzero: mvn test exit 1 is intended", isIntendedNonzero("mvn test"))
