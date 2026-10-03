@@ -1436,7 +1436,7 @@ export function detectFailure(outputText: string): FailureDetection {
  * failure-shaped line — compilers/test runners print their summary last, but a
  * SUCCESS-shaped tail ("17 passed") is never failure evidence: chained commands
  * and `Select-Object -Last N` pipelines put another shard's pass summary there.
- * Prefer the last real error line, then the last non-success line, then the exit code.
+ * Prefer the last real error line, then the last non-success, non-frame line, then the exit code.
  */
 export function failureSnippet(outputText: string, exitCode: number | null): string {
   const lines = stripControl(outputText)
@@ -1448,16 +1448,19 @@ export function failureSnippet(outputText: string, exitCode: number | null): str
       const line = lines[i] ?? ""
       if (looksLikeFailure(line)) return line.slice(0, 200)
     }
-    // No failure-shaped line: the last non-success line beats a bare exit code.
+    // No failure-shaped line: the last non-success, non-frame line beats a bare exit code.
     for (let i = lines.length - 1; i >= 0; i--) {
       const line = lines[i] ?? ""
-      if (!looksLikeSuccess(line)) return line.slice(0, 200)
+      if (!looksLikeSuccess(line) && !/^\s*at\s/.test(line)) return line.slice(0, 200)
     }
     return `exit code ${exitCode}`
   }
-  const tail = lines[lines.length - 1]
-  if (tail !== undefined && tail !== "") return tail.slice(0, 200)
-  return `exit code ${exitCode}`
+  // the raw tail is often a crash banner or frame, not the cause
+  for (let i = lines.length - 1; i >= 0; i--) {
+    const line = lines[i] ?? ""
+    if (!looksLikeSuccess(line) && !/^\s*at\s/.test(line)) return line.slice(0, 200)
+  }
+  return `exit code ${exitCode ?? "unknown"}`
 }
 
 // --- Noise filtering ----------------------------------------------------------
