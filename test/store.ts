@@ -696,6 +696,24 @@ check("family correction with zero signature-token overlap flags review (documen
 check("family correction sharing a real token does not flag review", sqMakeRes.promoted === true && sqMake?.correction === suggestCorrection(sqMakeSig, sqMakeSnippet) && sqMake?.review !== true)
 check("an agent-authored correction is never flagged by the evidence rule", sqAgentRes.promoted === true && sqAgent?.correction === sqQuoteSnippet && sqAgent?.correctionOrigin === "agent" && sqAgent?.review !== true)
 
+// --- 22. hardening epoch: 2.51.0 stamps the store and re-derives stale machine corrections ---
+const veGlobal = join(tmp, "version-epoch-global")
+const veProject = join(tmp, "version-epoch-project")
+const veProjectStore = join(veProject, ".opencode", "dejavu")
+await mkdir(veGlobal, { recursive: true })
+await mkdir(veProjectStore, { recursive: true })
+const veSig = "bash:weirdtool <str>"
+const veKey = patternKey(veSig)
+const VE_STALE_GENERIC = "This exact call keeps failing — inspect the last output line and change approach before retrying."
+await writeFile(join(veProjectStore, "gates.json"), JSON.stringify({ version: 1, gates: [
+  seedGate({ key: veKey, signature: veSig, snippet: "Error: weirdtool exploded", status: "blocking", correction: VE_STALE_GENERIC, correctionOrigin: "machine" }),
+], migrated: PLUGIN_VERSION, lastInitVersion: "2.50.0" }, null, 2), "utf8")
+const veStores = new Stores(new GateStore(veGlobal), new GateStore(veProjectStore))
+await veStores.migrate(true)
+const veAfter = JSON.parse(await readFile(join(veProjectStore, "gates.json"), "utf8")) as { lastInitVersion?: string; gates: GateRow[] }
+check("the hardening batch stamps a fresh version epoch", veAfter.lastInitVersion === "2.51.0")
+check("migrate rewrites a stale machine correction from the old epoch", (veAfter.gates.find((g) => g.key === veKey)?.correction ?? "") !== VE_STALE_GENERIC)
+
 if (process.env.BENCH === "1") {
   const benchProject = join(tmp, "bench-project")
   const benchGlobal = join(tmp, "bench-global")

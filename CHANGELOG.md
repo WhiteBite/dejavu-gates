@@ -1,5 +1,15 @@
 # Changelog
 
+## 2.51.0 - 2026-10-03
+
+### Fixed
+- **Suggestion quality on false-fire gates** - `failureSnippet` never surfaces a success-shaped crash tail (`Node.js vNN`) or a stack-frame line as evidence, and falls back to `exit code unknown`; `suggestCorrection` refuses to quote bare `exit code <n>|null|unknown` snippets, detects console-codepage mojibake (2+ U+FFFD) and teaches a re-run with readable output instead of quoting garbage, and the generic fallback is heal-safe (invites one re-run instead of "change approach before retrying"). `repairGate` re-derives both generations of stale generic-template corrections (em- and hyphen-dash), the AUTO template accepts both dashes, and every promotion re-derives machine-origin corrections so stale family text cannot persist.
+- **Repeat-channel advice is tool-keyed and provider-neutral** - the REPEAT BLOCKED/REPETITION/SHAPE LOOP notes carry advice for the repeated tool's actual knobs (`repeatAdvice(tool)`) instead of hardcoded OpenCode reader params (`since_message_id / from_end / limit`); the rationale names "the provider" instead of DashScope; SHAPE LOOP notes for paged file reads (`offset`/`limit`/`skip`/`from_end` churn on read-family tools) teach reading the whole file once instead of claiming "no new information"; comment-form `# dejavu:proceed` bypasses no longer fragment the series identity (the repeat tier recognizes and logs them as `repeat-override`, a new event type distinct from gate-level `override` events).
+- **Override feedback closes on every tier** - bypasses count on reminding gates too (previously dead code: `before.ts` only counted blocking-tier overrides, the live `wc -l` gate held 21 override events with a stored count of 0); reminding-tier demotion needs 5 DISTINCT bypassing sessions (session-vote only — no raw-count bar, one stubborn session cannot disarm a gate); promotion preserves `overrideCount`/`overrideSessions` (lifetime friction, like `promotionCount`) instead of wiping them each round; `blockMessage` states the bypass history and the demotion rule, steering agents to OPEN `dejavu:proceed` bypasses over renames.
+- **Flappy-gate oscillation damped** - promotion ADVANCES `retireBaseline.count` to the current lifetime count instead of deleting it, so re-promotion always needs a full fresh bar of failures and the promote→retire limit cycle converges.
+- **Posthumous gate forensics** - `expired` events carry a tombstone (`status`, `overrideCount`, `recurredAfterGate`, `machineDefaultCorrection`, `correction` slice) so a false-positive gate's history survives its TTL; doctor renders an EXPIRED-FORENSICS report for gates that expired carrying override evidence or machine-default corrections.
+- **Evidence-poor corrections flagged at promotion** - `correctionEvidencePoor` (restate-detection via parameterized containment + zero content-token overlap with the signature) sets an advisory `review` flag on machine-derived promotions; doctor labels REVIEW-FLAGGED gates with SUGGESTION-QUALITY. Promotion stays mechanical (3 failures × 2 sessions); the flag never blocks.
+
 ## 2.50.0 - 2026-10-02
 
 ### Added
