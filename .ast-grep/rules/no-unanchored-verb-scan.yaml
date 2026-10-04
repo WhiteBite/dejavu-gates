@@ -1,0 +1,12 @@
+id: no-unanchored-verb-scan
+language: typescript
+severity: error
+files:
+  - src/patterns.ts
+message: "Scanning a tier verb list directly (DIAGNOSTIC_VERBS/UNIX_VIEWER_VERBS/REPO_LOCAL_VERBS .some(...)) classifies by any substring — `mkdir ls`, `./ls`, `git ls-remote` get mis-tiered. Route through matchesAtHead()/producerHeadMatches() so the verb anchors to the segment head."
+note: "Root cause: a whole-signature regex.test() let an argument/flag/path substring decide the diagnostic, viewer or repo-local tier (2.52.0 W4). The lists are vocabulary; the anchored helpers are the only consumption point."
+rule:
+  any:
+    - pattern: DIAGNOSTIC_VERBS.some($$$)
+    - pattern: UNIX_VIEWER_VERBS.some($$$)
+    - pattern: REPO_LOCAL_VERBS.some($$$)

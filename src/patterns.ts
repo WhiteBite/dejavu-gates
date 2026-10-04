@@ -398,12 +398,82 @@ const DIAGNOSTIC_VERBS: RegExp[] = [
   /\b(?:test-path|resolve-path|measure-object)\b/i,
 ]
 
-function isDiagnosticText(text: string): boolean {
-  return DIAGNOSTIC_VERBS.some((rule) => rule.test(text))
+/** Inline env assignments (`FOO=bar`, `$env:CI="true"`) precede the command. */
+const ENV_ASSIGNMENT_TOKEN = /^(?:\$env:)?[a-z_][a-z0-9_]*=/i
+/** Navigation and package-runner heads WRAP the real verb (`cd X npx vitest`). */
+const NAVIGATION_HEAD = /^(?:cd|set-location|pushd|popd)$/i
+const RUNNER_HEADS = new Set(["npx", "bunx"])
+const FLAG_HEAD = /^-\S/
+/** A path-qualified executable is a different program (`./ls` is not `ls`). */
+const PATH_QUALIFIED_HEAD = /[\\/]/
+
+function tokensOf(text: string): string[] {
+  return text.trim().split(/\s+/).filter((token) => token !== "")
 }
 
+/** True when a verb pattern matches at the START of the head — the tiers anchor
+ * on the command name, never on an argument, flag value or path substring. */
+function matchesAtHead(patterns: RegExp[], head: string, accept?: (match: RegExpExecArray) => boolean): boolean {
+  return patterns.some((rule) => {
+    const match = rule.exec(head)
+    return match !== null && match.index === 0 && (accept === undefined || accept(match))
+  })
+}
+
+/** Segment head after leading env assignments, for viewer/scope classification. */
+function commandHead(text: string): string {
+  const tokens = tokensOf(text)
+  let i = 0
+  while (ENV_ASSIGNMENT_TOKEN.test(tokens[i] ?? "")) i += 1
+  return tokens.slice(i).join(" ")
+}
+
+function isDiagnosticText(text: string): boolean {
+  const tokens = tokensOf(text)
+  let i = 0
+  while (ENV_ASSIGNMENT_TOKEN.test(tokens[i] ?? "")) i += 1
+  if (NAVIGATION_HEAD.test(tokens[i] ?? "")) i += 2
+  while (RUNNER_HEADS.has((tokens[i] ?? "").toLowerCase())) {
+    i += 1
+    while (FLAG_HEAD.test(tokens[i] ?? "")) i += 1
+  }
+  const head = tokens.slice(i).join(" ")
+  if (matchesAtHead(DIAGNOSTIC_VERBS, head)) return true
+  const token = tokens[i] ?? ""
+  if (PATH_QUALIFIED_HEAD.test(token)) {
+    const base = baseName(token)
+    if (base !== "" && base !== token.toLowerCase()) {
+      // a path-qualified head needs a subcommand (`./gradlew test`), never a bare `./ls`
+      const viaPath = [base, ...tokens.slice(i + 1)].join(" ")
+      return matchesAtHead(DIAGNOSTIC_VERBS, viaPath, (match) => match[0].length > base.length)
+    }
+  }
+  return false
+}
+
+/** True when every producer segment naming a concrete call is diagnostic; a
+ * segment without residual identity (`<str>`) is unknown, not non-diagnostic. */
 export function isDiagnosticSignature(signature: string): boolean {
-  return isDiagnosticText(signature)
+  const body = signature.startsWith("bash:") ? signature.slice("bash:".length) : signature
+  let sawDiagnostic = false
+  for (const { text, pipeTail } of splitChainTagged(body)) {
+    if (isTransparentSegment(text, pipeTail)) continue
+    if (!segmentHasIdentity(text)) continue
+    if (!isDiagnosticText(text)) return false
+    sawDiagnostic = true
+  }
+  return sawDiagnostic
+}
+
+/** Head-anchored verb scan over PRODUCER segments only (transparent nav/env and
+ * pipe tails can never be the command). */
+function producerHeadMatches(signature: string, patterns: RegExp[]): boolean {
+  const body = signature.startsWith("bash:") ? signature.slice("bash:".length) : signature
+  for (const { text, pipeTail } of splitChainTagged(body)) {
+    if (isTransparentSegment(text, pipeTail)) continue
+    if (matchesAtHead(patterns, commandHead(text))) return true
+  }
+  return false
 }
 
 /** Pipeline formatters shape output but are never the failing producer WHEN
@@ -800,7 +870,7 @@ const UNIX_VIEWER_VERBS: RegExp[] = [
 ]
 
 function isUnixViewerSignature(signature: string): boolean {
-  return UNIX_VIEWER_VERBS.some((rule) => rule.test(signature))
+  return producerHeadMatches(signature, UNIX_VIEWER_VERBS)
 }
 
 /** File probes: dedicated shapes, routine failures, measured only — never any enforcement tier. */
@@ -845,7 +915,7 @@ const REPO_LOCAL_VERBS: RegExp[] = [
 export function isRepoLocal(signature: string): boolean {
   // repo-local verbs are a bash-tier concept — a file path merely containing "git" must not inherit it
   if (!signature.startsWith("bash:")) return false
-  return REPO_LOCAL_VERBS.some((rule) => rule.test(signature))
+  return producerHeadMatches(signature, REPO_LOCAL_VERBS)
 }
 
 // --- Chain splitting ---------------------------------------------------------
@@ -1323,7 +1393,8 @@ const FAILURE_SIGNATURES: RegExp[] = [
   // Compiler/tool error prefixes that carry a bracket before the colon:
   // Rust "error[E0308]:" and Maven/SBT "[ERROR] ...".
   /^\s*error\s*\[/i,
-  /^\s*\[ERROR\]/i,
+  // esbuild prefixes its "[ERROR]" line with ✘ (U+2718) — tolerate either glyph
+  /^\s*[✘✖]?\s*\[ERROR\]/i,
   // Go: "--- FAIL: TestName", "FAIL\tpkg", standalone "FAIL" (uppercase; pass is
   // "ok\tpkg"). \b keeps it off "FAILED"/"FAILURE".
   /\bFAIL\b/,

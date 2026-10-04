@@ -4,6 +4,7 @@
  */
 import {
   bashSegmentSignatures,
+  callSignature,
   canBlock,
   canRemind,
   detectFailure,
@@ -181,5 +182,32 @@ for (const [line, name] of NOT_FAILURES) {
 check("leading whitespace converges with the trimmed command", normalizeCommand(" npm run z") === normalizeCommand("npm run z") && normalizeCommand(" npm run z") === "run z")
 check("a flag value never swallows the code flag", normalizeCommand("php -d -e=2 -r") === "php -d -e<code:60d674ab>" && normalizeCommand(normalizeCommand("php -d -e=2 -r")) === normalizeCommand("php -d -e=2 -r"))
 check("placeholder debris in the payload is data, not code", normalizeCommand('node -e <str> "') === 'node -e <str> "' && normalizeCommand('lua -e <str> prnit( <n> )"') === 'lua -e <str> prnit( <n> )"')
+
+// --- D8: diagnostic verbs anchor to the segment head (W4) ---
+const headMisTiers: Array<[string, string]> = [
+  ["mkdir ls", "verb as an argument"],
+  ["./ls", "path-qualified executable"],
+  ["git ls-remote origin", "verb inside a hyphenated subcommand"],
+  ["mytool --tsc", "verb as a flag value"],
+  ["./scripts/tsc.sh --strict", "verb inside a script name"],
+]
+for (const [cmd, why] of headMisTiers) {
+  check(`head anchor: exit 1 records (not intended) - ${cmd} (${why})`, !isIntendedNonzero(cmd))
+  check(`head anchor: block-eligible (not diagnostic) - ${cmd}`, canBlock("bash", callSignature("bash", { command: cmd }) ?? ""))
+}
+check("head anchor: mixed chain run build && ls is block-eligible", canBlock("bash", callSignature("bash", { command: "npm run build && ls" }) ?? ""))
+check("head anchor: mixed chain run build && ls is not exit-1 immune", !isIntendedNonzero("npm run build && ls"))
+check("head anchor positive: tsc --noEmit exit 1 stays intended", isIntendedNonzero("tsc --noEmit"))
+check("head anchor positive: npx tsc stays remind-only", canRemind("bash", "bash:npx tsc") && !canBlock("bash", "bash:npx tsc"))
+check("head anchor positive: mvn test / gradlew test stay intended", isIntendedNonzero("mvn test") && isIntendedNonzero("gradlew test"))
+check("head anchor positive: ./gradlew test (local wrapper) stays intended", isIntendedNonzero("./gradlew test"))
+check("head anchor positive: cargo build / go test / npm test stay intended", isIntendedNonzero("cargo build") && isIntendedNonzero("go test") && isIntendedNonzero("npm test"))
+check("head anchor positive: npm run typecheck / grep / pytest stay intended", isIntendedNonzero("npm run typecheck") && isIntendedNonzero("grep foo bar") && isIntendedNonzero("pytest -q"))
+
+// --- D9: esbuild error glyph on the text channel ---
+check("detects esbuild glyph error line", detectFailure('✘ [ERROR] Could not resolve "./missing"').matched)
+check("detects the filled-circle error glyph too", detectFailure("✖ [ERROR] could not resolve").matched)
+check("plain [ERROR] still detects", detectFailure("[ERROR] could not resolve").matched)
+check("a lone glyph without [ERROR] is not a failure", !detectFailure("✘ some decoration").matched)
 
 report()

@@ -389,6 +389,7 @@ check("canonical run typecheck stays remind-only, never blocking", canRemind("ba
 check("canonical run build keeps blocking teeth", canBlock("bash", "bash:run build"))
 check("canonical run test still reminds (script arg is identity)", canRemind("bash", "bash:run test"))
 check("canonical run <str> stays a family (no identity)", !canBlock("bash", "bash:run <str>") && !canRemind("bash", "bash:run <str>"))
+check("mixed chain with a diagnostic tail stays block-eligible", canBlock("bash", "bash:run build && ls"))
 check("canonical package scripts stay repo-local", isRepoLocal("bash:run build") && isRepoLocal("bash:npx tsc --noemit"))
 
 // --- ws1. generic (unknown) tool signatures: deterministic, remind-only ---
