@@ -8,7 +8,7 @@ import { spawnSync } from "node:child_process"
 import { existsSync } from "node:fs"
 import { mkdir, mkdtemp, readFile, readdir, stat, utimes, writeFile } from "node:fs/promises"
 import { tmpdir } from "node:os"
-import { join } from "node:path"
+import { isAbsolute, join, relative } from "node:path"
 import { fileURLToPath } from "node:url"
 import { atomicWrite, CORRUPT_DEFAULT_DAYS, ntPath, sweepStoreArtifacts, TMP_ORPHAN_MS } from "../src/fs"
 import { callSignature, fuzzySimilar, patternKey, suggestCorrection } from "../src/patterns"
@@ -739,6 +739,40 @@ check("migrate demotes a legacy literal-output blocking gate to watching", tcRow
 check("migrate demotes a textOnly blocking gate (canRemind false → watching)", tcRows.find((g) => g.key === tcToolKey)?.status === "watching")
 check("migrate demotes a textOnly diagnostic blocking gate to reminding", tcRows.find((g) => g.key === tcDiagKey)?.status === "reminding")
 check("the retro-demotion logs demoted events", (await readFile(join(tcProjectStore, "log.jsonl"), "utf8")).includes('"demoted"'))
+
+// --- 24. project gates.json persists repo-relative projects[] (no machine paths) ---
+const rpGlobal = join(tmp, "relpath-global")
+const rpProject = join(tmp, "relpath-project")
+const rpProjectStore = join(rpProject, ".opencode", "dejavu")
+const rpSub = join(rpProject, "packages", "app")
+const rpEscB = join(tmp, "relpath-project-b")
+const rpStoreB = join(rpEscB, ".opencode", "dejavu")
+await mkdir(rpGlobal, { recursive: true })
+await mkdir(rpProjectStore, { recursive: true })
+await mkdir(rpSub, { recursive: true })
+await mkdir(rpStoreB, { recursive: true })
+const rpSig = callSignature("bash", { command: "relpath-probe --persist" }) ?? ""
+const rpKey = patternKey(rpSig)
+const rpStores = new Stores(new GateStore(rpGlobal), new GateStore(rpProjectStore))
+await rpStores.recordFailure({ key: rpKey, signature: rpSig, tool: "bash", sessionID: "rp1", projectDir: rpProject, snippet: "Error: boom", globalProjects: GLOBAL_PROJECTS })
+const rpRow = (await readGates(rpProjectStore)).find((g) => g.key === rpKey)
+check("a failure recorded from the root persists projects as ['.']", JSON.stringify(rpRow?.projects) === '["."]')
+const rpMem = await new GateStore(rpProjectStore).load()
+check("the in-memory view resolves relative entries back to absolute dirs", (rpMem.find((g) => g.key === rpKey)?.projects ?? []).includes(rpProject))
+const rpEsc = await new Stores(new GateStore(rpGlobal), new GateStore(rpStoreB)).recordFailure({ key: rpKey, signature: rpSig, tool: "bash", sessionID: "rp2", projectDir: rpEscB, snippet: "Error: boom", globalProjects: GLOBAL_PROJECTS })
+check("escalation still fires with relative project entries", rpEsc.wentGlobal === true)
+const rpGlobalRow = (await readGates(rpGlobal)).find((g) => g.key === rpKey)
+const rpGlobalProjects = rpGlobalRow?.projects as string[] | undefined
+check("the escalated global gate keeps absolute project dirs", rpGlobalProjects !== undefined && rpGlobalProjects.includes(rpEscB) && rpGlobalProjects.every((p) => isAbsolute(p)))
+const rpIdx = JSON.parse(await readFile(join(rpGlobal, "index.json"), "utf8")) as { keys: Record<string, { projects: string[] }> }
+check("the global index.json still carries the absolute project dirs", (rpIdx.keys[rpKey]?.projects.includes(rpProject) ?? false) && (rpIdx.keys[rpKey]?.projects.includes(rpEscB) ?? false))
+const rpSubSig = callSignature("bash", { command: "relpath-probe --subdir" }) ?? ""
+const rpSubKey = patternKey(rpSubSig)
+await rpStores.recordFailure({ key: rpSubKey, signature: rpSubSig, tool: "bash", sessionID: "rp3", projectDir: rpSub, snippet: "Error: boom", globalProjects: GLOBAL_PROJECTS })
+const rpSubRow = (await readGates(rpProjectStore)).find((g) => g.key === rpSubKey)
+check("a failure recorded from a subdir persists the relative subpath", ((rpSubRow?.projects as string[] | undefined) ?? []).includes(relative(rpProject, rpSub)))
+const rpRaw = await readFile(join(rpProjectStore, "gates.json"), "utf8")
+check("the project gates.json carries no absolute machine path", !rpRaw.includes(tmp))
 
 if (process.env.BENCH === "1") {
   const benchProject = join(tmp, "bench-project")

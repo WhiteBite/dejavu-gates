@@ -239,7 +239,7 @@ Language ecosystems covered by failure detection: JS/TS, Python, Go, Rust, Java/
 
 The store paths are historical (`.opencode/`) but the store is harness-neutral — ALL harnesses share it. Both files are human-editable. Removing a gate object disables it. Editing `correction` improves what the agent is told. Clearing `feedbackDemoted` (and setting `status` back to `blocking`/`reminding`) re-enforces a gate the agent's behavior retired — it gets a fresh grace window via `feedbackBaseline`.
 
-Project stores keep themselves out of `git status`: init writes a self-ignoring `.opencode/dejavu/.gitignore` — `gates.json` stays committable (shared repo gotchas), runtime files (log, index, locks, tmp) are ignored — and `doctor --repair` sweeps orphaned `*.tmp` files and stale `*.lock` files (`--prune-corrupt=<days>` opts into deleting quarantine artifacts past the age; default 30 days).
+Project stores keep themselves out of `git status`: init writes a self-ignoring `.opencode/dejavu/.gitignore` — `gates.json` is designed to be committable (shared repo gotchas; it carries repo-relative project paths and session ids, no absolute machine paths), runtime files (log, index, locks, tmp) are ignored — and `doctor --repair` sweeps orphaned `*.tmp` files and stale `*.lock` files (`--prune-corrupt=<days>` opts into deleting quarantine artifacts past the age; default 30 days). A root-level `.gitignore` rule for `.opencode/` overrides the nested re-include — repos that ignore `.opencode/` at the root must adjust their ignore rules to actually commit `gates.json`.
 
 ### Environment overrides
 

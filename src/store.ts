@@ -1,7 +1,7 @@
 import { existsSync } from "node:fs"
 import { appendFile, mkdir, readFile, stat, unlink, writeFile } from "node:fs/promises"
 import { homedir } from "node:os"
-import { dirname, join } from "node:path"
+import { dirname, isAbsolute, join, relative } from "node:path"
 import { atomicWrite, ntPath } from "./fs"
 import { canBlock, canRemind, fuzzySimilar, FUZZY_MAX_LEN, hasGenericResidualIdentity, hasResidualIdentity, isGenericSignature, isNoiseError, isRepoLocal, looksLikeFailure, parameterizeError, sanitizeForStore, scrubSecrets, suggestCorrection, type DfIndex } from "./patterns"
 import { coerceGateShape, failedAtMs, isAutoCorrection, repairGate } from "./validate"
@@ -465,6 +465,18 @@ async function withFileLock<T>(
   }
 }
 
+/** Disk form of one projects[] entry: absolute dirs become repo-relative ("" → ".") so the committable project gates.json carries no machine paths. */
+function toRepoRelative(root: string, p: string): string {
+  if (!isAbsolute(p)) return p
+  const rel = relative(root, p)
+  return rel === "" ? "." : rel
+}
+
+/** In-memory form of one persisted projects[] entry: repo-relative paths resolve back against the store's owning root. */
+function toAbsoluteDir(root: string, p: string): string {
+  return isAbsolute(p) ? p : join(root, p)
+}
+
 export class GateStore {
   private gates: Gate[] | null = null
   private mtimeMs = 0
@@ -496,6 +508,12 @@ export class GateStore {
   routeSalientTo: GateStore | null = null
 
   constructor(public readonly dir: string) {}
+
+  /** The repo root owning this store when dir has the production project shape (<root>/.opencode/dejavu); null for the global store and ad-hoc dirs. */
+  private get repoRoot(): string | null {
+    const suffix = join(".opencode", "dejavu")
+    return this.dir.endsWith(suffix) && this.dir.length > suffix.length ? dirname(dirname(this.dir)) : null
+  }
 
   /** PLUGIN_VERSION that last ran migrate() on this store (null = never). */
   get migratedVersion(): string | null {
@@ -676,10 +694,13 @@ export class GateStore {
       return this.gates
     }
     const gates: Gate[] = []
+    const repoRoot = this.repoRoot
     for (const record of records) {
       const gate = coerceGateShape(record)
       if (gate === null) continue
       repairGate(gate)
+      // committable gates.json holds repo-relative dirs; the engine only ever sees absolute ones
+      if (repoRoot !== null) gate.projects = gate.projects.map((p) => toAbsoluteDir(repoRoot, p))
       gates.push(gate)
     }
     this.gates = gates
@@ -728,11 +749,19 @@ export class GateStore {
     return this.dfCache
   }
 
+  /** Disk view of the gates: a project store persists projects[] repo-relative; the in-memory view stays absolute (escalation, index and merge logic count distinct dirs). */
+  private persistedGates(): Gate[] {
+    const root = this.repoRoot
+    const gates = this.gates ?? []
+    if (root === null) return gates
+    return gates.map((g) => (g.projects.length === 0 ? g : { ...g, projects: g.projects.map((p) => toRepoRelative(root, p)) }))
+  }
+
   async save(): Promise<void> {
     if (this.gates === null) return
     this.revision++
     await mkdir(ntPath(this.dir), { recursive: true })
-    const payload: GatesFile = { version: 1, gates: this.gates }
+    const payload: GatesFile = { version: 1, gates: this.persistedGates() }
     if (this.migratedStamp !== null) payload.migrated = this.migratedStamp
     // The WRITER's own version, stamped on every save — a stale plugin session
     // leaves its old version here (durable drift signal; log inits rotate away).
@@ -996,6 +1025,11 @@ export class GateStore {
             }
           }
           const merged = parsed.gates.length - dropped - byKey.size
+          // reconcile parses past load(), so the persisted relative dirs need the same absolutize step
+          const repoRoot = this.repoRoot
+          if (repoRoot !== null) {
+            for (const gate of byKey.values()) gate.projects = gate.projects.map((p) => toAbsoluteDir(repoRoot, p))
+          }
           if (dropped === 0 && repaired === 0 && merged === 0) {
             // no-op heal skips the rewrite; the parsed view refreshes the cache like save() would
             this.gates = [...byKey.values()]
