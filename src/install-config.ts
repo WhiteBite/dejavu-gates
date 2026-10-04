@@ -56,8 +56,11 @@ export const HARNESSES: Record<Harness, HarnessSpec> = {
 const SRC_DIR = (import.meta as ImportMeta & { dir: string }).dir
 const PACKAGE_ROOT = dirname(SRC_DIR).replace(/\\/g, "/")
 
-/** Hook commands invoke bare `bun` (resolved from the harness's PATH) against the absolute cli.ts of THIS install. */
-const CLI_COMMAND = `bun "${PACKAGE_ROOT}/src/cli.ts"`
+/** Hook commands invoke the resolved bun binary (absolute when resolvable — survives a stripped GUI PATH; bare `bun` fallback) against the absolute cli.ts of THIS install. */
+function cliCommand(): string {
+  const bun = resolveBunPath()
+  return `${bun === null ? "bun" : `"${bun}"`} "${PACKAGE_ROOT}/src/cli.ts"`
+}
 
 const USER_MARKERS: Record<Harness, readonly string[]> = {
   claude: [".claude"],
@@ -99,11 +102,19 @@ export class ConfigParseError extends Error {
   }
 }
 
-function bunOnPath(): boolean {
-  return spawnSync(process.platform === "win32" ? "where" : "which", ["bun"], { stdio: "ignore" }).status === 0
+/** Absolute bun binary path resolved from the current PATH, or null when bun is unresolvable. */
+export function resolveBunPath(): string | null {
+  const found = spawnSync(process.platform === "win32" ? "where" : "which", ["bun"], { encoding: "utf8" })
+  if (found.status !== 0) return null
+  const first = (found.stdout ?? "").split("\n").map((line) => line.trim()).filter((line) => line !== "")[0]
+  return first === undefined ? null : first
 }
 
-/** Hook commands invoke bare `bun` — it must resolve in the harness's shell PATH. */
+function bunOnPath(): boolean {
+  return resolveBunPath() !== null
+}
+
+/** Hook commands invoke bun — it must resolve in the harness's shell PATH. */
 export function probeBun(): void {
   if (!bunOnPath()) throw new Error("bun is not on PATH — add bun to PATH so harness-spawned hooks can run")
 }
@@ -113,10 +124,23 @@ export function warnIfNoBun(): void {
   if (!bunOnPath()) process.stderr.write("warning: bun is not on PATH — harness-spawned hooks will not run until bun is added to PATH\n")
 }
 
+/** Runtime bun resolvability: the current env vs the stripped env a GUI-launched harness sees. */
+export interface BunRuntime {
+  readonly currentEnv: boolean
+  readonly sanitizedEnv: boolean
+}
+
+/** Spawn `bun --version` under a minimal GUI-like env — hooks only run when bun resolves there too. */
+export function probeBunRuntime(): BunRuntime {
+  const systemRoot = process.env.SystemRoot ?? "C:\\Windows"
+  const env: NodeJS.ProcessEnv = process.platform === "win32" ? { SystemRoot: systemRoot, PATH: `${systemRoot}\\System32` } : { PATH: "/usr/bin:/bin" }
+  return { currentEnv: bunOnPath(), sanitizedEnv: spawnSync("bun", ["--version"], { stdio: "ignore", env }).status === 0 }
+}
+
 export async function loadTemplate(harness: Harness): Promise<Json> {
   const path = join(PACKAGE_ROOT, "scripts", "templates", `${harness}.json`)
   // {{CLI}} lands inside a JSON string, so the path quotes must arrive JSON-escaped.
-  const rendered = renderTemplate(await readFile(ntPath(path), "utf8"), { CLI: CLI_COMMAND })
+  const rendered = renderTemplate(await readFile(ntPath(path), "utf8"), { CLI: cliCommand() })
   const parsed: unknown = JSON.parse(rendered)
   if (parsed === null || typeof parsed !== "object" || Array.isArray(parsed)) throw new Error(`template is not a JSON object: ${path}`)
   return parsed as Json
@@ -146,9 +170,9 @@ export function isDejavuCommand(command: unknown, harness: string): command is s
   return typeof command === "string" && command.includes("src/cli.ts") && command.includes(`--harness ${harness}`)
 }
 
-/** Drift-tolerant variant of isDejavuCommand — survives a moved/corrupted cli path (that IS the drift hooks --check looks for). */
+/** Drift-tolerant variant of isDejavuCommand — survives a moved/corrupted cli path (that IS the drift hooks --check looks for) and the absolute-bun-path command form. */
 export function isDejavuHookCommand(command: unknown, harness: string): command is string {
-  return typeof command === "string" && command.includes("bun ") && command.includes(`--harness ${harness}`) && command.includes(".ts")
+  return typeof command === "string" && /\bbun(?:\.\w+)?[" ]/.test(command) && command.includes(`--harness ${harness}`) && command.includes(".ts")
 }
 
 /** Drop prior dejavu entries from one event array; nested `hooks` groups lose only their dejavu commands (emptied groups drop). */

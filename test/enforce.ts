@@ -3,9 +3,10 @@
  * (src/enforce.ts + siblings), exercised standalone — no OpenCode plugin
  * harness. Run: bun test/enforce.ts
  */
-import { mkdir, mkdtemp, readFile, rm } from "node:fs/promises"
+import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
+import { editHeartbeatPath, touchHeartbeat } from "../src/fs"
 import {
   cleanupSession,
   createEphemeralState,
@@ -313,6 +314,23 @@ await enforceAfter(ev({ tool: "edit", sessionId: "ig3-live", args: { filePath: j
 const ig3Block = await enforceBefore(ev({ tool: "bash", sessionId: "ig3-live", args: { command: ig3Cmd } }), ig3.ctx)
 check("a failing-exit edit does not lift the hard block either", ig3Block.verdict.action === "deny" && ig3Block.signalKind === "block")
 
+// --- hbl. legacy bare-number failedSessions coerce at load, so the heartbeat grace applies ---
+const hbl = await makeWorld("hbl")
+const hblCmd = "legacy-failed-tool --run"
+await failUntilPromoted(hbl.stores, hbl.projectDir, hblCmd, ["hbl-seed-1", "hbl-seed-2"])
+await enforceBefore(ev({ tool: "bash", sessionId: "hbl-live", args: { command: hblCmd } }), hbl.ctx)
+await enforceAfter(ev({ tool: "bash", sessionId: "hbl-live", args: { command: hblCmd }, phase: "post", output: "Error: boom", exitCode: 1, channel: "exit" }), hbl.ctx)
+const hblGatePath = join(hbl.projectStoreDir, "gates.json")
+const hblKey = patternKey(callSignature("bash", { command: hblCmd }) ?? "")
+const hblFile = JSON.parse(await readFile(hblGatePath, "utf8")) as { gates: Array<{ key: string; failedSessions?: Record<string, unknown> }> }
+const hblGate = hblFile.gates.find((g) => g.key === hblKey)
+if (hblGate === undefined) throw new Error("hbl: gate not found after promotion")
+hblGate.failedSessions = { "hbl-live": Date.now() - 5000 }
+await writeFile(hblGatePath, JSON.stringify(hblFile), "utf8")
+await touchHeartbeat(editHeartbeatPath(hbl.projectStoreDir))
+const hblRetry = await enforceBefore(ev({ tool: "bash", sessionId: "hbl-live", args: { command: hblCmd } }), respawn(hbl))
+check("a legacy numeric failedSessions entry gets the heartbeat grace after coercion", hblRetry.verdict.action === "allow")
+
 // --- iv. iteratedVersion is host-opt-in: an unsupported host never stamps the process-local counter ---
 const iv = await makeWorld("iv")
 const ivSig = callSignature("bash", { command: "iter-version-tool --run" }) ?? ""
@@ -610,6 +628,13 @@ check(
 )
 const autoEmDash = autoDashSeed('Last error: "Error: boom" — address that specific error before retrying this exact call.')
 check("the em-dash AUTO template still re-derives after the flex", repairGate(autoEmDash) === true && autoEmDash.correction === suggestCorrection(autoDashSig, "Error: boom"))
+
+// legacy bare-number failedSessions entries coerce to {t, v:0} at the repair boundary
+const legacyFailedAt = Date.now() - 1000
+const legacyFailed = repairSeed("bash:legacy-failed-unit --run")
+legacyFailed.failedSessions = { kept: legacyFailedAt, dropped: -5 }
+check("repairGate coerces a legacy numeric failedSessions entry to {t, v:0}", repairGate(legacyFailed) === true && typeof legacyFailed.failedSessions?.kept === "object" && legacyFailed.failedSessions.kept.t === legacyFailedAt && legacyFailed.failedSessions.kept.v === 0)
+check("repairGate drops a non-positive numeric failedSessions entry", legacyFailed.failedSessions?.dropped === undefined)
 
 await rm(tmp, { recursive: true, force: true })
 

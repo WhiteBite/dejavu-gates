@@ -152,7 +152,7 @@ const overriddenGate: Gate = { ...gate, key: "overrider00000", overrideCount: 4,
 const overriddenBlock = blockMessage(overriddenGate, storeDir)
 
 checker.check("blockMessage mentions bypass history when gate has overrides", overriddenBlock.includes("bypass") && overriddenBlock.includes("# dejavu:proceed"))
-checker.check("blockMessage reports override count and distinct sessions", overriddenBlock.includes("4") && overriddenBlock.includes("2"))
+checker.check("blockMessage no longer renders override counters or demotion arithmetic", !overriddenBlock.includes("explicit bypasses") && !overriddenBlock.includes("demote this gate"))
 checker.check("blockMessage with no overrides does not mention bypass", !block.includes("bypass") && !blockMessage({ ...gate, overrideSessions: undefined }, storeDir).includes("bypass"))
 
 // summary

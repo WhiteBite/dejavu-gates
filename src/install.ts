@@ -23,9 +23,11 @@ import {
   mergeConfig,
   mergeConfigRoot,
   probeBun,
+  probeBunRuntime,
   readExisting,
   stripDejavu,
   warnIfNoBun,
+  type BunRuntime,
   type Harness,
   type Json,
 } from "./install-config"
@@ -215,7 +217,13 @@ async function uninstallOne(harness: Harness, user: boolean, dryRun: boolean): P
 
 type CheckStatus = "ok" | "stale" | "missing" | "broken"
 
-async function checkOne(harness: Harness, user: boolean): Promise<{ status: CheckStatus; line: string }> {
+interface CheckResult {
+  status: CheckStatus
+  line: string
+  warn: string | null
+}
+
+async function checkOne(harness: Harness, user: boolean, bun: BunRuntime): Promise<CheckResult> {
   const target = targetPath(harness, user)
   const finding = checkInstall(target, {
     surfaces: [
@@ -229,10 +237,20 @@ async function checkOne(harness: Harness, user: boolean): Promise<{ status: Chec
     ],
     pathExists: (cliPath) => existsSync(ntPath(cliPath)),
   })[0]!
-  if (finding.status === "broken") return { status: "broken", line: `${harness}: broken — ${target} is not valid JSON` }
-  if (finding.status === "missing") return { status: "missing", line: `${harness}: missing — no dejavu hooks in ${target}` }
-  if (finding.status === "stale") return { status: "stale", line: `${harness}: stale — hook cli not on disk: ${finding.detail ?? "(unparseable command)"} (${target})` }
-  return { status: "ok", line: `${harness}: ok — ${target}` }
+  if (finding.status === "broken") return { status: "broken", line: `${harness}: broken — ${target} is not valid JSON`, warn: null }
+  if (finding.status === "missing") return { status: "missing", line: `${harness}: missing — no dejavu hooks in ${target}`, warn: null }
+  if (finding.status === "stale") return { status: "stale", line: `${harness}: stale — hook cli not on disk: ${finding.detail ?? "(unparseable command)"} (${target})`, warn: null }
+  if (!bun.currentEnv && !bun.sanitizedEnv) {
+    return { status: "broken", line: `${harness}: broken — bun unresolvable, hooks cannot run (${target})`, warn: null }
+  }
+  if (bun.currentEnv && !bun.sanitizedEnv) {
+    return {
+      status: "ok",
+      line: `${harness}: ok — ${target}`,
+      warn: `${harness}: warn — bun resolves in this shell but not in a minimal GUI env; harness-spawned hooks may not run`,
+    }
+  }
+  return { status: "ok", line: `${harness}: ok — ${target}`, warn: null }
 }
 
 /** Installer entry. Returns the process exit code; config errors exit 1 with a message (never a partial write). */
@@ -281,9 +299,11 @@ export async function runInstall(argv: string[]): Promise<number> {
     }
     if (args.sub === "check") {
       let bad = 0
+      const bun = probeBunRuntime()
       for (const harness of harnesses) {
-        const result = await checkOne(harness, args.user)
+        const result = await checkOne(harness, args.user, bun)
         process.stderr.write(`${result.line}\n`)
+        if (result.warn !== null) process.stderr.write(`${result.warn}\n`)
         if (result.status === "stale" || result.status === "broken") bad += 1
       }
       process.stderr.write(bad === 0 ? "hooks: all targets ok or missing\n" : `hooks: ${bad} target(s) need reinstall\n`)

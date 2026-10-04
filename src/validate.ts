@@ -303,6 +303,17 @@ export function repairGate(gate: Gate): boolean {
     const now = Date.now()
     const failed = gate.failedSessions
     for (const session of Object.keys(failed)) {
+      const entry = failed[session]
+      // v:0 keeps the version grace inert; .t unlocks the heartbeat grace for legacy numbers
+      if (typeof entry === "number") {
+        if (entry <= 0) {
+          delete failed[session]
+          changed = true
+          continue
+        }
+        failed[session] = { t: Math.floor(entry), v: 0 }
+        changed = true
+      }
       if (now - failedAtMs(failed[session] ?? 0) > SESSION_STATE_TTL_MS) {
         delete failed[session]
         changed = true

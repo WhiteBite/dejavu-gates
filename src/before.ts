@@ -174,6 +174,7 @@ export async function enforceBefore(event: NormalizedEvent, ctx: EnforceContext)
 
     // first encounter this session → remind (the call is aborted; agent may retry corrected)
     const remindedAt = fresh.remindedSessions?.[session]
+    // inside the race window the call was dispatched before the reminder landed — never a repeat offense
     if (remindedAt === undefined || Date.now() - remindedAt < REMINDER_RACE_WINDOW_MS) {
       // heal-aware: consecutive successes mean a likely-fixed command — arm the chain, don't interrupt
       if (fresh.status === "blocking" && (fresh.succeededAfterGate ?? 0) > 0) {

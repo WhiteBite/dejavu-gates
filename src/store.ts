@@ -3,7 +3,7 @@ import { appendFile, mkdir, readFile, stat, unlink, writeFile } from "node:fs/pr
 import { homedir } from "node:os"
 import { dirname, isAbsolute, join, relative } from "node:path"
 import { atomicWrite, ntPath } from "./fs"
-import { canBlock, canRemind, fuzzySimilar, FUZZY_MAX_LEN, hasGenericResidualIdentity, hasResidualIdentity, isGenericSignature, isNoiseError, isRepoLocal, looksLikeFailure, parameterizeError, sanitizeForStore, scrubSecrets, suggestCorrection, type DfIndex } from "./patterns"
+import { canBlock, canRemind, fuzzySimilar, FUZZY_MAX_LEN, hasGenericResidualIdentity, hasResidualIdentity, isBareExitSnippet, isGenericSignature, isNoiseError, isRepoLocal, looksLikeFailure, parameterizeError, sanitizeForStore, scrubSecrets, suggestCorrection, type DfIndex } from "./patterns"
 import { coerceGateShape, failedAtMs, isAutoCorrection, repairGate } from "./validate"
 
 /** Bumped on behavior changes; stamped into init log events so stale sessions are visible. */
@@ -15,7 +15,7 @@ export function resolveGlobalDir(): string {
 }
 
 /** Resolve a DEJAVU_* integer override once at module load; invalid or out-of-range values fall back. */
-function envInt(name: string, fallback: number, min: number, max: number): number {
+export function envInt(name: string, fallback: number, min: number, max: number): number {
   const raw = process.env[name]
   if (raw === undefined) return fallback
   const value = Number(raw)
@@ -1954,8 +1954,8 @@ export class Stores {
       const errorMoved =
         looksLikeFailure(newSnippet) &&
         looksLikeFailure(gate.snippet) &&
-        !/^exit code \d+$/i.test(newSnippet) &&
-        !/^exit code \d+$/i.test(gate.snippet) &&
+        !isBareExitSnippet(newSnippet) &&
+        !isBareExitSnippet(gate.snippet) &&
         parameterizeError(newSnippet) !== parameterizeError(gate.snippet)
       iterated = versionMoved || errorMoved
       if (iterated) gate.movedOn = (gate.movedOn ?? 0) + 1

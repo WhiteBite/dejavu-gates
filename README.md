@@ -255,6 +255,7 @@ Project stores keep themselves out of `git status`: init writes a self-ignoring 
 | `DEJAVU_HEAL_SUCCESSES` | 3 | 1–100 | consecutive successes that retire a gate |
 | `DEJAVU_DEMOTE_RECURRENCES` | 3 | 1–100 | post-gate recurrences that demote a gate |
 | `DEJAVU_DEMOTE_OVERRIDES` | 3 | 1–100 | explicit bypasses that demote a blocking gate |
+| `DEJAVU_TAUGHT_REMINDERS` | 5 | 1–100 | reminders with zero reoffense that retire a gate as taught |
 
 ## Development
 

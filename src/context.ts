@@ -1,5 +1,5 @@
 import { scrubSecrets } from "./patterns"
-import type { Stores } from "./store"
+import { envInt, type Stores } from "./store"
 import type { Verdict } from "./types"
 
 // --- Tunables ---------------------------------------------------------------
@@ -17,7 +17,7 @@ const RECENT_RECORDS_CAP = 1000
 const RECENT_RECORDS_KEEP = 500
 /** a gate reminded this many times with ZERO in-session reoffense has taught its
  *  lesson — the agent changed behavior, so no success can ever heal it */
-export const TAUGHT_REMINDERS = 5
+export const TAUGHT_REMINDERS = envInt("DEJAVU_TAUGHT_REMINDERS", 5, 1, 100)
 /** anti-nag retirement (the negative twin of taught): a gate reminded this many
  *  times whose reminders are CONSISTENTLY IGNORED is nagging, not teaching */
 export const ANTI_NAG_REMINDERS = 5

@@ -12,6 +12,8 @@ import {
   HARNESSES,
   mergeConfig,
   mergeConfigRoot,
+  probeBunRuntime,
+  resolveBunPath,
   stripDejavu,
   type Harness,
   type Json,
@@ -64,6 +66,9 @@ const pre1 = s1.hooks?.PreToolUse ?? []
 check("settings.json parses, exactly one dejavu PreToolUse entry", Array.isArray(pre1) && pre1.length === 1)
 const cmd1 = JSON.stringify(pre1)
 check("hook command carries src/cli.ts and --harness claude", cmd1.includes("src/cli.ts") && cmd1.includes("--harness claude"))
+const preCmd1 = ((pre1[0] as { hooks?: Array<{ command?: string }> } | undefined)?.hooks ?? [])[0]?.command ?? ""
+const bunPath = resolveBunPath()
+check("hook command pins the resolved bun binary (absolute when resolvable)", bunPath === null ? preCmd1.startsWith("bun ") : preCmd1.startsWith(`"${bunPath}" `))
 check("installed claude PreToolUse matcher is anchored to Bash", (pre1[0] as { matcher?: string } | undefined)?.matcher === "^(Bash)$")
 const end1 = s1.hooks?.SessionEnd ?? []
 check("install wrote exactly one dejavu SessionEnd entry", Array.isArray(end1) && end1.length === 1)
@@ -115,6 +120,9 @@ check("auto-detect left undetected harnesses untouched", !existsSync(join(c.home
 const chk1 = run(["hooks", "--check"], a.cwd, a.home)
 check("hooks --check on installed project exits 0", chk1.code === 0)
 check("hooks --check reports claude ok", chk1.stderr.includes("claude: ok"))
+const bunRuntime = probeBunRuntime()
+check("hooks --check warns exactly when bun misses the minimal GUI env", chk1.stderr.includes("warn — bun resolves") === (bunRuntime.currentEnv && !bunRuntime.sanitizedEnv))
+check("hooks --check never reports bun-broken while bun resolves here", !chk1.stderr.includes("bun unresolvable"))
 
 const staleSettings = (await readFile(settingsA, "utf8")).replaceAll("src/cli.ts", "src/gone.ts")
 await writeFile(settingsA, staleSettings, "utf8")

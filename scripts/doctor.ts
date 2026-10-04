@@ -8,8 +8,8 @@
 import { spawnSync } from "node:child_process"
 import { existsSync, readFileSync } from "node:fs"
 import { readFile, readdir, stat } from "node:fs/promises"
-import { join } from "node:path"
-import { CORRUPT_DEFAULT_DAYS, sweepStoreArtifacts, TMP_ORPHAN_MS } from "../src/fs"
+import { join, relative } from "node:path"
+import { CORRUPT_DEFAULT_DAYS, findProjectRoot, sweepStoreArtifacts, TMP_ORPHAN_MS } from "../src/fs"
 import { canBlock, canRemind, fuzzySimilar, isRepoLocal, patternKey, sanitizeForStore } from "../src/patterns"
 import { correctionEvidencePoor, createStores, DEMOTE_RECURRENCES, GateStore, GLOBAL_PROJECTS, isLiteralOutputSignature, lessonStaleness, MAX_GATES, NOISE_TTL_DAYS, resolveGlobalDir, retireTaught, PLUGIN_VERSION, PROMOTE_SESSIONS, TTL_DAYS, type Gate } from "../src/store"
 import { coerceGateShape, hasNestedTokens, rekeyMismatch } from "../src/validate"
@@ -645,6 +645,13 @@ for (const scope of scopes) {
   }
 
   if (!scope.isGlobal) {
+    const owner = scopeProject.get(scope.dir) ?? ""
+    const toplevel = findProjectRoot(owner)
+    // report-only, forward-only: a pre-2.52 store at depth is never auto-moved
+    if (owner !== "" && relative(owner, toplevel) !== "") {
+      issues++
+      console.log(`   PROJECT-ROOT-MISMATCH — store dir is below the git toplevel (${owner}); hooks canonicalize to ${toplevel} and will not see this store`)
+    }
     const staleCopies = gates.filter((g) => globalKeys.has(g.key))
     if (staleCopies.length > 0) {
       issues += staleCopies.length

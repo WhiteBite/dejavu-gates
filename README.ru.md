@@ -255,6 +255,7 @@ echo '{"hook_event_name":"PreToolUse","session_id":"s","tool_name":"Bash","tool_
 | `DEJAVU_HEAL_SUCCESSES` | 3 | 1–100 | последовательных успехов, отправляющих гейт на пенсию |
 | `DEJAVU_DEMOTE_RECURRENCES` | 3 | 1–100 | рецидивов после гейта, понижающих его |
 | `DEJAVU_DEMOTE_OVERRIDES` | 3 | 1–100 | явных обходов, понижающих блокирующий гейт |
+| `DEJAVU_TAUGHT_REMINDERS` | 5 | 1–100 | напоминаний без рецидива, после которых гейт считается выученным |
 
 ## Разработка
 

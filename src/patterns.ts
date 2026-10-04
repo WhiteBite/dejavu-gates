@@ -1546,6 +1546,11 @@ export function failureSnippet(outputText: string, exitCode: number | null): str
   return `exit code ${exitCode ?? "unknown"}`
 }
 
+/** True for a bare "exit code N|null|unknown" snippet — no error content to quote or compare. */
+export function isBareExitSnippet(snippet: string): boolean {
+  return /^exit code (?:\d+|null|unknown)$/i.test(snippet.trim())
+}
+
 // --- Noise filtering ----------------------------------------------------------
 
 /**
@@ -1832,7 +1837,7 @@ export function suggestCorrection(signature: string, snippet: string, platform: 
   if (
     platform === "win32" &&
     /(^|[\s|;&(:])(?:head|tail|wc|sed|awk|cut|uniq|xargs|less)\b(?!:)/i.test(signature) &&
-    /^exit code (?:\d+|null|unknown)$/i.test(snippet.trim())
+    isBareExitSnippet(snippet)
   ) {
     return UNIX_TOOL_CORRECTION
   }
@@ -1873,7 +1878,7 @@ export function suggestCorrection(signature: string, snippet: string, platform: 
   // A success-shaped snippet is never an error — quoting it ("Last error:
   // '17 passed'") teaches the agent to fix something that worked. Likewise a
   // bare exit code carries nothing to quote. Fall through to the generic text.
-  if (snippet !== "" && !/^exit code (?:\d+|null|unknown)$/i.test(snippet) && !looksLikeSuccess(snippet)) {
+  if (snippet !== "" && !isBareExitSnippet(snippet) && !looksLikeSuccess(snippet)) {
     return `Last error: "${snippet}" — address that specific error before retrying this exact call.`
   }
   return "This exact call keeps failing without a readable error line — re-run it once and read the actual output before changing anything."
