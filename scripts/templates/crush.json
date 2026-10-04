@@ -2,7 +2,7 @@
   "hooks": {
     "PreToolUse": [
       {
-        "matcher": "^(bash|edit|write|multiedit|read|glob|grep)$",
+        "matcher": "^(bash)$",
         "command": "{{CLI}} pre --harness crush"
       }
     ]

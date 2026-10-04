@@ -4,7 +4,7 @@
     {
       "name": "dejavu-gates-pre",
       "trigger": "PreToolUse",
-      "matcher": "shell|read|write|edit|apply_patch",
+      "matcher": "^(shell)$",
       "action": { "type": "command", "command": "{{CLI}} pre --harness kiro" },
       "timeout": 30
     },

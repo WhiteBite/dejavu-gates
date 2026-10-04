@@ -2,7 +2,7 @@
   "hooks": {
     "PreToolUse": [
       {
-        "matcher": "exec|read|write|edit|apply_patch|grep|glob",
+        "matcher": "^(exec)$",
         "hooks": [
           { "type": "command", "command": "{{CLI}} pre --harness devin", "timeout": 30 }
         ]

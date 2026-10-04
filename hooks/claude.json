@@ -2,7 +2,7 @@
   "hooks": {
     "PreToolUse": [
       {
-        "matcher": "Bash|Read|Edit|Write|Glob|Grep",
+        "matcher": "^(Bash)$",
         "hooks": [
           { "type": "command", "command": "bun \"${CLAUDE_PLUGIN_ROOT}/src/cli.ts\" pre --harness claude", "timeout": 30 }
         ]

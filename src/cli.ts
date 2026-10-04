@@ -157,6 +157,11 @@ export async function runHook(argv: string[]): Promise<number> {
       process.stdout.write(formatStdout(adapter.mapOutbound(args.phase, { action: "allow", reason: null, annotation: null })))
       return 0
     }
+    // non-bash pre can never deny (canBlock is bash-only) — skip the store boot
+    if (args.phase === "pre" && event.tool !== "bash") {
+      process.stdout.write(formatStdout(adapter.mapOutbound(args.phase, { action: "allow", reason: null, annotation: null })))
+      return 0
+    }
     const projectDir = args.store ?? findProjectRoot(event.cwd ?? process.cwd())
     const stores = createStores(projectDir)
     // per-invocation init is the CLI's accepted cost — the three idempotent passes, nothing else

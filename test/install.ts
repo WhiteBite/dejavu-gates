@@ -7,6 +7,7 @@ import { join } from "node:path"
 import { fileURLToPath } from "node:url"
 import { targetPath } from "../src/install"
 import {
+  asRecord,
   collectCommandsRoot,
   HARNESSES,
   mergeConfig,
@@ -63,6 +64,7 @@ const pre1 = s1.hooks?.PreToolUse ?? []
 check("settings.json parses, exactly one dejavu PreToolUse entry", Array.isArray(pre1) && pre1.length === 1)
 const cmd1 = JSON.stringify(pre1)
 check("hook command carries src/cli.ts and --harness claude", cmd1.includes("src/cli.ts") && cmd1.includes("--harness claude"))
+check("installed claude PreToolUse matcher is anchored to Bash", (pre1[0] as { matcher?: string } | undefined)?.matcher === "^(Bash)$")
 const end1 = s1.hooks?.SessionEnd ?? []
 check("install wrote exactly one dejavu SessionEnd entry", Array.isArray(end1) && end1.length === 1)
 const endCmd1 = JSON.stringify(end1)
@@ -392,5 +394,54 @@ await writeFile(join(h22.cwd, ".kiro", "hooks", "dejavu-gates.json"), "{ not jso
 const inst22 = run(["install", "--harness", "claude,kiro", "--project", "--yes"], h22.cwd, h22.home)
 check("multi-harness install with a later unparseable target exits 1", inst22.code === 1)
 check("no config was written before the abort", !existsSync(join(h22.cwd, ".claude", "settings.json")))
+
+// --- S23: pre matchers are anchored + shell-only; post matchers stay wide (failure observation is load-bearing) ---
+async function templateJson(harness: string): Promise<Json> {
+  return JSON.parse(await readFile(join(repoRoot, "scripts", "templates", `${harness}.json`), "utf8")) as Json
+}
+
+function eventMatchers(config: Json, event: string): string[] {
+  const entries = asRecord(config.hooks)[event]
+  if (!Array.isArray(entries)) return []
+  return entries.map((entry) => asRecord(entry).matcher).filter((matcher): matcher is string => typeof matcher === "string")
+}
+
+const MATCHER_PINS: Array<{ harness: string; event: string; matcher: string }> = [
+  { harness: "claude", event: "PreToolUse", matcher: "^(Bash)$" },
+  { harness: "claude", event: "PostToolUse", matcher: "*" },
+  { harness: "claude", event: "PostToolUseFailure", matcher: "*" },
+  { harness: "claude", event: "SessionEnd", matcher: "*" },
+  { harness: "codex", event: "PreToolUse", matcher: "^(Bash)$" },
+  { harness: "codex", event: "PostToolUse", matcher: "^(Bash|apply_patch)$" },
+  { harness: "gemini", event: "BeforeTool", matcher: "^(run_shell_command)$" },
+  { harness: "gemini", event: "AfterTool", matcher: "run_shell_command|read_file|write_file|replace|glob|search_file_content" },
+  { harness: "crush", event: "PreToolUse", matcher: "^(bash)$" },
+  { harness: "devin", event: "PreToolUse", matcher: "^(exec)$" },
+  { harness: "devin", event: "PostToolUse", matcher: "exec|read|write|edit|apply_patch|grep|glob" },
+]
+for (const pin of MATCHER_PINS) {
+  const config = await templateJson(pin.harness)
+  check(`${pin.harness} ${pin.event} matcher is "${pin.matcher}"`, eventMatchers(config, pin.event).join("|") === pin.matcher)
+}
+
+const kiroTemplate = await templateJson("kiro")
+const kiroHookEntries = Array.isArray(kiroTemplate.hooks) ? kiroTemplate.hooks : []
+const kiroPreMatcher = asRecord(kiroHookEntries.find((entry) => asRecord(entry).trigger === "PreToolUse")).matcher
+const kiroPostMatcher = asRecord(kiroHookEntries.find((entry) => asRecord(entry).trigger === "PostToolUse")).matcher
+check("kiro PreToolUse matcher is anchored to shell", kiroPreMatcher === "^(shell)$")
+check("kiro PostToolUse matcher stays wide", kiroPostMatcher === "shell|read|write|edit|apply_patch")
+
+for (const matcherless of ["cursor", "copilot"]) {
+  const config = await templateJson(matcherless)
+  const entries = Object.values(asRecord(config.hooks)).flatMap((entry) => (Array.isArray(entry) ? entry : [entry]))
+  check(`${matcherless} template entries carry no matcher field (harness format has none)`, entries.every((entry) => asRecord(entry).matcher === undefined))
+}
+
+const bundledClaude = JSON.parse(await readFile(join(repoRoot, "hooks", "claude.json"), "utf8")) as Json
+check("bundled hooks/claude.json pre matcher is anchored to Bash", eventMatchers(bundledClaude, "PreToolUse").join("|") === "^(Bash)$")
+check("bundled hooks/claude.json post matcher stays *", eventMatchers(bundledClaude, "PostToolUse").join("|") === "*")
+const bundledGemini = JSON.parse(await readFile(join(repoRoot, "hooks", "hooks.json"), "utf8")) as Json
+check("bundled hooks/hooks.json BeforeTool matcher is anchored to run_shell_command", eventMatchers(bundledGemini, "BeforeTool").join("|") === "^(run_shell_command)$")
+check("bundled hooks/hooks.json AfterTool matcher stays wide", eventMatchers(bundledGemini, "AfterTool").join("|") === "run_shell_command|read_file|write_file|replace|glob|search_file_content")
 
 report()

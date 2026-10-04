@@ -2,7 +2,7 @@
   "hooks": {
     "PreToolUse": [
       {
-        "matcher": "^(Bash|apply_patch)$",
+        "matcher": "^(Bash)$",
         "hooks": [
           { "type": "command", "command": "{{CLI}} pre --harness codex", "timeout": 30 }
         ]

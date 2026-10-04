@@ -426,4 +426,26 @@ check("D1: no store is created at the nested dir", !existsSync(join(gitNested, "
 const d1Pre = gitCli("pre", "d1-live", gitRoot)
 check("D1: the gate learned at one cwd fires from the repo root", d1Pre.exitCode === 2 && d1Pre.stderr.includes("[dejavu]"))
 
+// --- fast-path: a non-bash pre can never deny (canBlock is bash-only) — allow dialect without a store boot ---
+const fast = await makeWorld("fastpath")
+const fastRead = runCli(
+  "pre",
+  "claude",
+  { hook_event_name: "PreToolUse", session_id: "sF", tool_name: "Read", tool_input: { file_path: "x.ts" }, tool_use_id: "tu-fast", cwd: fast.storeDir },
+  fast.storeDir,
+  fast.globalDir,
+)
+check("non-bash pre (claude Read) → exit 0 + {} allow dialect", fastRead.exitCode === 0 && fastRead.stdout.trim() === "{}")
+check("non-bash pre skips the store boot (no .opencode dir)", !existsSync(join(fast.storeDir, ".opencode")))
+
+const fastKiro = runCli(
+  "pre",
+  "kiro",
+  { hook_event_name: "preToolUse", session_id: "sF", tool_name: "read", tool_input: { file_path: "x.ts" }, cwd: fast.storeDir },
+  fast.storeDir,
+  fast.globalDir,
+)
+check("non-bash pre (kiro read) → exit 0 + silent stdout (Kiro allow dialect)", fastKiro.exitCode === 0 && fastKiro.stdout === "")
+check("kiro non-bash pre also skips the store boot", !existsSync(join(fast.storeDir, ".opencode")))
+
 report()
