@@ -5,7 +5,7 @@
  * coerceGateShape + repairGate satisfies the data-model invariants.
  */
 import type { Gate, RetireWhen } from "./store"
-import { canBlock, canRemind, looksLikeSuccess, sanitizeForStore, suggestCorrection } from "./patterns"
+import { canBlock, canRemind, looksLikeSuccess, patternKey, sanitizeForStore, suggestCorrection } from "./patterns"
 
 /** sha1 prefix-12, the only key shape patternKey ever emits */
 const KEY_SHAPE = /^[0-9a-f]{12}$/
@@ -341,4 +341,9 @@ export function repairGate(gate: Gate): boolean {
  */
 export function hasNestedTokens(signature: string): boolean {
   return /<code:\s*</.test(signature)
+}
+
+/** True when the persisted key no longer equals patternKey(gate.signature): the gate was keyed under different normalization (or hand-edited) and no live call can reach it. Detection only — evidence cannot be re-attributed. */
+export function rekeyMismatch(gate: Gate): boolean {
+  return patternKey(gate.signature) !== gate.key
 }

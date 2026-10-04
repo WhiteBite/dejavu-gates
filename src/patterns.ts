@@ -88,6 +88,9 @@ export function sanitizeForStore(text: string): string {
 
 // --- Normalization -----------------------------------------------------------
 
+/** Bump when normalizeCommand/PARAM_RULES output changes for any existing input shape; the golden corpus in test/property.ts pins it. */
+export const NORMALIZATION_VERSION = 1
+
 /**
  * Interpreter one-liners: the quoted argument IS the program. Parameterizing
  * it to <str> collapsed every script into one key — "python -c <str>" ended up

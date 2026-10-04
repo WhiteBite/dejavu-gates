@@ -5,6 +5,9 @@
 ### Fixed
 - **CLI iteration grace works across processes** - the fail-fix-rebuild loop no longer dead-ends in a hard block on all 8 CLI harnesses: a landed edit drops an `edit-heartbeat` sidecar in the project store (best-effort write, a sidecar failure never fails the hook) and the next hook process's before-hook honors it alongside the in-process version counter (1s epsilon). Project roots canonicalize to the git toplevel at every host boundary, so one repo opened at two depths shares one store and can no longer fabricate a two-project global escalation; explicit `--store` bypasses canonicalization. CLI hosts no longer stamp `iteratedVersion: 0` (new `iteratedVersionSupported` context flag) - the zero-stamp poisoned `versionMoved`/`recurredAfterGate` in mixed CLI+plugin workflows on the unified store. The `createEphemeralState` degradation contract now states the truth: grace is restored cross-process via the heartbeat.
 
+### Added
+- **Normalization contract versioned, key drift observable** - `NORMALIZATION_VERSION` (patterns.ts) rides the init log event; a golden corpus in test/property.ts pins 38 command-to-signature-to-key triples plus 7 `parameterizeError` outputs, so any normalization edit that changes an existing shape turns the suite red (sabotage-verified both surfaces). New pure `rekeyMismatch(gate)` powers doctor's NORMALIZATION-DRIFT finding: gates whose persisted key no longer equals the re-derived key are reported, never auto-re-keyed (evidence counts belong to the key the failures actually signed).
+
 ## 2.51.0 - 2026-10-03
 
 ### Fixed

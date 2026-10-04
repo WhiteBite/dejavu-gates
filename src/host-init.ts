@@ -5,6 +5,7 @@
  * dialect; the init ORDER (reconcile → migrate → expire) is an invariant and
  * lives here exactly once.
  */
+import { NORMALIZATION_VERSION } from "./patterns"
 import { DEMOTE_RECURRENCES, GLOBAL_PROJECTS, NOISE_TTL_DAYS, PLUGIN_VERSION, TTL_DAYS, type Stores } from "./store"
 
 // --- Tunables ---------------------------------------------------------------
@@ -40,7 +41,7 @@ export async function initStores(stores: Stores, opts: InitStoresOptions): Promi
     await stores.migrate()
     await stores.expireAll(TTL_DAYS, NOISE_TTL_DAYS)
     if (opts.rotateLogs) await stores.rotateLogs()
-    if (opts.logInitEvent) await stores.logAll({ type: "init", key: "dejavu", version: PLUGIN_VERSION })
+    if (opts.logInitEvent) await stores.logAll({ type: "init", key: "dejavu", version: PLUGIN_VERSION, snippet: `normalization ${NORMALIZATION_VERSION}` })
     if (opts.healthLog) {
       // surface non-automatable gate health to the durable log instead of letting it accumulate silently
       const enforced = await stores.enforcedGates()

@@ -10,9 +10,9 @@ import { existsSync, readFileSync } from "node:fs"
 import { readFile, readdir, stat } from "node:fs/promises"
 import { join } from "node:path"
 import { CORRUPT_DEFAULT_DAYS, sweepStoreArtifacts, TMP_ORPHAN_MS } from "../src/fs"
-import { canBlock, canRemind, fuzzySimilar, isRepoLocal, sanitizeForStore } from "../src/patterns"
+import { canBlock, canRemind, fuzzySimilar, isRepoLocal, patternKey, sanitizeForStore } from "../src/patterns"
 import { correctionEvidencePoor, createStores, DEMOTE_RECURRENCES, GateStore, GLOBAL_PROJECTS, lessonStaleness, MAX_GATES, NOISE_TTL_DAYS, resolveGlobalDir, retireTaught, PLUGIN_VERSION, PROMOTE_SESSIONS, TTL_DAYS, type Gate } from "../src/store"
-import { coerceGateShape, hasNestedTokens } from "../src/validate"
+import { coerceGateShape, hasNestedTokens, rekeyMismatch } from "../src/validate"
 
 const repair = process.argv.includes("--repair")
 const globalDir = resolveGlobalDir()
@@ -471,6 +471,14 @@ for (const scope of scopes) {
     issues += nested.length
     console.log(`   NESTED TOKEN corruption (${nested.length}) — a placeholder re-parameterized another token; delete these gates:`)
     for (const g of nested.slice(0, 10)) console.log(`     - ${g.signature}`)
+  }
+
+  // no auto re-keying: evidence counts belong to the key the failures actually signed
+  const rekeyed = gates.filter((g) => rekeyMismatch(g))
+  if (rekeyed.length > 0) {
+    issues += rekeyed.length
+    console.log(`   NORMALIZATION-DRIFT (${rekeyed.length}) — persisted key no longer equals patternKey(signature); normalization changed under the store (report-only):`)
+    for (const g of rekeyed.slice(0, 10)) console.log(`     - ${g.key} -> ${patternKey(g.signature)} | ${g.signature}`)
   }
 
   const blockingNoEvidence = gates.filter((g) => g.status !== "watching" && g.sessions.length < PROMOTE_SESSIONS)

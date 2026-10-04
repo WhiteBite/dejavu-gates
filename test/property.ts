@@ -19,12 +19,14 @@ import {
   levenshtein,
   normalizeCommand,
   normalizeFilePath,
+  NORMALIZATION_VERSION,
   parameterizeError,
+  patternKey,
   scrubSecrets,
   splitChain,
   type DfIndex,
 } from "../src/patterns"
-import { hasNestedTokens } from "../src/validate"
+import { coerceGateShape, hasNestedTokens, rekeyMismatch } from "../src/validate"
 
 // --- seeded RNG (reproducible) -----------------------------------------------
 
@@ -151,6 +153,85 @@ for (let i = 0; i < RUNS; i++) {
     }
   }
 }
+
+// --- golden signature corpus ---------------------------------------------------
+
+const GOLDEN: Array<[command: string, signature: string, key: string]> = [
+  ["npm run build && npm test", "bash:run build && run test", "380b5313ed5b"],
+  ["git status || git rev-parse HEAD", "bash:git status || git rev-parse head", "cd3f7db4f0cd"],
+  ["npx tsc --noEmit | grep error", "bash:npx tsc --noemit | grep error", "ad490660f2aa"],
+  ["echo start; echo done", "bash:echo start; echo done", "1c97ce1ef791"],
+  ["python -c \"print(1)\"", "bash:python -c <code:f36c2897>", "28237e812555"],
+  ["python -c 'print(1)'", "bash:python -c <code:f36c2897>", "28237e812555"],
+  ["node -e \"process.exit(1)\"", "bash:node -e <code:d1d30a0f>", "6af4fe3055ee"],
+  ["bun -e \"throw new Error(1)\"", "bash:bun -e <code:4b42da67>", "188e5835582f"],
+  ["pwsh -Command \"Get-Process\"", "bash:pwsh -c <code:415b0e31>", "3e5bb3c6f76d"],
+  ["py -3 -c \"print(1)\"", "bash:py - <n> -c <code:f36c2897>", "82c86f8bcbc1"],
+  ["php -r \"echo 1;\"", "bash:php -r <code:a861fc82>", "e74ab68d252c"],
+  ["PYTHONPATH=x python -c \"print(1)\"", "bash:pythonpath=x python -c <code:f36c2897>", "3355fb92c3ad"],
+  ["& \"C:\\Python311\\python.exe\" -c \"print(1)\"", "bash:& <str> -c <code:f36c2897>", "10b0c1fd56f4"],
+  ["pwsh -c @\"\nprint(1)\n\"@", "bash:pwsh -c <code:2f7551e6>", "013c5a70bebe"],
+  ["python3 -u -c \"open('f').read()\"", "bash:python3 -u -c <code:393747dc>", "2c6db3e122db"],
+  ["curl -s https://api.example.com/v1/users", "bash:curl -s <url>", "aa6bfdf71ab0"],
+  ["curl http://localhost:3000/api", "bash:curl <url>", "b3acc32fb798"],
+  ["cmd /c \"npm test\"", "bash:run test", "44e623960c89"],
+  ["cmd /c npm install", "bash:npm install", "18c482c35dd4"],
+  ["cmd /k \"echo hi\"", "bash:echo hi", "005d55d5d655"],
+  ["type C:\\Users\\dev\\project\\file.ts", "bash:type <path>", "065fcacedf9e"],
+  ["copy D:\\Sources\\a.ts D:\\Sources\\b.ts", "bash:copy <path> <path>", "c864ae6b833a"],
+  ["FOO=bar npm test", "bash:foo=bar npm test", "0dde897da6f8"],
+  ["$env:DEBUG=1 node server.js", "bash:$env:debug= <n> node server.js", "fc75c11d7cda"],
+  ["npx tsc --noEmit", "bash:npx tsc --noemit", "3b493565f8e2"],
+  ["grep -n foo bar.txt", "bash:grep -n foo bar.txt", "f95b2b6e2888"],
+  ["grep -i foo bar.txt", "bash:grep -i foo bar.txt", "f1102baba5a3"],
+  ["docker compose up -d", "bash:docker compose up -d", "c8a36e5f89cd"],
+  ["git log abc123def456", "bash:git log <hash>", "e44478c45226"],
+  ["git log 7c1811ed-e98f-4c9c-a9f9-58c757ff494f", "bash:git log <uuid>", "7c4bea70f6fb"],
+  ["curl 192.168.1.100:8080/health", "bash:curl <ip> <path>", "06b35c57142f"],
+  ["python main.py 42", "bash:python main.py <n>", "d742d8daf3a2"],
+  ["npm run build # dejavu:proceed", "bash:run build", "4c573abb3310"],
+  ["echo \"hello world\"", "bash:echo <str>", "dce3be7eec0e"],
+  ["pnpm run build", "bash:run build", "4c573abb3310"],
+  ["yarn dlx tsc --noEmit", "bash:npx tsc --noemit", "3b493565f8e2"],
+  ["bunx tsc --noEmit", "bash:npx tsc --noemit", "3b493565f8e2"],
+  ["./gradlew test --tests Foo", "bash:./gradlew test --tests foo", "e77e1dcafe7b"],
+]
+
+const GOLDEN_ERRORS: Array<[text: string, parameterized: string]> = [
+  ["ENOENT: no such file or directory, open '/tmp/x'", "enoent: no such file or directory, open <str>"],
+  ["error TS2322: Type 'string' is not assignable to type 'number'", "error ts2322: type <str> is not assignable to type <str>"],
+  ["Error: connect ECONNREFUSED 192.168.1.100:3000", "error: connect econnrefused <ip>"],
+  ["timeout after 30000ms", "timeout after 30000ms"],
+  ["Cannot find module 'lodash' at C:\\x\\y.ts", "cannot find module <str> at <path>"],
+  ["fail 7c1811ed-e98f-4c9c-a9f9-58c757ff494f.json", "fail <uuid>.json"],
+  ["AssertionError: assert 'a' == 'b'", "assertionerror: assert <str> == <str>"],
+]
+
+if (NORMALIZATION_VERSION !== 1) {
+  fail("golden corpus pinned at NORMALIZATION_VERSION 1", `current ${NORMALIZATION_VERSION} — re-derive the corpus`)
+}
+for (const [cmd, wantSig, wantKey] of GOLDEN) {
+  const sig = callSignature("bash", { command: cmd }) ?? ""
+  if (sig !== wantSig) {
+    fail("golden signature drift", `${JSON.stringify(cmd)} -> ${JSON.stringify(sig)} (want ${JSON.stringify(wantSig)})`)
+    continue
+  }
+  if (patternKey(sig) !== wantKey) {
+    fail("golden key drift", `${JSON.stringify(cmd)} -> ${patternKey(sig)} (want ${wantKey})`)
+  }
+}
+for (const [text, want] of GOLDEN_ERRORS) {
+  if (parameterizeError(text) !== want) {
+    fail("golden error parameterization drift", `${JSON.stringify(text)} -> ${JSON.stringify(parameterizeError(text))} (want ${JSON.stringify(want)})`)
+  }
+}
+
+const okGate = coerceGateShape({ key: patternKey("bash:run build"), signature: "bash:run build", tool: "bash", status: "watching" })
+if (okGate === null || rekeyMismatch(okGate)) fail("rekeyMismatch flagged a correct key", "bash:run build")
+const wrongKeyGate = coerceGateShape({ key: "000000000000", signature: "bash:run build", tool: "bash", status: "watching" })
+if (wrongKeyGate === null || !rekeyMismatch(wrongKeyGate)) fail("rekeyMismatch missed a wrong key", "bash:run build")
+const movedSigGate = coerceGateShape({ key: patternKey("bash:run build"), signature: "bash:run test", tool: "bash", status: "watching" })
+if (movedSigGate === null || !rekeyMismatch(movedSigGate)) fail("rekeyMismatch missed a re-signed signature", "bash:run test")
 
 // one-liner identity: different code = different key, same code = same key
 const oneLinerA = 'python -c "fetch(\'alpha\')"'
