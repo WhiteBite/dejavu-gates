@@ -188,6 +188,18 @@ check("a failure-shaped output is recorded without an exit code", gOut.recorded 
 const gGate = (await readProjectGates(g)).find((gate) => gate.key === patternKey(callSignature("bash", { command: gCmd }) ?? ""))
 check("the text-detected failure lands as a gate with the error line", gGate?.count === 1 && gGate.snippet.includes("error TS2304"))
 
+// --- g2. exit-channel evidence keeps full teeth: an exit-code failure promotes to blocking ---
+const g2 = await makeWorld("g2")
+const g2Cmd = "exit-channel-tool --prod"
+for (const [session, times] of [["g2-seed-1", 2], ["g2-seed-2", 1]] as [string, number][]) {
+  for (let i = 0; i < times; i++) {
+    await enforceAfter(ev({ tool: "bash", sessionId: session, args: { command: g2Cmd }, phase: "post", output: "Error: kaboom", exitCode: 1, channel: "exit" }), g2.ctx)
+  }
+}
+const g2Gate = (await readProjectGates(g2)).find((g) => g.key === patternKey(callSignature("bash", { command: g2Cmd }) ?? ""))
+check("exit-code failures promote a non-diagnostic bash command to blocking", g2Gate?.status === "blocking")
+check("an exit-channel promotion carries no textOnly flag", g2Gate?.textOnly === undefined)
+
 // --- h. diagnostic exit 1 is the intended outcome, not a failure ---
 const h = await makeWorld("h")
 const hOut = await enforceAfter(ev({ tool: "bash", sessionId: "h1", args: { command: "grep needle src/haystack.ts" }, phase: "post", output: "", exitCode: 1, channel: "exit" }), h.ctx)

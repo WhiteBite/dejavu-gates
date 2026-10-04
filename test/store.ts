@@ -714,6 +714,32 @@ const veAfter = JSON.parse(await readFile(join(veProjectStore, "gates.json"), "u
 check("the hardening batch stamps a fresh version epoch", veAfter.lastInitVersion === PLUGIN_VERSION)
 check("migrate rewrites a stale machine correction from the old epoch", (veAfter.gates.find((g) => g.key === veKey)?.correction ?? "") !== VE_STALE_GENERIC)
 
+// --- 23. text-channel cap: migrate retro-demotes text-only and literal-output blocking gates ---
+const tcGlobal = join(tmp, "text-cap-global")
+const tcProject = join(tmp, "text-cap-project")
+const tcProjectStore = join(tcProject, ".opencode", "dejavu")
+await mkdir(tcGlobal, { recursive: true })
+await mkdir(tcProjectStore, { recursive: true })
+const tcEchoSig = "bash:echo fail"
+const tcEchoKey = patternKey(tcEchoSig)
+const tcToolSig = "bash:boom-tool --prod"
+const tcToolKey = patternKey(tcToolSig)
+const tcDiagSig = "bash:tsc --noEmit"
+const tcDiagKey = patternKey(tcDiagSig)
+await writeFile(join(tcProjectStore, "gates.json"), JSON.stringify({ version: 1, gates: [
+  seedGate({ key: tcEchoKey, signature: tcEchoSig, status: "blocking", count: 3 }),
+  seedGate({ key: tcToolKey, signature: tcToolSig, status: "blocking", count: 3, textOnly: true }),
+  seedGate({ key: tcDiagKey, signature: tcDiagSig, status: "blocking", count: 3, textOnly: true }),
+] }, null, 2), "utf8")
+const tcStores = new Stores(new GateStore(tcGlobal), new GateStore(tcProjectStore))
+await tcStores.migrate(true)
+if (tcStores.projectStore) await tcStores.projectStore.flushDeferred()
+const tcRows = await readGates(tcProjectStore)
+check("migrate demotes a legacy literal-output blocking gate to watching", tcRows.find((g) => g.key === tcEchoKey)?.status === "watching")
+check("migrate demotes a textOnly blocking gate (canRemind false → watching)", tcRows.find((g) => g.key === tcToolKey)?.status === "watching")
+check("migrate demotes a textOnly diagnostic blocking gate to reminding", tcRows.find((g) => g.key === tcDiagKey)?.status === "reminding")
+check("the retro-demotion logs demoted events", (await readFile(join(tcProjectStore, "log.jsonl"), "utf8")).includes('"demoted"'))
+
 if (process.env.BENCH === "1") {
   const benchProject = join(tmp, "bench-project")
   const benchGlobal = join(tmp, "bench-global")

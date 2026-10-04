@@ -133,6 +133,7 @@ export function coerceGateShape(raw: unknown): Gate | null {
   }
   if (r.review === true) gate.review = true
   if (r.feedbackDemoted === true) gate.feedbackDemoted = true
+  if (r.textOnly === true) gate.textOnly = true
   if (Array.isArray(r.reoffenseSessions)) {
     const sessions = r.reoffenseSessions.filter((x): x is string => typeof x === "string")
     if (sessions.length > 0) gate.reoffenseSessions = sessions.slice(-SESSION_STATE_CAP)

@@ -11,7 +11,7 @@ import { readFile, readdir, stat } from "node:fs/promises"
 import { join } from "node:path"
 import { CORRUPT_DEFAULT_DAYS, sweepStoreArtifacts, TMP_ORPHAN_MS } from "../src/fs"
 import { canBlock, canRemind, fuzzySimilar, isRepoLocal, patternKey, sanitizeForStore } from "../src/patterns"
-import { correctionEvidencePoor, createStores, DEMOTE_RECURRENCES, GateStore, GLOBAL_PROJECTS, lessonStaleness, MAX_GATES, NOISE_TTL_DAYS, resolveGlobalDir, retireTaught, PLUGIN_VERSION, PROMOTE_SESSIONS, TTL_DAYS, type Gate } from "../src/store"
+import { correctionEvidencePoor, createStores, DEMOTE_RECURRENCES, GateStore, GLOBAL_PROJECTS, isLiteralOutputSignature, lessonStaleness, MAX_GATES, NOISE_TTL_DAYS, resolveGlobalDir, retireTaught, PLUGIN_VERSION, PROMOTE_SESSIONS, TTL_DAYS, type Gate } from "../src/store"
 import { coerceGateShape, hasNestedTokens, rekeyMismatch } from "../src/validate"
 
 const repair = process.argv.includes("--repair")
@@ -493,6 +493,13 @@ for (const scope of scopes) {
     issues += staleBlocking.length
     console.log(`   STALE BLOCKING outside policy (${staleBlocking.length}) — doctor --repair demotes:`)
     for (const g of staleBlocking.slice(0, 10)) console.log(`     - ${g.signature}`)
+  }
+
+  const textChannelBlocking = gates.filter((g) => g.status === "blocking" && (g.textOnly === true || isLiteralOutputSignature(g.signature)))
+  if (textChannelBlocking.length > 0) {
+    issues += textChannelBlocking.length
+    console.log(`   TEXT-CHANNEL-BLOCKING (${textChannelBlocking.length}) — text-only evidence never blocks; doctor --repair demotes:`)
+    for (const g of textChannelBlocking.slice(0, 10)) console.log(`     - ${g.signature}`)
   }
 
   const staleReminding = gates.filter((g) => g.status === "reminding" && !canRemind(g.tool, g.signature))

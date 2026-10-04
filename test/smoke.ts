@@ -179,10 +179,10 @@ const emitToolError = async (
   } as unknown as EventInput)
 }
 
-function fail(command: string, session: string, callID: string): Promise<void> {
+function fail(command: string, session: string, callID: string, exit = 1): Promise<void> {
   return after(
     { tool: "bash", sessionID: session, callID, args: { command } } as unknown as AfterInput,
-    { title: CMD, output: "npm ERR! boom\nExit code: 1", metadata: {} } as unknown as AfterOutput,
+    { title: CMD, output: "npm ERR! boom\nExit code: 1", metadata: { exit } } as unknown as AfterOutput,
   )
 }
 
@@ -493,7 +493,7 @@ const readJson = async (p: string): Promise<GateRow[]> =>
 const failIn = (hook: AfterHook) => (session: string, callID: string, command: string): Promise<void> =>
   hook(
     { tool: "bash", sessionID: session, callID, args: { command } } as unknown as AfterInput,
-    { title: command, output: "npm ERR! boom\nExit code: 1", metadata: {} } as unknown as AfterOutput,
+    { title: command, output: "npm ERR! boom\nExit code: 1", metadata: { exit: 1 } } as unknown as AfterOutput,
   )
 const failA = failIn(afterA)
 const failB = failIn(afterB)
@@ -671,7 +671,7 @@ const WIN_CMD = "deploy --to prod"
 const winFail = async (hook: AfterHook, session: string, callID: string): Promise<void> => {
   await hook(
     { tool: "bash", sessionID: session, callID, args: { command: WIN_CMD } } as unknown as AfterInput,
-    { title: WIN_CMD, output: "npm ERR! boom\nExit code: 1", metadata: {} } as unknown as AfterOutput,
+    { title: WIN_CMD, output: "npm ERR! boom\nExit code: 1", metadata: { exit: 1 } } as unknown as AfterOutput,
   )
 }
 await winFail(w1After, "wa", "p1")
@@ -731,10 +731,10 @@ const seedGates = async (dir: string, gates: Record<string, unknown>[]): Promise
   await mkdir(dejavuDir, { recursive: true })
   await writeFile(join(dejavuDir, "gates.json"), JSON.stringify({ version: 1, gates }), "utf8")
 }
-const failOn = (hooks: Awaited<ReturnType<typeof Dejavu>>) => async (command: string, session: string, callID: string): Promise<void> => {
+const failOn = (hooks: Awaited<ReturnType<typeof Dejavu>>) => async (command: string, session: string, callID: string, exit = 1): Promise<void> => {
   await (hooks["tool.execute.after"] as AfterHook)(
     { tool: "bash", sessionID: session, callID, args: { command } } as unknown as AfterInput,
-    { title: command, output: "npm ERR! boom\nExit code: 1", metadata: {} } as unknown as AfterOutput,
+    { title: command, output: "npm ERR! boom\nExit code: 1", metadata: { exit } } as unknown as AfterOutput,
   )
 }
 const attemptWith = (hooks: Awaited<ReturnType<typeof Dejavu>>) => async (command: string, session: string, callID: string): Promise<Error | null> => {
@@ -944,7 +944,7 @@ check(
 const ANSI_CMD = "ansi colored failure cmd"
 await after(
   { tool: "bash", sessionID: "s70", callID: "a1", args: { command: ANSI_CMD } } as unknown as AfterInput,
-  { title: ANSI_CMD, output: "\u001b[31;1mFATAL: boom\u001b[0m", metadata: {} } as unknown as AfterOutput,
+  { title: ANSI_CMD, output: "\u001b[31;1mFATAL: boom\u001b[0m", metadata: { exit: 1 } } as unknown as AfterOutput,
 )
 gates = await readGates()
 const ansiGate = gates.find((g) => g.signature === `bash:${ANSI_CMD}`)
@@ -952,9 +952,9 @@ check("ANSI escapes stripped from persisted snippet", ansiGate !== undefined && 
 
 // --- 42. mypy is diagnostic: remind-only, never blocking ---
 const MYPY = "mypy stitch_backend"
-await fail(MYPY, "s80", "m1")
-await fail(MYPY, "s80", "m2")
-await fail(MYPY, "s81", "m3")
+await fail(MYPY, "s80", "m1", 2)
+await fail(MYPY, "s80", "m2", 2)
+await fail(MYPY, "s81", "m3", 2)
 gates = await readGates()
 check("mypy promotes to remind-only (diagnostic)", gates.find((g) => g.signature === `bash:${MYPY}`)?.status === "reminding")
 
@@ -1169,7 +1169,7 @@ const HAMMER_CMD = "hammer shared load cmd"
 const hammerFail = (hooks: Awaited<ReturnType<typeof Dejavu>>) => (session: string, callID: string): Promise<void> =>
   (hooks["tool.execute.after"] as AfterHook)(
     { tool: "bash", sessionID: session, callID, args: { command: HAMMER_CMD } } as unknown as AfterInput,
-    { title: HAMMER_CMD, output: "npm ERR! boom\nExit code: 1", metadata: {} } as unknown as AfterOutput,
+    { title: HAMMER_CMD, output: "npm ERR! boom\nExit code: 1", metadata: { exit: 1 } } as unknown as AfterOutput,
   )
 const hammerJobs: Promise<void>[] = []
 for (let i = 0; i < 12; i++) {
@@ -1217,13 +1217,13 @@ check("session unblocked after proving the fix (heal-aware: runs free, no remind
 const iterDir = join(tmp, "iteration-project")
 const hooksIT = await Dejavu({ directory: iterDir, client: { app: { log: async () => ({}) } } } as unknown as Ctx)
 const DART_RUN = "dart run scripts/gen_tags.dart"
-await failOn(hooksIT)(DART_RUN, "it1", "it1")
-await failOn(hooksIT)(DART_RUN, "it1", "it2")
-await failOn(hooksIT)(DART_RUN, "it2", "it3")
+await failOn(hooksIT)(DART_RUN, "it1", "it1", 2)
+await failOn(hooksIT)(DART_RUN, "it1", "it2", 2)
+await failOn(hooksIT)(DART_RUN, "it2", "it3", 2)
 const itGates = await readJson(join(iterDir, ".opencode", "dejavu", "gates.json"))
 check("dart run promotes to remind-only (iteration verb)", itGates.find((g) => g.signature === `bash:${DART_RUN}`)?.status === "reminding")
 check("reminding-tier gate never interrupts the iteration run", (await attemptWith(hooksIT)(DART_RUN, "it3", "it4")) === null)
-const dartOut = { title: DART_RUN, output: "npm ERR! boom\nExit code: 1", metadata: {} }
+const dartOut = { title: DART_RUN, output: "npm ERR! boom\nExit code: 1", metadata: { exit: 2 } }
 await (hooksIT["tool.execute.after"] as AfterHook)(
   { tool: "bash", sessionID: "it3", callID: "it4", args: { command: DART_RUN } } as unknown as AfterInput,
   dartOut as unknown as AfterOutput,
@@ -1472,8 +1472,8 @@ await attemptWith(hooksStaleCtr)(STALE_CTR_CMD, "stc1", "stc1")
 const staleCtrGate = (await readJson(join(staleCtrDir, ".opencode", "dejavu", "gates.json"))).find((g) => g.key === staleCtrKey)
 check("tier demotion clears the stale recurredAfterReminder", staleCtrGate?.status === "reminding" && staleCtrGate?.recurredAfterReminder === 0)
 check("demoted reminding gate never interrupts the call", (await attemptWith(hooksStaleCtr)(STALE_CTR_CMD, "stc2", "stc2")) === null)
-await failOn(hooksStaleCtr)(STALE_CTR_CMD, "stc3", "stc3-f1")
-await failOn(hooksStaleCtr)(STALE_CTR_CMD, "stc3", "stc3-f2")
+await failOn(hooksStaleCtr)(STALE_CTR_CMD, "stc3", "stc3-f1", 2)
+await failOn(hooksStaleCtr)(STALE_CTR_CMD, "stc3", "stc3-f2", 2)
 const staleCtrGate2 = (await readJson(join(staleCtrDir, ".opencode", "dejavu", "gates.json"))).find((g) => g.key === staleCtrKey)
 check("demoted gate is not anti-nag-retired on the previous tier's evidence", staleCtrGate2?.status === "reminding" && staleCtrGate2?.feedbackDemoted !== true)
 
@@ -1490,7 +1490,7 @@ const NAG_REM_CMD = "npm test"
 const nagRemKey = patternKey(callSignature("bash", { command: NAG_REM_CMD }) ?? "")
 await seedGates(nagRemDir, [seedGate({ key: nagRemKey, signature: `bash:${NAG_REM_CMD}`, status: "reminding", remindedCount: 4 })])
 const hooksNR = await Dejavu({ directory: nagRemDir, client: { app: { log: async () => ({}) } } } as unknown as Ctx)
-for (const call of ["nr-f1", "nr-f2", "nr-f3", "nr-f4"]) await failOn(hooksNR)(NAG_REM_CMD, "nr-ses", call)
+for (const call of ["nr-f1", "nr-f2", "nr-f3", "nr-f4"]) await failOn(hooksNR)(NAG_REM_CMD, "nr-ses", call, 2)
 const nagRemGate = (await readJson(join(nagRemDir, ".opencode", "dejavu", "gates.json"))).find((g) => g.key === nagRemKey)
 check("anti-nag (after-hook): ignored notes retire the reminding gate", nagRemGate?.status === "watching" && nagRemGate?.feedbackDemoted === true)
 check("anti-nag (after-hook): retirement is logged", (await readFile(join(nagRemDir, ".opencode", "dejavu", "log.jsonl"), "utf8")).includes("anti-nag retirement"))
@@ -2025,7 +2025,7 @@ const RT_CMD = "npm test"
 const rtKey = patternKey(callSignature("bash", { command: RT_CMD }) ?? "")
 await seedGates(rtDir, [seedGate({ key: rtKey, signature: `bash:${RT_CMD}`, status: "reminding", remindedCount: 5 })])
 const hooksRT = await Dejavu({ directory: rtDir, client: { app: { log: async () => ({}) } } } as unknown as Ctx)
-await failOn(hooksRT)(RT_CMD, "rt1", "rt-f1")
+await failOn(hooksRT)(RT_CMD, "rt1", "rt-f1", 2)
 const rtGate = (await readJson(join(rtDir, ".opencode", "dejavu", "gates.json"))).find((g) => g.key === rtKey)
 check("reminding gate retires to watching after clean reminders (taught)", rtGate?.status === "watching" && rtGate?.feedbackDemoted !== true)
 check("reminding taught retirement is logged", (await readFile(join(rtDir, ".opencode", "dejavu", "log.jsonl"), "utf8")).includes('"type":"retired-taught"'))
@@ -2537,8 +2537,8 @@ const diagSig = callSignature("bash", { command: DIAG_CMD }) ?? ""
 const diagKey = patternKey(diagSig)
 await seedGates(diagDir, [seedGate({ key: diagKey, signature: diagSig, status: "reminding" })])
 const hooksDiag = await Dejavu({ directory: diagDir, client: { app: { log: async () => ({}) } } } as unknown as Ctx)
-await failOn(hooksDiag)(DIAG_CMD, "dr-a", "dr-a1")
-await failOn(hooksDiag)(DIAG_CMD, "dr-a", "dr-a2")
+await failOn(hooksDiag)(DIAG_CMD, "dr-a", "dr-a1", 2)
+await failOn(hooksDiag)(DIAG_CMD, "dr-a", "dr-a2", 2)
 const diagGate = (await readJson(join(diagDir, ".opencode", "dejavu", "gates.json"))).find((g) => g.key === diagKey)
 check("diagnostic recurrence does not grow recurredAfterGate", (diagGate?.recurredAfterGate ?? 0) === 0)
 check("diagnostic reminder still counts (remindedCount grows)", (diagGate?.remindedCount ?? 0) === 1)

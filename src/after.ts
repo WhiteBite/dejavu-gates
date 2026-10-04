@@ -38,6 +38,8 @@ export async function enforceAfter(event: NormalizedEvent, ctx: EnforceContext):
   const rawCommand = isBash && typeof event.args.command === "string" ? String(event.args.command) : ""
   // grep/pytest/linters: exit 1 is often the INTENDED outcome, not a mistake
   const intended = exitCode === 1 && isIntendedNonzero(rawCommand)
+  // text-only evidence: no exit code and no structural errored signal decided the failure
+  const textOnly = exitCode === null && event.errored !== true
   // the full-output scan runs only when the exit channel cannot decide or a snippet is needed
   let detection: { matched: boolean; snippet: string } = { matched: false, snippet: "" }
   let failed: boolean
@@ -114,6 +116,7 @@ export async function enforceAfter(event: NormalizedEvent, ctx: EnforceContext):
     projectDir: ctx.projectDir,
     snippet,
     globalProjects: GLOBAL_PROJECTS,
+    textOnly,
     workspaceVersion: ctx.iteratedVersionSupported ? (ctx.ephemeral.workspaceVersions.get(ctx.projectDir) ?? 0) : undefined,
   })
 

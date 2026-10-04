@@ -76,13 +76,32 @@ function claudePost(session: string, command: string, output: string, store: Wor
   )
 }
 
+// PostToolUseFailure = the structural error signal (blocking-grade without exit codes)
+function claudeFailurePost(session: string, command: string, output: string, store: World): CliResult {
+  return runCli(
+    "post",
+    "claude",
+    {
+      hook_event_name: "PostToolUseFailure",
+      session_id: session,
+      tool_name: "Bash",
+      tool_input: { command },
+      tool_use_id: `tu-${session}`,
+      cwd: store.storeDir,
+      tool_response: { stdout: "", stderr: output },
+    },
+    store.storeDir,
+    store.globalDir,
+  )
+}
+
 // --- S1b: a non-diagnostic bash command failing 3x across 2 sessions promotes to a blocking gate ---
 const block = await makeWorld("block")
 const blockCmd = "boom-tool --prod"
 const blockOut = "boom-tool: command not found"
-claudePost("sA", blockCmd, blockOut, block)
-claudePost("sA", blockCmd, blockOut, block)
-const third = claudePost("sB", blockCmd, blockOut, block)
+claudeFailurePost("sA", blockCmd, blockOut, block)
+claudeFailurePost("sA", blockCmd, blockOut, block)
+const third = claudeFailurePost("sB", blockCmd, blockOut, block)
 check("seeding the 3rd failure succeeds (exit 0, no block on post)", third.exitCode === 0)
 
 const gatesRaw = await readFile(join(block.storeDir, ".opencode", "dejavu", "gates.json"), "utf8")
@@ -123,15 +142,47 @@ check("claude post annotation carries the [dejavu] NOTE", (remindJson.hookSpecif
 const remindGates = (JSON.parse(await readFile(join(remind.storeDir, ".opencode", "dejavu", "gates.json"), "utf8")) as { gates: Array<{ status: string }> }).gates
 check("diagnostic gate promoted to reminding (never blocking)", remindGates.some((g) => g.status === "reminding"))
 
+// --- S3: text-channel evidence never blocks — failure-shaped output text promotes to reminding at most ---
+const cap = await makeWorld("text-cap")
+const capCmd = "echo FAIL"
+claudePost("sA", capCmd, "FAIL", cap)
+claudePost("sA", capCmd, "FAIL", cap)
+claudePost("sB", capCmd, "FAIL", cap)
+const capGates = (JSON.parse(await readFile(join(cap.storeDir, ".opencode", "dejavu", "gates.json"), "utf8")) as { gates: Array<{ status: string; textOnly?: boolean; count: number }> }).gates
+const capGate = capGates.find((g) => g.count >= 3)
+check("text-only failures still promote the echo gate (evidence kept)", capGate !== undefined)
+check("text-only evidence caps the promotion at reminding (never blocking)", capGate?.status === "reminding")
+check("the capped gate carries the textOnly flag", capGate?.textOnly === true)
+const capPre = runCli(
+  "pre",
+  "claude",
+  { hook_event_name: "PreToolUse", session_id: "sC", tool_name: "Bash", tool_input: { command: capCmd }, tool_use_id: "tu-cap-pre", cwd: cap.storeDir },
+  cap.storeDir,
+  cap.globalDir,
+)
+check("pre on a text-capped gate allows the call (exit 0, never denied)", capPre.exitCode === 0)
+
+// the structural counterpart on the same shape: an errored post still earns blocking, and the chain hard-blocks
+const blockFail = claudeFailurePost("sC", blockCmd, blockOut, block)
+check("a structural failure after the reminder records (arming the hard block)", blockFail.exitCode === 0)
+const blockPreRepeat = runCli(
+  "pre",
+  "claude",
+  { hook_event_name: "PreToolUse", session_id: "sC", tool_name: "Bash", tool_input: { command: blockCmd }, tool_use_id: "tu-pre-repeat", cwd: block.storeDir },
+  block.storeDir,
+  block.globalDir,
+)
+check("same-session repeat after a structural failure hard-blocks (exit 2)", blockPreRepeat.exitCode === 2 && blockPreRepeat.stderr.includes("[dejavu] BLOCKED"))
+
 // --- deny dialects: fresh blocking gate per harness (a shared gate hits taught-retirement after 5 reminders) ---
 const dCmd = "boom-tool --prod"
 const dOut = "boom-tool: command not found"
 
 async function seedBlocking(name: string): Promise<World> {
   const w = await makeWorld(name)
-  claudePost("sA", dCmd, dOut, w)
-  claudePost("sA", dCmd, dOut, w)
-  claudePost("sB", dCmd, dOut, w)
+  claudeFailurePost("sA", dCmd, dOut, w)
+  claudeFailurePost("sA", dCmd, dOut, w)
+  claudeFailurePost("sB", dCmd, dOut, w)
   return w
 }
 
@@ -363,7 +414,7 @@ const rootOut = "gitroot-tool: command not found"
 function gitCli(phase: string, session: string, cwd: string): CliResult {
   const payload =
     phase === "post"
-      ? { hook_event_name: "PostToolUse", session_id: session, tool_name: "Bash", tool_input: { command: rootCmd }, tool_use_id: `tu-${session}-post`, cwd, tool_response: { stdout: "", stderr: rootOut } }
+      ? { hook_event_name: "PostToolUseFailure", session_id: session, tool_name: "Bash", tool_input: { command: rootCmd }, tool_use_id: `tu-${session}-post`, cwd, tool_response: { stdout: "", stderr: rootOut } }
       : { hook_event_name: "PreToolUse", session_id: session, tool_name: "Bash", tool_input: { command: rootCmd }, tool_use_id: `tu-${session}-pre`, cwd }
   return runCliNoStore(phase, "claude", payload, cwd, gitRootGlobal)
 }

@@ -121,6 +121,11 @@ export interface Gate {
    * demotion vote counts only failures the gate had a chance to prevent —
    * first-encounter failures never saw a reminder and must not demote. */
   reoffenseSessions?: string[]
+  /** the latest recorded failure was text-only (no exit code, no structural
+   * errored signal) — output text alone cannot prove the call failed, so such
+   * evidence promotes to reminding at most, never blocking. A structural
+   * failure clears the flag (the gate earned real evidence). */
+  textOnly?: boolean
   /** declarative retirement condition — doctor --repair retires the gate (retireTaught) once met */
   retireWhen?: RetireWhen
 }
@@ -282,6 +287,19 @@ const STORE_GITIGNORE = "# dejavu: gates.json is committable (shared repo gotcha
 /** bash pays the base bar; every non-bash tool (probes and generic) pays the probe bar. */
 function promotionThreshold(tool: string): number {
   return tool === "bash" ? PROMOTE_COUNT : PROMOTE_COUNT_PROBE
+}
+
+/** Literal-output verb families: their "failure" is echoed text, not a failing call. */
+const LITERAL_OUTPUT_VERBS = new Set(["echo", "printf", "type", "write-output", "write-host"])
+
+/** True when every chain segment of a bash signature is a bare literal-output
+ * command (echo/printf/type/write-output/write-host) — the signature has no
+ * residual identity beyond echoing text. Powers migrate's legacy text-channel
+ * demotion and doctor's TEXT-CHANNEL-BLOCKING tripwire. */
+export function isLiteralOutputSignature(signature: string): boolean {
+  const body = signature.startsWith("bash:") ? signature.slice("bash:".length) : signature
+  const segments = body.split(/\s*(?:\|\||&&|[|;&])\s*|\n+/).filter((s) => s.trim() !== "")
+  return segments.length > 0 && segments.every((segment) => LITERAL_OUTPUT_VERBS.has((segment.trim().split(/\s+/)[0] ?? "").toLowerCase()))
 }
 
 /** A machine correction that restates the failing line or shares no content token with the signature teaches nothing — advisory review flag, never a block. */
@@ -1500,6 +1518,28 @@ export class Stores {
         const gates = await store.loadForMutation()
         let changed = false
         for (const gate of gates) {
+          // text-only evidence never blocks — demote to the highest tier the shape still earns
+          if (gate.status === "blocking" && gate.textOnly === true) {
+            gate.status = canRemind(gate.tool, gate.signature) ? "reminding" : "watching"
+            changed = true
+            store.deferEvent({
+              type: "demoted",
+              key: gate.key,
+              tool: gate.tool,
+              snippet: "text-only evidence demotion (no exit code, no structural signal — the text channel may remind at most)",
+            })
+          }
+          // legacy pre-field gates: echoed failure text is not a teachable failure
+          if (gate.status === "blocking" && gate.textOnly === undefined && isLiteralOutputSignature(gate.signature)) {
+            gate.status = "watching"
+            changed = true
+            store.deferEvent({
+              type: "demoted",
+              key: gate.key,
+              tool: gate.tool,
+              snippet: "literal-output demotion (echo/printf family — echoed failure text is not a teachable failure)",
+            })
+          }
           if (gate.status === "blocking" && !canBlock(gate.tool, gate.signature)) {
             // Over-blocking learned under an older policy: keep the signal if
             // the shape can at least remind (diagnostics), else drop to watching.
@@ -1723,6 +1763,8 @@ export class Stores {
     projectDir: string
     snippet: string
     globalProjects: number
+    /** the failure's only evidence is output text — no exit code, no structural errored signal */
+    textOnly?: boolean
     /** process-local workspace version (landed edit/write count) — iteration evidence */
     workspaceVersion?: number
   }): Promise<{ gate: Gate; store: GateStore; promoted: boolean; wentGlobal: boolean; iterated: boolean }> {
@@ -1892,6 +1934,9 @@ export class Stores {
       if (!fuzzyConsolidated) {
         if (looksLikeFailure(newSnippet) || !looksLikeFailure(gate.snippet)) gate.snippet = newSnippet
       }
+      // the latest failure's channel wins — a structural failure clears the flag (self-correcting)
+      if (input.textOnly) gate.textOnly = true
+      else delete gate.textOnly
       // A failure breaks any heal streak — the command is still broken.
       gate.succeededAfterGate = 0
 
@@ -1908,7 +1953,8 @@ export class Stores {
       // only bash blocks; diagnostics + identity-bearing generic tools remind; the rest watch
       if (gate.status === "watching" && gate.feedbackDemoted !== true && effectiveCount >= threshold && gate.sessions.length >= PROMOTE_SESSIONS && stuckEvidence > 1) {
         if (canBlock(gate.tool, gate.signature)) {
-          gate.status = "blocking"
+          // text-only evidence never blocks — output text alone cannot prove the call failed
+          gate.status = gate.textOnly === true ? "reminding" : "blocking"
           promoted = true
         } else if (canRemind(gate.tool, gate.signature)) {
           gate.status = "reminding"
