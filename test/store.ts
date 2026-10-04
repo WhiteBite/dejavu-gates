@@ -711,7 +711,7 @@ await writeFile(join(veProjectStore, "gates.json"), JSON.stringify({ version: 1,
 const veStores = new Stores(new GateStore(veGlobal), new GateStore(veProjectStore))
 await veStores.migrate(true)
 const veAfter = JSON.parse(await readFile(join(veProjectStore, "gates.json"), "utf8")) as { lastInitVersion?: string; gates: GateRow[] }
-check("the hardening batch stamps a fresh version epoch", veAfter.lastInitVersion === "2.51.0")
+check("the hardening batch stamps a fresh version epoch", veAfter.lastInitVersion === PLUGIN_VERSION)
 check("migrate rewrites a stale machine correction from the old epoch", (veAfter.gates.find((g) => g.key === veKey)?.correction ?? "") !== VE_STALE_GENERIC)
 
 if (process.env.BENCH === "1") {

@@ -1,6 +1,7 @@
 import { bashSegmentSignatures, callSignature, cmdWrapperPayload, patternKey, stripQuotedSpans } from "./patterns"
 import { checkFeedbackDemotion, MAX_SESSIONS, retireAntiNag, retireTaught, type Gate, type GateStore, type LogEvent } from "./store"
 import { ANTI_NAG_REMINDERS, ANTI_NAG_REOFFENSE, TAUGHT_REMINDERS, scrubbedArgs, trackPendingCall, type BeforeOutcome, type EnforceContext } from "./context"
+import { editHeartbeatPath, heartbeatSince, HEARTBEAT_EPSILON_MS } from "./fs"
 import { guardBypassWarnings, proactiveGuardMessage } from "./guards"
 import { blockMessage, remindMessage } from "./messages"
 import { repeatSeriesDecision } from "./repeat"
@@ -148,7 +149,14 @@ export async function enforceBefore(event: NormalizedEvent, ctx: EnforceContext)
     if (fresh.status === "blocking" && failedEntry !== undefined) {
       // iteration grace: an edit since the failed attempt makes this a fresh try on changed code
       const failedAtVersion = typeof failedEntry === "object" ? failedEntry.v : undefined
-      if (failedAtVersion !== undefined && (ctx.ephemeral.workspaceVersions.get(ctx.projectDir) ?? 0) > failedAtVersion) {
+      const versionMoved = failedAtVersion !== undefined && (ctx.ephemeral.workspaceVersions.get(ctx.projectDir) ?? 0) > failedAtVersion
+      // cross-process grace: a landed edit in another CLI process leaves a heartbeat, not a shared map
+      const projectStore = ctx.stores.projectStore
+      const heartbeatMoved =
+        typeof failedEntry === "object" &&
+        projectStore !== null &&
+        (await heartbeatSince(editHeartbeatPath(projectStore.dir), failedEntry.t, HEARTBEAT_EPSILON_MS))
+      if (versionMoved || heartbeatMoved) {
         if (fresh.failedSessions !== undefined) {
           delete fresh.failedSessions[session]
           if (Object.keys(fresh.failedSessions).length === 0) delete fresh.failedSessions

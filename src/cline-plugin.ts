@@ -2,6 +2,7 @@ import { errorSignalled, extractOutput, genericToolOutput, internalArgs, interna
 import { createEphemeralState, enforceAfter, enforceBefore, type EnforceContext } from "./enforce"
 import { initStores, rateLimitedErrorSink, scheduleSweep } from "./host-init"
 import { createStores } from "./store"
+import { findProjectRoot } from "./fs"
 import type { NormalizedEvent } from "./types"
 
 /** Narrow structural mirror of the Cline hook context (@cline/shared agent.ts) — no SDK dependency. */
@@ -26,7 +27,7 @@ interface ClineAfterResult {
 }
 
 // the Cline plugin sandbox subprocess runs with cwd = the project directory
-const projectDir = process.cwd()
+const projectDir = findProjectRoot(process.cwd())
 const stores = createStores(projectDir)
 const ephemeral = createEphemeralState()
 
@@ -47,6 +48,7 @@ const enforceCtx: EnforceContext = {
   onHookError,
   platform: process.platform,
   projectDir,
+  iteratedVersionSupported: true,
 }
 
 // long-lived host: init once at module load; hooks await it before enforcing

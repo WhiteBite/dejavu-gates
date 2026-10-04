@@ -14,6 +14,7 @@ import {
 } from "./patterns"
 import { checkFeedbackDemotion, GLOBAL_PROJECTS, MAX_SESSIONS, retireAntiNag, retireTaught, type LogEvent } from "./store"
 import { ANTI_NAG_REMINDERS, ANTI_NAG_REOFFENSE, TAUGHT_REMINDERS, isCrossChannelDuplicate, scrubbedArgs, trackVersionBump, type AfterOutcome, type EnforceContext } from "./context"
+import { editHeartbeatPath, touchHeartbeat } from "./fs"
 import { remindNote } from "./messages"
 import type { NormalizedEvent } from "./types"
 
@@ -55,6 +56,16 @@ export async function enforceAfter(event: NormalizedEvent, ctx: EnforceContext):
   if ((event.tool === "edit" || event.tool === "write") && !failed && event.errored !== true) {
     ctx.ephemeral.workspaceVersions.set(ctx.projectDir, (ctx.ephemeral.workspaceVersions.get(ctx.projectDir) ?? 0) + 1)
     if (event.callId !== null) trackVersionBump(ctx.ephemeral, event.callId)
+    // a short-lived CLI host cannot share the version map — leave a heartbeat for the next process
+    const projectStore = ctx.stores.projectStore
+    if (projectStore !== null) {
+      try {
+        await touchHeartbeat(editHeartbeatPath(projectStore.dir))
+      } catch (error) {
+        // a sidecar write failure must never fail the hook
+        ctx.onHookError("after", error)
+      }
+    }
   }
 
   const args = scrubbedArgs(event.args)
@@ -103,7 +114,7 @@ export async function enforceAfter(event: NormalizedEvent, ctx: EnforceContext):
     projectDir: ctx.projectDir,
     snippet,
     globalProjects: GLOBAL_PROJECTS,
-    workspaceVersion: ctx.ephemeral.workspaceVersions.get(ctx.projectDir) ?? 0,
+    workspaceVersion: ctx.iteratedVersionSupported ? (ctx.ephemeral.workspaceVersions.get(ctx.projectDir) ?? 0) : undefined,
   })
 
   await ctx.stores.logAll({

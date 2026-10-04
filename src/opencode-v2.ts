@@ -12,6 +12,7 @@ import {
   type RepeatChannelState,
 } from "./enforce"
 import { createStores } from "./store"
+import { findProjectRoot } from "./fs"
 import { initStores, rateLimitedErrorSink, scheduleSweep } from "./host-init"
 import { genericToolOutput } from "./adapters/shared"
 import type { NormalizedEvent } from "./types"
@@ -149,7 +150,7 @@ function toRepeatChannelMessages(messages: unknown, sessionID: string): RepeatCh
 
 /** OpenCode V2 plugin host: registers dejavu's hooks on the V2 plugin Context. */
 export async function v2Setup(ctx: Plugin.Context): Promise<() => void> {
-  const projectDir: string = ctx.location.directory
+  const projectDir: string = findProjectRoot(ctx.location.directory)
   const stores = createStores(projectDir)
   const ephemeral = createEphemeralState()
 
@@ -171,6 +172,7 @@ export async function v2Setup(ctx: Plugin.Context): Promise<() => void> {
     onHookError,
     platform: process.platform,
     projectDir,
+    iteratedVersionSupported: true,
   }
 
   await initStores(stores, {

@@ -57,16 +57,18 @@ export interface EphemeralState {
   recentRecords: Map<string, { ts: number; channel: string }>
 }
 
-/**
- * Fresh in-process state. A long-lived host (the OpenCode plugin process)
+/** Fresh in-process state. A long-lived host (the OpenCode plugin process)
  * creates ONE instance and threads it through every hook call. A short-lived
  * CLI host (one process per hook event) creates a fresh empty one per
- * invocation — a DESIGNED degradation, not a bug: repeat-series blocking,
- * the pendingCalls args fallback, the cross-channel dedup window and the
- * iteration discriminator then weaken to the single call the process serves.
- * Gate enforcement itself stays fully multi-window/multi-process safe because
- * the remind→block chain is persisted ON THE GATE (remindedSessions /
- * failedSessions) and always read fresh under the store lock.
+ * invocation — repeat-series blocking, the pendingCalls args fallback and the
+ * cross-channel dedup window then weaken to the single call the process
+ * serves. Iteration grace does NOT weaken: a landed edit leaves an
+ * edit-heartbeat sidecar in the project store that the next process's
+ * before-hook reads, so a retry on changed code stays allowed across
+ * processes. Gate enforcement itself stays fully multi-window/multi-process
+ * safe because the remind→block chain is persisted ON THE GATE
+ * (remindedSessions / failedSessions) and always read fresh under the store
+ * lock.
  */
 export function createEphemeralState(): EphemeralState {
   return {
@@ -98,6 +100,9 @@ export interface EnforceContext {
   platform: string
   /** project directory whose .opencode/dejavu store is in scope ("" = global only) */
   projectDir: string
+  /** true when the host keeps the in-process workspaceVersion counter; a
+   *  short-lived CLI host sets false so recordFailure never stamps a bogus 0 */
+  iteratedVersionSupported: boolean
 }
 
 /** Before-hook result: the caller decides how a deny reaches the model

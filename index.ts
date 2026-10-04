@@ -11,6 +11,7 @@ import {
   type RepeatChannelMessage,
 } from "./src/enforce"
 import { genericToolOutput } from "./src/adapters/shared"
+import { findProjectRoot } from "./src/fs"
 import { initStores, rateLimitedErrorSink, scheduleSweep } from "./src/host-init"
 import { createStores } from "./src/store"
 import type { NormalizedEvent } from "./src/types"
@@ -20,7 +21,7 @@ import { v2Setup } from "./src/opencode-v2"
 class GateSignal extends Error {}
 
 export const Dejavu: Plugin = async ({ directory, client }) => {
-  const projectDir = typeof directory === "string" ? directory : ""
+  const projectDir = typeof directory === "string" ? findProjectRoot(directory) : ""
   const stores = createStores(projectDir)
   const cwd = typeof directory === "string" ? directory : null
 
@@ -45,6 +46,7 @@ export const Dejavu: Plugin = async ({ directory, client }) => {
     onHookError: logHookError,
     platform: process.platform,
     projectDir,
+    iteratedVersionSupported: true,
   }
 
   await initStores(stores, {

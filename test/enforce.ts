@@ -62,6 +62,7 @@ function makeCtx(stores: Stores, projectDir: string): EnforceContext {
     },
     platform: process.platform,
     projectDir,
+    iteratedVersionSupported: true,
   }
 }
 
@@ -299,6 +300,17 @@ await enforceAfter(ev({ tool: "bash", sessionId: "ig3-live", args: { command: ig
 await enforceAfter(ev({ tool: "edit", sessionId: "ig3-live", args: { filePath: join(ig3.projectDir, "src", "x.ts") }, phase: "post", output: "Error: edit rejected", exitCode: 1, channel: "exit" }), ig3.ctx)
 const ig3Block = await enforceBefore(ev({ tool: "bash", sessionId: "ig3-live", args: { command: ig3Cmd } }), ig3.ctx)
 check("a failing-exit edit does not lift the hard block either", ig3Block.verdict.action === "deny" && ig3Block.signalKind === "block")
+
+// --- iv. iteratedVersion is host-opt-in: an unsupported host never stamps the process-local counter ---
+const iv = await makeWorld("iv")
+const ivSig = callSignature("bash", { command: "iter-version-tool --run" }) ?? ""
+const ivKey = patternKey(ivSig)
+await iv.stores.recordFailure({ key: ivKey, signature: ivSig, tool: "bash", sessionID: "iv-1", projectDir: iv.projectDir, snippet: "Error: boom", globalProjects: GLOBAL_PROJECTS })
+const ivAbsent = (await readProjectGates(iv)).find((g) => g.key === ivKey)
+check("recordFailure without a workspaceVersion leaves iteratedVersion unstamped", ivAbsent?.iteratedVersion === undefined)
+await iv.stores.recordFailure({ key: ivKey, signature: ivSig, tool: "bash", sessionID: "iv-1", projectDir: iv.projectDir, snippet: "Error: boom", globalProjects: GLOBAL_PROJECTS, workspaceVersion: 5 })
+const ivSet = (await readProjectGates(iv)).find((g) => g.key === ivKey)
+check("recordFailure with a real workspaceVersion stamps iteratedVersion", ivSet?.iteratedVersion === 5)
 
 // --- ws2. file signatures are repo-relative: one file, one key ---
 const ws2 = await makeWorld("ws2")

@@ -10,6 +10,7 @@ import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { fileURLToPath } from "node:url"
 import { formatStdout } from "../src/cli"
+import { callSignature, patternKey } from "../src/patterns"
 import type { OutboundDecision } from "../src/types"
 import { makeChecker } from "./helpers"
 
@@ -30,6 +31,17 @@ function runCli(phase: string, harness: string, payload: unknown, storeDir: stri
     input: typeof payload === "string" ? payload : JSON.stringify(payload),
     env: { ...process.env, DEJAVU_HOME: globalDir },
     cwd: repoRoot,
+    encoding: "utf8",
+  })
+  return { stdout: proc.stdout ?? "", stderr: proc.stderr ?? "", exitCode: proc.status ?? -1 }
+}
+
+/** like runCli but with no --store override, so the CLI canonicalizes the cwd to its git root */
+function runCliNoStore(phase: string, harness: string, payload: unknown, spawnCwd: string, globalDir: string): CliResult {
+  const proc = spawnSync("bun", [cliPath, phase, "--harness", harness], {
+    input: typeof payload === "string" ? payload : JSON.stringify(payload),
+    env: { ...process.env, DEJAVU_HOME: globalDir },
+    cwd: spawnCwd,
     encoding: "utf8",
   })
   return { stdout: proc.stdout ?? "", stderr: proc.stderr ?? "", exitCode: proc.status ?? -1 }
@@ -78,6 +90,10 @@ const gates = (JSON.parse(gatesRaw) as { gates: Array<{ status: string; count: n
 const promoted = gates.find((g) => g.count >= 3 && g.sessions.length >= 2)
 check("gates.json holds a promoted gate (count>=3, sessions>=2)", promoted !== undefined)
 check("promoted gate is blocking (non-diagnostic bash)", promoted?.status === "blocking")
+
+const blockGates = (JSON.parse(gatesRaw) as { gates: Array<{ count: number; iteratedVersion?: number }> }).gates
+const blockPromoted = blockGates.find((g) => g.count >= 3)
+check("D3: a CLI post failure leaves iteratedVersion absent", blockPromoted !== undefined && blockPromoted.iteratedVersion === undefined)
 
 const blockPre = runCli(
   "pre",
@@ -284,5 +300,79 @@ check("formatStdout stdoutRaw carries its own trailing newline verbatim", format
 
 const rawDeny: OutboundDecision = { json: {}, exitCode: 2, stderr: "denied", stdoutRaw: "RAW_DENY" }
 check("formatStdout stdoutRaw + deny → raw payload (exitCode/stderr unchanged)", formatStdout(rawDeny) === "RAW_DENY")
+
+// --- cross-process iteration grace: a landed edit in a separate CLI process re-opens the retry ---
+const grace = await makeWorld("cross-process-grace")
+const graceCmd = "grace-tool --deploy"
+const graceSig = callSignature("bash", { command: graceCmd }) ?? ""
+const graceKey = patternKey(graceSig)
+const graceSession = "grace-live"
+const graceStoreDir = join(grace.storeDir, ".opencode", "dejavu")
+await mkdir(graceStoreDir, { recursive: true })
+await writeFile(
+  join(graceStoreDir, "gates.json"),
+  JSON.stringify({
+    version: 1,
+    gates: [
+      {
+        key: graceKey,
+        signature: graceSig,
+        tool: "bash",
+        status: "blocking",
+        count: 3,
+        sessions: [graceSession, "grace-seed"],
+        projects: [],
+        firstSeen: new Date().toISOString(),
+        lastSeen: new Date().toISOString(),
+        snippet: "grace-tool: command not found",
+        remindedSessions: { [graceSession]: Date.now() - 6000 },
+        failedSessions: { [graceSession]: { t: Date.now() - 5000, v: 0 } },
+      },
+    ],
+  }),
+  "utf8",
+)
+
+const graceEdit = runCli(
+  "post",
+  "claude",
+  { hook_event_name: "PostToolUse", session_id: graceSession, tool_name: "Edit", tool_input: { filePath: join(grace.storeDir, "src", "x.ts") }, tool_use_id: "tu-grace-edit", cwd: grace.storeDir, tool_response: { stdout: "ok", stderr: "" } },
+  grace.storeDir,
+  grace.globalDir,
+)
+check("a successful edit post exits 0", graceEdit.exitCode === 0)
+check("the edit heartbeat sidecar was written to the project store", existsSync(join(graceStoreDir, "edit-heartbeat")))
+
+const gracePre = runCli(
+  "pre",
+  "claude",
+  { hook_event_name: "PreToolUse", session_id: graceSession, tool_name: "Bash", tool_input: { command: graceCmd }, tool_use_id: "tu-grace-pre", cwd: grace.storeDir },
+  grace.storeDir,
+  grace.globalDir,
+)
+check("cross-process grace allows the gated retry after an edit landed in another process", gracePre.exitCode === 0 && !gracePre.stderr.includes("[dejavu] BLOCKED"))
+
+// --- D1: project root canonicalizes to the git root, one repo at two depths shares one store ---
+const gitRoot = join(root, "git-root")
+const gitNested = join(gitRoot, "packages", "app")
+await mkdir(gitNested, { recursive: true })
+spawnSync("git", ["init"], { cwd: gitRoot, encoding: "utf8" })
+const gitRootGlobal = join(root, "git-root-global")
+const rootCmd = "gitroot-tool --deploy"
+const rootOut = "gitroot-tool: command not found"
+function gitCli(phase: string, session: string, cwd: string): CliResult {
+  const payload =
+    phase === "post"
+      ? { hook_event_name: "PostToolUse", session_id: session, tool_name: "Bash", tool_input: { command: rootCmd }, tool_use_id: `tu-${session}-post`, cwd, tool_response: { stdout: "", stderr: rootOut } }
+      : { hook_event_name: "PreToolUse", session_id: session, tool_name: "Bash", tool_input: { command: rootCmd }, tool_use_id: `tu-${session}-pre`, cwd }
+  return runCliNoStore(phase, "claude", payload, cwd, gitRootGlobal)
+}
+gitCli("post", "d1-a", gitNested)
+gitCli("post", "d1-a", gitNested)
+gitCli("post", "d1-b", gitNested)
+check("D1: a gate learned in a nested dir lands in the git-root store", existsSync(join(gitRoot, ".opencode", "dejavu", "gates.json")))
+check("D1: no store is created at the nested dir", !existsSync(join(gitNested, ".opencode", "dejavu", "gates.json")))
+const d1Pre = gitCli("pre", "d1-live", gitRoot)
+check("D1: the gate learned at one cwd fires from the repo root", d1Pre.exitCode === 2 && d1Pre.stderr.includes("[dejavu]"))
 
 report()

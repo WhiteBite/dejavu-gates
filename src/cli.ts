@@ -28,6 +28,7 @@ import {
   recordEventFailure,
   type EnforceContext,
 } from "./enforce"
+import { findProjectRoot } from "./fs"
 import { initStores } from "./host-init"
 import { createStores } from "./store"
 import type {
@@ -156,7 +157,7 @@ export async function runHook(argv: string[]): Promise<number> {
       process.stdout.write(formatStdout(adapter.mapOutbound(args.phase, { action: "allow", reason: null, annotation: null })))
       return 0
     }
-    const projectDir = args.store ?? event.cwd ?? process.cwd()
+    const projectDir = args.store ?? findProjectRoot(event.cwd ?? process.cwd())
     const stores = createStores(projectDir)
     // per-invocation init is the CLI's accepted cost — the three idempotent passes, nothing else
     await initStores(stores, {
@@ -181,6 +182,7 @@ export async function runHook(argv: string[]): Promise<number> {
       },
       platform: process.platform,
       projectDir,
+      iteratedVersionSupported: false,
     }
     let decision: OutboundDecision
     try {

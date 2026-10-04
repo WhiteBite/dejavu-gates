@@ -3,6 +3,7 @@
  * long-path prefixing and atomic tmp+rename writes with Windows
  * AV/indexer-lock backoff. Leaf module — node: builtins only.
  */
+import { execFileSync } from "node:child_process"
 import { readdir, readFile, rename, stat, unlink, writeFile } from "node:fs/promises"
 import { join } from "node:path"
 
@@ -36,6 +37,53 @@ export async function atomicWrite(path: string, content: string): Promise<void> 
       }
       throw error
     }
+  }
+}
+
+// --- edit-heartbeat sidecar --------------------------------------------------
+
+/** A heartbeat must postdate the failed attempt by this margin to count as a
+ *  later edit; a file written just before the failure is stale, not iteration. */
+export const HEARTBEAT_EPSILON_MS = 1000
+
+/** Path of the edit-heartbeat sidecar inside a project store dir. */
+export function editHeartbeatPath(storeDir: string): string {
+  return join(storeDir, "edit-heartbeat")
+}
+
+/** Drop the edit heartbeat (atomic last-writer-wins; concurrent editors race benignly). */
+export async function touchHeartbeat(path: string): Promise<void> {
+  await atomicWrite(path, String(Date.now()))
+}
+
+/** True when the heartbeat is newer than `sinceMs` plus the epsilon. Missing or
+ *  unparseable files are false — a heartbeat must never fabricate a grace. */
+export async function heartbeatSince(path: string, sinceMs: number, epsilonMs: number): Promise<boolean> {
+  let content: string
+  try {
+    content = await readFile(ntPath(path), "utf8")
+  } catch {
+    return false
+  }
+  const heartbeat = Number(content)
+  return Number.isFinite(heartbeat) && heartbeat > sinceMs + epsilonMs
+}
+
+// --- project-root canonicalization -------------------------------------------
+
+/** Canonicalize a hook cwd to its git repository root: one repo opened at two
+ *  depths must share one store. Non-git dirs and any git failure keep the dir. */
+export function findProjectRoot(dir: string): string {
+  if (dir === "") return dir
+  try {
+    const root = execFileSync("git", ["-C", dir, "rev-parse", "--show-toplevel"], {
+      encoding: "utf8",
+      timeout: 2000,
+      windowsHide: true,
+    }).trim()
+    return root === "" ? dir : root
+  } catch {
+    return dir
   }
 }
 
