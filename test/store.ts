@@ -10,7 +10,7 @@ import { mkdir, mkdtemp, readFile, readdir, stat, utimes, writeFile } from "node
 import { tmpdir } from "node:os"
 import { isAbsolute, join, relative } from "node:path"
 import { fileURLToPath } from "node:url"
-import { atomicWrite, CORRUPT_DEFAULT_DAYS, ntPath, sweepStoreArtifacts, TMP_ORPHAN_MS } from "../src/fs"
+import { atomicWrite, CORRUPT_DEFAULT_DAYS, findProjectRoot, ntPath, sweepStoreArtifacts, TMP_ORPHAN_MS } from "../src/fs"
 import { callSignature, fuzzySimilar, patternKey, suggestCorrection } from "../src/patterns"
 import { createStores, GateStore, GLOBAL_PROJECTS, lessonStaleness, mergeGate, NOISE_TTL_DAYS, PLUGIN_VERSION, STALE_LESSON_DAYS, Stores, TTL_DAYS, type Gate } from "../src/store"
 import { coerceGateShape, isAutoCorrection, repairGate } from "../src/validate"
@@ -773,6 +773,24 @@ const rpSubRow = (await readGates(rpProjectStore)).find((g) => g.key === rpSubKe
 check("a failure recorded from a subdir persists the relative subpath", ((rpSubRow?.projects as string[] | undefined) ?? []).includes(relative(rpProject, rpSub)))
 const rpRaw = await readFile(join(rpProjectStore, "gates.json"), "utf8")
 check("the project gates.json carries no absolute machine path", !rpRaw.includes(tmp))
+
+// --- 25. project-dir spellings canonicalize to one form (B4) ---
+const b4Global = join(tmp, "b4-global")
+const b4Project = join(tmp, "b4-project")
+const b4ProjectStore = join(b4Project, ".opencode", "dejavu")
+const b4Fwd = b4Project.replace(/\\/g, "/")
+await mkdir(b4Global, { recursive: true })
+await mkdir(b4ProjectStore, { recursive: true })
+check("findProjectRoot canonicalizes forward-slash and backslash spellings to one form", findProjectRoot(b4Fwd) === findProjectRoot(b4Project))
+check("findProjectRoot keeps the empty-dir sentinel", findProjectRoot("") === "")
+const b4Sig = callSignature("bash", { command: "sep-probe --one-repo" }) ?? ""
+const b4Key = patternKey(b4Sig)
+const b4Stores = new Stores(new GateStore(b4Global), new GateStore(b4ProjectStore))
+await b4Stores.recordFailure({ key: b4Key, signature: b4Sig, tool: "bash", sessionID: "b4-1", projectDir: b4Fwd, snippet: "Error: boom", globalProjects: GLOBAL_PROJECTS })
+const b4Result = await b4Stores.recordFailure({ key: b4Key, signature: b4Sig, tool: "bash", sessionID: "b4-2", projectDir: b4Project, snippet: "Error: boom", globalProjects: GLOBAL_PROJECTS })
+check("B4: two spellings of one dir do not fabricate a two-project global escalation", b4Result.wentGlobal === false)
+const b4Idx = JSON.parse(await readFile(join(b4Global, "index.json"), "utf8")) as { keys: Record<string, { projects: string[] }> }
+check("B4: the global index holds exactly one project dir", (b4Idx.keys[b4Key]?.projects.length ?? 0) === 1)
 
 if (process.env.BENCH === "1") {
   const benchProject = join(tmp, "bench-project")

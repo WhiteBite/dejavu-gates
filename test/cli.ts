@@ -151,7 +151,7 @@ claudePost("sB", capCmd, "FAIL", cap)
 const capGates = (JSON.parse(await readFile(join(cap.storeDir, ".opencode", "dejavu", "gates.json"), "utf8")) as { gates: Array<{ status: string; textOnly?: boolean; count: number }> }).gates
 const capGate = capGates.find((g) => g.count >= 3)
 check("text-only failures still promote the echo gate (evidence kept)", capGate !== undefined)
-check("text-only evidence caps the promotion at reminding (never blocking)", capGate?.status === "reminding")
+check("text-only evidence caps a non-diagnostic promotion at watching (never enforced)", capGate?.status === "watching")
 check("the capped gate carries the textOnly flag", capGate?.textOnly === true)
 const capPre = runCli(
   "pre",

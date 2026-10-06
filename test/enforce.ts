@@ -636,6 +636,46 @@ legacyFailed.failedSessions = { kept: legacyFailedAt, dropped: -5 }
 check("repairGate coerces a legacy numeric failedSessions entry to {t, v:0}", repairGate(legacyFailed) === true && typeof legacyFailed.failedSessions?.kept === "object" && legacyFailed.failedSessions.kept.t === legacyFailedAt && legacyFailed.failedSessions.kept.v === 0)
 check("repairGate drops a non-positive numeric failedSessions entry", legacyFailed.failedSessions?.dropped === undefined)
 
+// --- b1. a text-only observation never strips the blocking tier earned by structural evidence ---
+const b1 = await makeWorld("b1")
+const b1Cmd = "real-block-tool --prod"
+const b1Sig = callSignature("bash", { command: b1Cmd }) ?? ""
+const b1Key = await failUntilPromoted(b1.stores, b1.projectDir, b1Cmd, ["b1-struct-1", "b1-struct-2"])
+const b1Seeded = (await readProjectGates(b1)).find((g) => g.key === b1Key)
+check("B1 setup: structural evidence promoted the gate to blocking", b1Seeded?.status === "blocking")
+await b1.stores.recordFailure({ key: b1Key, signature: b1Sig, tool: "bash", sessionID: "b1-text", projectDir: b1.projectDir, snippet: "FAIL", globalProjects: GLOBAL_PROJECTS, textOnly: true })
+await b1.stores.migrate(true)
+if (b1.stores.projectStore) await b1.stores.projectStore.flushDeferred()
+const b1After = (await readProjectGates(b1)).find((g) => g.key === b1Key)
+check("B1: a text-only observation keeps the earned blocking tier", b1After?.status === "blocking")
+check("B1: a text-only observation never marks a blocking gate textOnly", b1After?.textOnly === undefined)
+
+// --- b2. text-only promotion assigns a DURABLE tier: non-diagnostic → watching, diagnostic → reminding ---
+const b2 = await makeWorld("b2")
+const b2ToolSig = callSignature("bash", { command: "text-cap-tool --prod" }) ?? ""
+const b2ToolKey = patternKey(b2ToolSig)
+for (const [session, times] of [["b2-tool-1", 2], ["b2-tool-2", 1]] as [string, number][]) {
+  for (let i = 0; i < times; i++) {
+    await b2.stores.recordFailure({ key: b2ToolKey, signature: b2ToolSig, tool: "bash", sessionID: session, projectDir: b2.projectDir, snippet: "FAIL", globalProjects: GLOBAL_PROJECTS, textOnly: true })
+  }
+}
+const b2ToolRaw = (JSON.parse(await readFile(join(b2.projectStoreDir, "gates.json"), "utf8")) as { gates: Array<{ key: string; status: string; textOnly?: boolean }> }).gates
+const b2ToolPersisted = b2ToolRaw.find((g) => g.key === b2ToolKey)
+check("B2: a non-diagnostic text-only promotion persists as watching (durable tier)", b2ToolPersisted?.status === "watching")
+check("B2: the non-diagnostic text-only gate carries the textOnly mark", b2ToolPersisted?.textOnly === true)
+const b2ToolLoaded = (await readProjectGates(b2)).find((g) => g.key === b2ToolKey)
+check("B2: the watching tier survives a reload (no repairGate bounce)", b2ToolLoaded?.status === "watching")
+
+const b2DiagSig = callSignature("bash", { command: "tsc --noEmit" }) ?? ""
+const b2DiagKey = patternKey(b2DiagSig)
+for (const [session, times] of [["b2-diag-1", 2], ["b2-diag-2", 1]] as [string, number][]) {
+  for (let i = 0; i < times; i++) {
+    await b2.stores.recordFailure({ key: b2DiagKey, signature: b2DiagSig, tool: "bash", sessionID: session, projectDir: b2.projectDir, snippet: "error TS2304: Cannot find name 'x'", globalProjects: GLOBAL_PROJECTS, textOnly: true })
+  }
+}
+const b2DiagLoaded = (await readProjectGates(b2)).find((g) => g.key === b2DiagKey)
+check("B2: a diagnostic text-only promotion stays reminding with the NOTE path intact", b2DiagLoaded?.status === "reminding")
+
 await rm(tmp, { recursive: true, force: true })
 
 report()

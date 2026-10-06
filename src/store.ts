@@ -1,7 +1,7 @@
 import { existsSync } from "node:fs"
 import { appendFile, mkdir, readFile, stat, unlink, writeFile } from "node:fs/promises"
 import { homedir } from "node:os"
-import { dirname, isAbsolute, join, relative } from "node:path"
+import { dirname, isAbsolute, join, relative, resolve } from "node:path"
 import { atomicWrite, ntPath } from "./fs"
 import { canBlock, canRemind, fuzzySimilar, FUZZY_MAX_LEN, hasGenericResidualIdentity, hasResidualIdentity, isBareExitSnippet, isGenericSignature, isNoiseError, isRepoLocal, looksLikeFailure, parameterizeError, sanitizeForStore, scrubSecrets, suggestCorrection, type DfIndex } from "./patterns"
 import { coerceGateShape, failedAtMs, isAutoCorrection, repairGate } from "./validate"
@@ -1130,6 +1130,9 @@ export function mergeGate(target: Gate, source: Gate): void {
   if (source.status === "blocking" || (source.status === "reminding" && target.status === "watching")) {
     target.status = source.status
   }
+  // text-only is a tier-cap mark: a blocking target never carries it; otherwise propagate the source's
+  if (target.status === "blocking") delete target.textOnly
+  else if (source.textOnly === true) target.textOnly = true
   target.count += source.count
   for (const session of source.sessions) {
     if (!target.sessions.includes(session)) target.sessions.push(session)
@@ -1803,6 +1806,8 @@ export class Stores {
     workspaceVersion?: number
   }): Promise<{ gate: Gate; store: GateStore; promoted: boolean; wentGlobal: boolean; iterated: boolean }> {
     const now = new Date().toISOString()
+    // one repo must register one identity: fold separator/relative spellings before any evidence lands
+    const projectDir = input.projectDir === "" ? "" : resolve(input.projectDir)
     // Route to the store that already knows this key (cheap unlocked peek).
     let store = this.projectStore ?? this.globalStore
     await store.load()
@@ -1886,7 +1891,7 @@ export class Stores {
               status: "watching",
               count: 1,
               sessions: [input.sessionID],
-              projects: input.projectDir !== "" ? [input.projectDir] : [],
+              projects: projectDir !== "" ? [projectDir] : [],
               firstSeen: now,
               lastSeen: now,
               snippet: sanitizeForStore(input.snippet),
@@ -1939,8 +1944,8 @@ export class Stores {
       gate.count += 1
       if (!gate.sessions.includes(input.sessionID)) gate.sessions.push(input.sessionID)
       if (gate.sessions.length > MAX_SESSIONS) gate.sessions = gate.sessions.slice(-MAX_SESSIONS)
-      if (input.projectDir !== "" && !gate.projects.includes(input.projectDir)) {
-        gate.projects.push(input.projectDir)
+      if (projectDir !== "" && !gate.projects.includes(projectDir)) {
+        gate.projects.push(projectDir)
         if (gate.projects.length > MAX_PROJECTS) gate.projects = gate.projects.slice(-MAX_PROJECTS)
       }
       gate.lastSeen = now
@@ -1968,8 +1973,8 @@ export class Stores {
       if (!fuzzyConsolidated) {
         if (looksLikeFailure(newSnippet) || !looksLikeFailure(gate.snippet)) gate.snippet = newSnippet
       }
-      // the latest failure's channel wins — a structural failure clears the flag (self-correcting)
-      if (input.textOnly) gate.textOnly = true
+      // text-only caps a NON-blocking tier; a structurally-earned blocking gate keeps the flag clear
+      if (input.textOnly && gate.status !== "blocking") gate.textOnly = true
       else delete gate.textOnly
       // A failure breaks any heal streak — the command is still broken.
       gate.succeededAfterGate = 0
@@ -1987,8 +1992,8 @@ export class Stores {
       // only bash blocks; diagnostics + identity-bearing generic tools remind; the rest watch
       if (gate.status === "watching" && gate.feedbackDemoted !== true && effectiveCount >= threshold && gate.sessions.length >= PROMOTE_SESSIONS && stuckEvidence > 1) {
         if (canBlock(gate.tool, gate.signature)) {
-          // text-only evidence never blocks — output text alone cannot prove the call failed
-          gate.status = gate.textOnly === true ? "reminding" : "blocking"
+          // text-only evidence never blocks — assign the highest tier the shape can durably hold
+          gate.status = gate.textOnly === true ? (canRemind(gate.tool, gate.signature) ? "reminding" : "watching") : "blocking"
           promoted = true
         } else if (canRemind(gate.tool, gate.signature)) {
           gate.status = "reminding"
@@ -2032,7 +2037,7 @@ export class Stores {
           status: "watching",
           count: 1,
           sessions: [input.sessionID],
-          projects: input.projectDir !== "" ? [input.projectDir] : [],
+          projects: projectDir !== "" ? [projectDir] : [],
           firstSeen: now,
           lastSeen: now,
           snippet: sanitizeForStore(input.snippet),
@@ -2064,13 +2069,13 @@ export class Stores {
       const index = await this.globalStore.loadIndexForMutation()
       let entry = index.keys[movedGate.key]
       // structural (new key/project) saves now — first evidence must survive a crash; lastSeen-only repeats defer
-      const structural = entry === undefined || (input.projectDir !== "" && !entry.projects.includes(input.projectDir))
+      const structural = entry === undefined || (projectDir !== "" && !entry.projects.includes(projectDir))
       if (!entry) {
         entry = { projects: [], lastSeen: now }
         index.keys[movedGate.key] = entry
       }
-      if (input.projectDir !== "" && !entry.projects.includes(input.projectDir)) {
-        entry.projects.push(input.projectDir)
+      if (projectDir !== "" && !entry.projects.includes(projectDir)) {
+        entry.projects.push(projectDir)
         if (entry.projects.length > MAX_PROJECTS) entry.projects = entry.projects.slice(-MAX_PROJECTS)
       }
       entry.lastSeen = now

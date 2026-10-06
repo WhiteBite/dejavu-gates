@@ -403,6 +403,8 @@ const ENV_ASSIGNMENT_TOKEN = /^(?:\$env:)?[a-z_][a-z0-9_]*=/i
 /** Navigation and package-runner heads WRAP the real verb (`cd X npx vitest`). */
 const NAVIGATION_HEAD = /^(?:cd|set-location|pushd|popd)$/i
 const RUNNER_HEADS = new Set(["npx", "bunx"])
+/** Command wrappers that delegate execution (and the exit code) to the verb they precede. */
+const WRAPPER_COMMANDS = new Set(["time", "env", "sudo"])
 const FLAG_HEAD = /^-\S/
 /** A path-qualified executable is a different program (`./ls` is not `ls`). */
 const PATH_QUALIFIED_HEAD = /[\\/]/
@@ -431,11 +433,19 @@ function commandHead(text: string): string {
 function isDiagnosticText(text: string): boolean {
   const tokens = tokensOf(text)
   let i = 0
-  while (ENV_ASSIGNMENT_TOKEN.test(tokens[i] ?? "")) i += 1
-  if (NAVIGATION_HEAD.test(tokens[i] ?? "")) i += 2
-  while (RUNNER_HEADS.has((tokens[i] ?? "").toLowerCase())) {
-    i += 1
-    while (FLAG_HEAD.test(tokens[i] ?? "")) i += 1
+  for (;;) {
+    while (ENV_ASSIGNMENT_TOKEN.test(tokens[i] ?? "")) i += 1
+    const token = (tokens[i] ?? "").toLowerCase()
+    if (NAVIGATION_HEAD.test(token)) {
+      i += 2
+      continue
+    }
+    if (RUNNER_HEADS.has(token) || WRAPPER_COMMANDS.has(token)) {
+      i += 1
+      while (FLAG_HEAD.test(tokens[i] ?? "")) i += 1
+      continue
+    }
+    break
   }
   const head = tokens.slice(i).join(" ")
   if (matchesAtHead(DIAGNOSTIC_VERBS, head)) return true
@@ -471,7 +481,15 @@ function producerHeadMatches(signature: string, patterns: RegExp[]): boolean {
   const body = signature.startsWith("bash:") ? signature.slice("bash:".length) : signature
   for (const { text, pipeTail } of splitChainTagged(body)) {
     if (isTransparentSegment(text, pipeTail)) continue
-    if (matchesAtHead(patterns, commandHead(text))) return true
+    const head = commandHead(text)
+    if (matchesAtHead(patterns, head)) return true
+    // a path-qualified head (`./gradlew`, `/usr/bin/cat`) is the verb at its basename
+    const tokens = tokensOf(head)
+    const verb = tokens[0] ?? ""
+    if (PATH_QUALIFIED_HEAD.test(verb)) {
+      const base = baseName(verb)
+      if (base !== "" && matchesAtHead(patterns, [base, ...tokens.slice(1)].join(" "))) return true
+    }
   }
   return false
 }

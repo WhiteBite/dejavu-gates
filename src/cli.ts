@@ -11,6 +11,7 @@
  * (engine log lines only when DEJAVU_DEBUG is set).
  */
 import { readFileSync } from "node:fs"
+import { resolve } from "node:path"
 import { claudeAdapter } from "./adapters/claude"
 import { codexAdapter } from "./adapters/codex"
 import { copilotAdapter } from "./adapters/copilot"
@@ -162,7 +163,8 @@ export async function runHook(argv: string[]): Promise<number> {
       process.stdout.write(formatStdout(adapter.mapOutbound(args.phase, { action: "allow", reason: null, annotation: null })))
       return 0
     }
-    const projectDir = args.store ?? findProjectRoot(event.cwd ?? process.cwd())
+    // canonicalize an explicit --store too: a relative or mixed-separator value must not register a second dir
+    const projectDir = args.store !== null ? resolve(args.store) : findProjectRoot(event.cwd ?? process.cwd())
     const stores = createStores(projectDir)
     // per-invocation init is the CLI's accepted cost — the three idempotent passes, nothing else
     await initStores(stores, {

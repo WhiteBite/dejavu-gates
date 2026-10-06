@@ -5,7 +5,7 @@
  */
 import { execFileSync } from "node:child_process"
 import { readdir, readFile, rename, stat, unlink, writeFile } from "node:fs/promises"
-import { join } from "node:path"
+import { join, resolve } from "node:path"
 
 /** NT long-path prefix so deeply nested project dirs do not hit MAX_PATH. */
 export function ntPath(p: string): string {
@@ -81,9 +81,9 @@ export function findProjectRoot(dir: string): string {
       timeout: 2000,
       windowsHide: true,
     }).trim()
-    return root === "" ? dir : root
+    return resolve(root === "" ? dir : root)
   } catch {
-    return dir
+    return resolve(dir)
   }
 }
 

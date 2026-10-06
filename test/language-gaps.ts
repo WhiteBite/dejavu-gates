@@ -10,6 +10,7 @@ import {
   detectFailure,
   hasResidualIdentity,
   isIntendedNonzero,
+  isRepoLocal,
   looksLikeMojibake,
   looksLikeSuccess,
   normalizeCommand,
@@ -209,5 +210,17 @@ check("detects esbuild glyph error line", detectFailure('✘ [ERROR] Could not r
 check("detects the filled-circle error glyph too", detectFailure("✖ [ERROR] could not resolve").matched)
 check("plain [ERROR] still detects", detectFailure("[ERROR] could not resolve").matched)
 check("a lone glyph without [ERROR] is not a failure", !detectFailure("✘ some decoration").matched)
+
+// --- D10: repo-local/viewer heads read through path-qualified executables (B3) ---
+check("B3: ./gradlew is repo-local (never escalates globally)", isRepoLocal("bash:./gradlew test"))
+check("B3: ./gradle is repo-local (never escalates globally)", isRepoLocal("bash:./gradle build"))
+check("B3: a path-qualified Unix viewer stays remind-only, never blocking", canBlock("bash", "bash:/usr/bin/cat x | head") === false && canRemind("bash", "bash:/usr/bin/cat x | head") === true)
+check("B3 negative: ./deploy.sh is not repo-local", isRepoLocal("bash:./deploy.sh") === false)
+
+// --- D11: wrapper commands keep diagnostic immunity (N2) ---
+check("N2: time npm test is diagnostic (never blocks, exit 1 intended)", canBlock("bash", "bash:time npm test") === false && isIntendedNonzero("time npm test"))
+check("N2: sudo tsc --noEmit is diagnostic", canBlock("bash", "bash:sudo tsc --noEmit") === false && isIntendedNonzero("sudo tsc --noEmit"))
+check("N2: env FOO=1 pytest is diagnostic", canBlock("bash", "bash:env FOO=1 pytest") === false && isIntendedNonzero("env FOO=1 pytest"))
+check("N2 negative: timeout 30 deploy-tool stays block-eligible", canBlock("bash", "bash:timeout 30 deploy-tool") === true)
 
 report()
