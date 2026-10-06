@@ -442,7 +442,11 @@ function isDiagnosticText(text: string): boolean {
     }
     if (RUNNER_HEADS.has(token) || WRAPPER_COMMANDS.has(token)) {
       i += 1
-      while (FLAG_HEAD.test(tokens[i] ?? "")) i += 1
+      while (FLAG_HEAD.test(tokens[i] ?? "")) {
+        // POSIX env -u NAME: the flag's argument is not the command head
+        if (token === "env" && (tokens[i] ?? "").toLowerCase() === "-u") i += 1
+        i += 1
+      }
       continue
     }
     break
@@ -1506,13 +1510,19 @@ export function looksLikeFailure(line: string): boolean {
   return FAILURE_SIGNATURES.some((rule) => rule.test(line) || rule.test(bare))
 }
 
-/** True when the text carries 2+ U+FFFD replacement chars: console-codepage mojibake, unreadable as evidence. */
+/** True when the text is console-codepage mojibake: 2+ U+FFFD chars, or 2+ tokens carrying runs of 3+ literal `?`. */
 export function looksLikeMojibake(text: string): boolean {
   let count = 0
   for (const ch of text) {
     if (ch === "\uFFFD") count += 1
   }
-  return count >= 2
+  if (count >= 2) return true
+  // codepage loss BEFORE dejavu turns each non-ASCII word into a literal-? run; a lone "???" is not that
+  let questionRuns = 0
+  for (const token of text.split(/\s+/)) {
+    if (/\?{3,}/.test(token)) questionRuns += 1
+  }
+  return questionRuns >= 2
 }
 
 export function detectFailure(outputText: string): FailureDetection {

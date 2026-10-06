@@ -8,7 +8,7 @@ import { spawnSync } from "node:child_process"
 import { existsSync } from "node:fs"
 import { mkdir, mkdtemp, readFile, readdir, stat, utimes, writeFile } from "node:fs/promises"
 import { tmpdir } from "node:os"
-import { isAbsolute, join, relative, resolve } from "node:path"
+import { basename, dirname, isAbsolute, join, relative, resolve } from "node:path"
 import { fileURLToPath } from "node:url"
 import { atomicWrite, CORRUPT_DEFAULT_DAYS, findProjectRoot, ntPath, sweepStoreArtifacts, TMP_ORPHAN_MS } from "../src/fs"
 import { callSignature, fuzzySimilar, patternKey, suggestCorrection } from "../src/patterns"
@@ -358,6 +358,16 @@ check("merge: an older agent source correction loses to the newer target", agent
 const provenSum = makeGate({ correctionsProven: 2 })
 mergeGate(provenSum, makeGate({ correctionsProven: 3 }))
 check("merge: correctionsProven sums across records", provenSum.correctionsProven === 5)
+
+const cleanTarget = makeGate({ status: "reminding" })
+mergeGate(cleanTarget, makeGate({ status: "reminding", textOnly: true }))
+check("merge: a stale source textOnly mark does not survive onto a clean non-blocking target", cleanTarget.textOnly === undefined)
+const textOnlyTarget = makeGate({ status: "reminding", textOnly: true })
+mergeGate(textOnlyTarget, makeGate({ status: "reminding" }))
+check("merge: a non-blocking target keeps its own textOnly mark", textOnlyTarget.textOnly === true)
+const textOnlyBlocking = makeGate({ status: "blocking", textOnly: true })
+mergeGate(textOnlyBlocking, makeGate({ status: "reminding", textOnly: true }))
+check("merge: a blocking target never carries textOnly", textOnlyBlocking.textOnly === undefined)
 
 const unixSig = "bash:tail -5 missing.log"
 const unixSnippet = "exit code 1"
@@ -838,6 +848,64 @@ const b7Canonical = { version: 1, keys: { [b7Key]: { projects: [resolve(b6Projec
 await writeFile(join(b7Global, "index.json"), JSON.stringify(b7Canonical, null, 2), "utf8")
 const b7Loaded = await new GateStore(b7Global).loadIndex()
 check("an already-canonical index loads byte-stable (idempotent normalization)", JSON.stringify(b7Loaded) === JSON.stringify(b7Canonical))
+
+// --- 27. drive-letter case unifies to one identity (N3) ---
+const n3Global = join(tmp, "n3-global")
+const n3Project = join(tmp, "n3-project")
+const n3ProjectStore = join(n3Project, ".opencode", "dejavu")
+const n3Lower = n3Project.charAt(0).toLowerCase() + n3Project.slice(1)
+await mkdir(n3Global, { recursive: true })
+await mkdir(n3ProjectStore, { recursive: true })
+check("N3: findProjectRoot canonicalizes drive-letter case (non-repo fallback branch)", findProjectRoot(n3Lower) === findProjectRoot(n3Project))
+check("N3: findProjectRoot keeps the empty-dir sentinel", findProjectRoot("") === "")
+const n3Sig = callSignature("bash", { command: "drive-case-probe --run" }) ?? ""
+const n3Key = patternKey(n3Sig)
+const n3Stores = new Stores(new GateStore(n3Global), new GateStore(n3ProjectStore))
+await n3Stores.recordFailure({ key: n3Key, signature: n3Sig, tool: "bash", sessionID: "n3-1", projectDir: n3Project, snippet: "Error: boom", globalProjects: GLOBAL_PROJECTS })
+const n3Res = await n3Stores.recordFailure({ key: n3Key, signature: n3Sig, tool: "bash", sessionID: "n3-2", projectDir: n3Lower, snippet: "Error: boom", globalProjects: GLOBAL_PROJECTS })
+check("N3: drive-case spellings of one dir do not fabricate a two-project escalation", n3Res.wentGlobal === false)
+const n3Idx = JSON.parse(await readFile(join(n3Global, "index.json"), "utf8")) as { keys: Record<string, { projects: string[] }> }
+check("N3: the global index holds exactly one drive-canonical project dir", (n3Idx.keys[n3Key]?.projects.length ?? 0) === 1)
+
+// --- 28. global gates.json projects[] canonicalizes at the parse boundary (N2) ---
+const n2Global = join(tmp, "n2-global")
+const n2Project = join(tmp, "n2-project")
+const n2ProjectStore = join(n2Project, ".opencode", "dejavu")
+const n2Fwd = n2Project.replace(/\\/g, "/")
+await mkdir(n2Global, { recursive: true })
+await mkdir(n2ProjectStore, { recursive: true })
+const n2Sig = callSignature("bash", { command: "global-projects-probe --run" }) ?? ""
+const n2Key = patternKey(n2Sig)
+await writeFile(join(n2Global, "gates.json"), JSON.stringify({ version: 1, gates: [
+  seedGate({ key: n2Key, signature: n2Sig, count: 1, sessions: ["n2-0"], projects: [n2Fwd] }),
+] }), "utf8")
+const n2Stores = new Stores(new GateStore(n2Global), new GateStore(n2ProjectStore))
+await n2Stores.recordFailure({ key: n2Key, signature: n2Sig, tool: "bash", sessionID: "n2-1", projectDir: n2Project, snippet: "Error: boom", globalProjects: GLOBAL_PROJECTS })
+const n2Loaded = (await new GateStore(n2Global).load()).find((g) => g.key === n2Key)
+check("N2: a legacy forward-slash gate project does not gain a backslash duplicate on append", (n2Loaded?.projects.length ?? 0) === 1)
+const n2Row = (await readGates(n2Global)).find((g) => g.key === n2Key)
+const n2RowProjects = n2Row?.projects as string[] | undefined
+check("N2: the next save persists the canonical project spelling", (n2RowProjects?.length ?? 0) === 1 && n2RowProjects?.[0] === resolve(n2Project))
+
+const n2bGlobal = join(tmp, "n2b-global")
+await mkdir(n2bGlobal, { recursive: true })
+const n2bDir = join(tmp, "n2b-project")
+const n2bFwd = n2bDir.replace(/\\/g, "/")
+const n2bLower = n2bDir.charAt(0).toLowerCase() + n2bDir.slice(1)
+const n2bLowerFwd = n2bLower.replace(/\\/g, "/")
+const n2bParent = dirname(n2bDir)
+const n2bLeaf = basename(n2bDir)
+const n2bSpellings = [
+  n2bDir, n2bFwd, n2bLower, n2bLowerFwd,
+  `${n2bDir}\\`, `${n2bDir}/`, `${n2bFwd}/`, `${n2bLower}\\`, `${n2bLowerFwd}/`,
+  `${n2bDir}\\.`, `${n2bDir}/.`, `${n2bFwd}/.`, `${n2bLower}/.`, `${n2bLowerFwd}/.`,
+  `${n2bParent}\\.\\${n2bLeaf}`, `${n2bParent}/${n2bLeaf}`, `${n2bParent}\\\\${n2bLeaf}`, `${n2bParent}//${n2bLeaf}`, `${n2bParent}/./${n2bLeaf}`,
+]
+await writeFile(join(n2bGlobal, "gates.json"), JSON.stringify({ version: 1, gates: [
+  seedGate({ key: "cccc00000002", signature: "bash:legacy-spellings cmd", projects: n2bSpellings }),
+] }), "utf8")
+const n2bLoaded = (await new GateStore(n2bGlobal).load()).find((g) => g.key === "cccc00000002")
+check("N2: 20 legacy spellings of one dir collapse to one projects entry", (n2bLoaded?.projects.length ?? 0) === 1 && n2bLoaded?.projects[0] === resolve(n2bDir))
 
 if (process.env.BENCH === "1") {
   const benchProject = join(tmp, "bench-project")

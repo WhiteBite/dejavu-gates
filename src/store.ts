@@ -1,13 +1,13 @@
 import { existsSync } from "node:fs"
 import { appendFile, mkdir, readFile, stat, unlink, writeFile } from "node:fs/promises"
 import { homedir } from "node:os"
-import { dirname, isAbsolute, join, relative, resolve } from "node:path"
-import { atomicWrite, ntPath } from "./fs"
+import { dirname, isAbsolute, join, relative } from "node:path"
+import { atomicWrite, canonicalDir, ntPath } from "./fs"
 import { canBlock, canRemind, fuzzySimilar, FUZZY_MAX_LEN, hasGenericResidualIdentity, hasResidualIdentity, isBareExitSnippet, isGenericSignature, isNoiseError, isRepoLocal, looksLikeFailure, parameterizeError, sanitizeForStore, scrubSecrets, suggestCorrection, type DfIndex } from "./patterns"
 import { coerceGateShape, failedAtMs, isAutoCorrection, repairGate } from "./validate"
 
 /** Bumped on behavior changes; stamped into init log events so stale sessions are visible. */
-export const PLUGIN_VERSION = "2.52.0"
+export const PLUGIN_VERSION = "2.53.0"
 
 /** Global store root — DEJAVU_HOME overrides it (testing, custom setups). */
 export function resolveGlobalDir(): string {
@@ -477,9 +477,22 @@ function toAbsoluteDir(root: string, p: string): string {
   return isAbsolute(p) ? p : join(root, p)
 }
 
+/** canonicalDir() per entry + order-preserving dedupe; read-time only, the persisted cleanup rides the next save. */
+function canonicalProjects(projects: readonly string[]): string[] {
+  const seen = new Set<string>()
+  const out: string[] = []
+  for (const project of projects) {
+    const canonical = project === "" ? "" : canonicalDir(project)
+    if (seen.has(canonical)) continue
+    seen.add(canonical)
+    out.push(canonical)
+  }
+  return out
+}
+
 /**
  * Parse-boundary canonicalization of the cross-project index: every entry's
- * projects[] maps through resolve() with an order-preserving dedupe, so a
+ * projects[] maps through canonicalDir() with an order-preserving dedupe, so a
  * legacy forward-slash spelling and a fresh backslash spelling are ONE identity
  * (the gates' coerce/repair philosophy applied to the index). Read-time only —
  * idempotent, no forced write; the persisted cleanup rides the next saveIndex.
@@ -487,16 +500,7 @@ function toAbsoluteDir(root: string, p: string): string {
 function canonicalizeIndexKeys(keys: Record<string, IndexEntry>): Record<string, IndexEntry> {
   for (const entry of Object.values(keys)) {
     if (entry === null || typeof entry !== "object" || !Array.isArray(entry.projects)) continue
-    const seen = new Set<string>()
-    const projects: string[] = []
-    for (const project of entry.projects as unknown[]) {
-      if (typeof project !== "string") continue
-      const canonical = project === "" ? "" : resolve(project)
-      if (seen.has(canonical)) continue
-      seen.add(canonical)
-      projects.push(canonical)
-    }
-    entry.projects = projects
+    entry.projects = canonicalProjects((entry.projects as unknown[]).filter((p): p is string => typeof p === "string"))
   }
   return keys
 }
@@ -725,6 +729,7 @@ export class GateStore {
       repairGate(gate)
       // committable gates.json holds repo-relative dirs; the engine only ever sees absolute ones
       if (repoRoot !== null) gate.projects = gate.projects.map((p) => toAbsoluteDir(repoRoot, p))
+      gate.projects = canonicalProjects(gate.projects)
       gates.push(gate)
     }
     this.gates = gates
@@ -1051,8 +1056,9 @@ export class GateStore {
           const merged = parsed.gates.length - dropped - byKey.size
           // reconcile parses past load(), so the persisted relative dirs need the same absolutize step
           const repoRoot = this.repoRoot
-          if (repoRoot !== null) {
-            for (const gate of byKey.values()) gate.projects = gate.projects.map((p) => toAbsoluteDir(repoRoot, p))
+          for (const gate of byKey.values()) {
+            if (repoRoot !== null) gate.projects = gate.projects.map((p) => toAbsoluteDir(repoRoot, p))
+            gate.projects = canonicalProjects(gate.projects)
           }
           if (dropped === 0 && repaired === 0 && merged === 0) {
             // no-op heal skips the rewrite; the parsed view refreshes the cache like save() would
@@ -1154,9 +1160,8 @@ export function mergeGate(target: Gate, source: Gate): void {
   if (source.status === "blocking" || (source.status === "reminding" && target.status === "watching")) {
     target.status = source.status
   }
-  // text-only is a tier-cap mark: a blocking target never carries it; otherwise propagate the source's
+  // text-only is a tier-cap mark: a blocking target never carries it; the target's own latest evidence owns the flag
   if (target.status === "blocking") delete target.textOnly
-  else if (source.textOnly === true) target.textOnly = true
   target.count += source.count
   for (const session of source.sessions) {
     if (!target.sessions.includes(session)) target.sessions.push(session)
@@ -1831,7 +1836,7 @@ export class Stores {
   }): Promise<{ gate: Gate; store: GateStore; promoted: boolean; wentGlobal: boolean; iterated: boolean }> {
     const now = new Date().toISOString()
     // one repo must register one identity: fold separator/relative spellings before any evidence lands
-    const projectDir = input.projectDir === "" ? "" : resolve(input.projectDir)
+    const projectDir = input.projectDir === "" ? "" : canonicalDir(input.projectDir)
     // Route to the store that already knows this key (cheap unlocked peek).
     let store = this.projectStore ?? this.globalStore
     await store.load()

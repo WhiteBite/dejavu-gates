@@ -71,6 +71,14 @@ export async function heartbeatSince(path: string, sinceMs: number, epsilonMs: n
 
 // --- project-root canonicalization -------------------------------------------
 
+/** resolve() + one drive-letter case: Windows accepts D:\x and d:\x; resolve() alone keeps the input's case. */
+export function canonicalDir(dir: string): string {
+  const resolved = resolve(dir)
+  if (process.platform !== "win32") return resolved
+  const drive = /^([a-zA-Z]):/.exec(resolved)
+  return drive === null ? resolved : `${drive[1]!.toUpperCase()}${resolved.slice(1)}`
+}
+
 /** Canonicalize a hook cwd to its git repository root: one repo opened at two
  *  depths must share one store. Non-git dirs and any git failure keep the dir. */
 export function findProjectRoot(dir: string): string {
@@ -81,9 +89,9 @@ export function findProjectRoot(dir: string): string {
       timeout: 2000,
       windowsHide: true,
     }).trim()
-    return resolve(root === "" ? dir : root)
+    return canonicalDir(root === "" ? dir : root)
   } catch {
-    return resolve(dir)
+    return canonicalDir(dir)
   }
 }
 

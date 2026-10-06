@@ -1,5 +1,12 @@
 # Changelog
 
+## 2.53.0 - 2026-10-06
+
+### Fixed
+- **Project-dir identity fully canonical** - `canonicalDir` (resolve + win32 drive-letter uppercase) is the single canonical form at every boundary: git-root lookup, explicit --store, recordFailure, index parse, AND gate `projects[]` at the gates parse boundary (legacy forward-slash/case spellings collapse to one entry - no more MAX_PROJECTS slot pressure or cosmetic dupes in global gates); mergeGate no longer propagates a stale `textOnly` mark from a merged source (the target's own latest evidence wins).
+- **`env` with flags keeps diagnostic immunity** - `env -u FOO pytest` / `env -i tsc` were block-eligible because the flag token became the segment head; the wrapper skip now consumes env's flags (and `-u`'s argument, per POSIX env semantics).
+- **Literal-? mojibake detected** - console-codepage loss that turns Cyrillic error text into runs of `?` before the hook payload now trips the same readable-output re-run teaching as U+FFFD mojibake instead of quoting garbage in corrections.
+
 ## 2.52.0 - 2026-10-04
 
 ### Fixed

@@ -223,4 +223,10 @@ check("N2: sudo tsc --noEmit is diagnostic", canBlock("bash", "bash:sudo tsc --n
 check("N2: env FOO=1 pytest is diagnostic", canBlock("bash", "bash:env FOO=1 pytest") === false && isIntendedNonzero("env FOO=1 pytest"))
 check("N2 negative: timeout 30 deploy-tool stays block-eligible", canBlock("bash", "bash:timeout 30 deploy-tool") === true)
 
+// --- D12: env with flags keeps the wrapper skip (N4) ---
+check("N4: env -u FOO pytest is diagnostic (the -u argument is not the head)", canBlock("bash", "bash:env -u FOO pytest") === false && isIntendedNonzero("env -u FOO pytest"))
+check("N4: env -i tsc --noEmit is diagnostic", canBlock("bash", "bash:env -i tsc --noEmit") === false && isIntendedNonzero("env -i tsc --noEmit"))
+check("N4: env -u FOO -i npm test is diagnostic (mixed flags)", canBlock("bash", "bash:env -u FOO -i npm test") === false && isIntendedNonzero("env -u FOO -i npm test"))
+check("N4 negative: deploy-tool -u prod stays block-eligible", canBlock("bash", "bash:deploy-tool -u prod") === true)
+
 report()

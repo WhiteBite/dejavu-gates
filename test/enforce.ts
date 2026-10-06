@@ -629,6 +629,14 @@ check(
 const autoEmDash = autoDashSeed('Last error: "Error: boom" — address that specific error before retrying this exact call.')
 check("the em-dash AUTO template still re-derives after the flex", repairGate(autoEmDash) === true && autoEmDash.correction === suggestCorrection(autoDashSig, "Error: boom"))
 
+// --- mq. literal-? mojibake reaches the readable-output teaching (codepage loss before dejavu) ---
+const mqSig = "bash:somecmd <str>"
+const mqLiteral = suggestCorrection(mqSig, "?????? ???????? ??????? ?????, ? ?? ????? ????, ? ?????? ???????? ??? ? ?????? ??????.")
+check("literal-? mojibake gets the readable-output teaching, not a garbage quote", !mqLiteral.startsWith('Last error: "') && mqLiteral.includes("mojibake") && mqLiteral.includes("re-run"))
+check("a single ??? token is not mojibake-class", suggestCorrection(mqSig, "echo ???").startsWith('Last error: "'))
+check("single quoted question marks are not mojibake-class", suggestCorrection(mqSig, "grep -c '?' file").startsWith('Last error: "'))
+check("a plain readable error still quotes the evidence", suggestCorrection(mqSig, "Error: cannot find module x") === `Last error: "Error: cannot find module x" — address that specific error before retrying this exact call.`)
+
 // legacy bare-number failedSessions entries coerce to {t, v:0} at the repair boundary
 const legacyFailedAt = Date.now() - 1000
 const legacyFailed = repairSeed("bash:legacy-failed-unit --run")
