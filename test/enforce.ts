@@ -676,6 +676,26 @@ for (const [session, times] of [["b2-diag-1", 2], ["b2-diag-2", 1]] as [string, 
 const b2DiagLoaded = (await readProjectGates(b2)).find((g) => g.key === b2DiagKey)
 check("B2: a diagnostic text-only promotion stays reminding with the NOTE path intact", b2DiagLoaded?.status === "reminding")
 
+// --- b3. an inert text-only gate is never booked as a promotion (FLAPPY integrity) ---
+const b3 = await makeWorld("b3")
+const b3Cmd = "echo FAIL"
+const b3Sig = callSignature("bash", { command: b3Cmd }) ?? ""
+const b3Key = patternKey(b3Sig)
+for (const [session, times] of [["b3-1", 2], ["b3-2", 1]] as [string, number][]) {
+  for (let i = 0; i < times; i++) {
+    await enforceAfter(ev({ tool: "bash", sessionId: session, args: { command: b3Cmd }, phase: "post", output: "FAIL", exitCode: null, channel: "text" }), b3.ctx)
+  }
+}
+const b3Text = (await readProjectGates(b3)).find((g) => g.key === b3Key)
+check("B3: an inert text-only gate stays watching", b3Text?.status === "watching")
+check("B3: an inert text-only gate is not booked as a promotion", b3Text?.promotionCount === undefined && b3Text?.retireBaseline === undefined)
+check("B3: an inert text-only gate logs no promoted event", !(await readFile(join(b3.projectStoreDir, "log.jsonl"), "utf8")).includes('"promoted"'))
+
+await enforceAfter(ev({ tool: "bash", sessionId: "b3-3", args: { command: b3Cmd }, phase: "post", output: "Error: boom", exitCode: 1, channel: "exit" }), b3.ctx)
+const b3Struct = (await readProjectGates(b3)).find((g) => g.key === b3Key)
+check("B3: structural evidence promotes the gate to blocking", b3Struct?.status === "blocking")
+check("B3: the structural promotion earns a fresh baseline and one promotion", b3Struct?.promotionCount === 1 && b3Struct?.retireBaseline !== undefined)
+
 await rm(tmp, { recursive: true, force: true })
 
 report()

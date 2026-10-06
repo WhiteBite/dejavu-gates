@@ -477,6 +477,30 @@ function toAbsoluteDir(root: string, p: string): string {
   return isAbsolute(p) ? p : join(root, p)
 }
 
+/**
+ * Parse-boundary canonicalization of the cross-project index: every entry's
+ * projects[] maps through resolve() with an order-preserving dedupe, so a
+ * legacy forward-slash spelling and a fresh backslash spelling are ONE identity
+ * (the gates' coerce/repair philosophy applied to the index). Read-time only —
+ * idempotent, no forced write; the persisted cleanup rides the next saveIndex.
+ */
+function canonicalizeIndexKeys(keys: Record<string, IndexEntry>): Record<string, IndexEntry> {
+  for (const entry of Object.values(keys)) {
+    if (entry === null || typeof entry !== "object" || !Array.isArray(entry.projects)) continue
+    const seen = new Set<string>()
+    const projects: string[] = []
+    for (const project of entry.projects as unknown[]) {
+      if (typeof project !== "string") continue
+      const canonical = project === "" ? "" : resolve(project)
+      if (seen.has(canonical)) continue
+      seen.add(canonical)
+      projects.push(canonical)
+    }
+    entry.projects = projects
+  }
+  return keys
+}
+
 export class GateStore {
   private gates: Gate[] | null = null
   private mtimeMs = 0
@@ -811,7 +835,7 @@ export class GateStore {
       raw = await readFile(ntPath(this.indexPath), "utf8")
       const parsed = JSON.parse(raw) as Partial<IndexFile>
       const keys = parsed.keys
-      this.index = { version: 1, keys: keys !== null && typeof keys === "object" ? keys : {} }
+      this.index = { version: 1, keys: canonicalizeIndexKeys(keys !== null && typeof keys === "object" ? keys : {}) }
       this.indexMtimeMs = info.mtimeMs
       return this.index
     } catch (error) {
@@ -1992,9 +2016,10 @@ export class Stores {
       // only bash blocks; diagnostics + identity-bearing generic tools remind; the rest watch
       if (gate.status === "watching" && gate.feedbackDemoted !== true && effectiveCount >= threshold && gate.sessions.length >= PROMOTE_SESSIONS && stuckEvidence > 1) {
         if (canBlock(gate.tool, gate.signature)) {
-          // text-only evidence never blocks — assign the highest tier the shape can durably hold
-          gate.status = gate.textOnly === true ? (canRemind(gate.tool, gate.signature) ? "reminding" : "watching") : "blocking"
-          promoted = true
+          // text-only evidence never blocks — assign the highest tier; an inert watching outcome is no promotion
+          const tier = gate.textOnly === true ? (canRemind(gate.tool, gate.signature) ? "reminding" : "watching") : "blocking"
+          gate.status = tier
+          promoted = tier !== "watching"
         } else if (canRemind(gate.tool, gate.signature)) {
           gate.status = "reminding"
           promoted = true

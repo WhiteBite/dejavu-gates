@@ -8,7 +8,7 @@ import { spawnSync } from "node:child_process"
 import { existsSync } from "node:fs"
 import { mkdir, mkdtemp, readFile, readdir, stat, utimes, writeFile } from "node:fs/promises"
 import { tmpdir } from "node:os"
-import { isAbsolute, join, relative } from "node:path"
+import { isAbsolute, join, relative, resolve } from "node:path"
 import { fileURLToPath } from "node:url"
 import { atomicWrite, CORRUPT_DEFAULT_DAYS, findProjectRoot, ntPath, sweepStoreArtifacts, TMP_ORPHAN_MS } from "../src/fs"
 import { callSignature, fuzzySimilar, patternKey, suggestCorrection } from "../src/patterns"
@@ -791,6 +791,53 @@ const b4Result = await b4Stores.recordFailure({ key: b4Key, signature: b4Sig, to
 check("B4: two spellings of one dir do not fabricate a two-project global escalation", b4Result.wentGlobal === false)
 const b4Idx = JSON.parse(await readFile(join(b4Global, "index.json"), "utf8")) as { keys: Record<string, { projects: string[] }> }
 check("B4: the global index holds exactly one project dir", (b4Idx.keys[b4Key]?.projects.length ?? 0) === 1)
+
+// --- 26. legacy index spellings canonicalize at the READ boundary ---
+const b5Global = join(tmp, "b5-global")
+const b5Project = join(tmp, "b5-project")
+const b5ProjectStore = join(b5Project, ".opencode", "dejavu")
+const b5Fwd = b5Project.replace(/\\/g, "/")
+await mkdir(b5Global, { recursive: true })
+await mkdir(b5ProjectStore, { recursive: true })
+const b5Sig = callSignature("bash", { command: "legacy-index-probe --run" }) ?? ""
+const b5Key = patternKey(b5Sig)
+await writeFile(join(b5Global, "index.json"), JSON.stringify({ version: 1, keys: { [b5Key]: { projects: [b5Fwd], lastSeen: new Date().toISOString() } } }, null, 2), "utf8")
+const b5Stores = new Stores(new GateStore(b5Global), new GateStore(b5ProjectStore))
+const b5Res = await b5Stores.recordFailure({ key: b5Key, signature: b5Sig, tool: "bash", sessionID: "b5-1", projectDir: b5Project, snippet: "Error: boom", globalProjects: GLOBAL_PROJECTS })
+check("a legacy forward-slash index entry does not fabricate a two-project escalation", b5Res.wentGlobal === false)
+const b5Loaded = await b5Stores.globalStore.loadIndex()
+check("the legacy entry loads as exactly one canonical project dir", (b5Loaded.keys[b5Key]?.projects.length ?? 0) === 1 && b5Loaded.keys[b5Key]?.projects[0] === resolve(b5Project))
+await b5Stores.globalStore.runLockedIndex(async () => {
+  await b5Stores.globalStore.loadIndexForMutation()
+  await b5Stores.globalStore.saveIndex()
+})
+const b5Idx = JSON.parse(await readFile(join(b5Global, "index.json"), "utf8")) as { keys: Record<string, { projects: string[] }> }
+check("the next index save persists the canonical spelling", (b5Idx.keys[b5Key]?.projects.length ?? 0) === 1 && b5Idx.keys[b5Key]?.projects[0] === resolve(b5Project))
+
+const b6Global = join(tmp, "b6-global")
+const b6Project = join(tmp, "b6-project")
+const b6ProjectStore = join(b6Project, ".opencode", "dejavu")
+const b6Fwd = b6Project.replace(/\\/g, "/")
+await mkdir(b6Global, { recursive: true })
+await mkdir(b6ProjectStore, { recursive: true })
+const b6Sig = callSignature("bash", { command: "mixed-index-probe --run" }) ?? ""
+const b6Key = patternKey(b6Sig)
+await writeFile(join(b6ProjectStore, "gates.json"), JSON.stringify({ version: 1, gates: [
+  seedGate({ key: b6Key, signature: b6Sig, snippet: "Error: boom", count: 3, sessions: ["x1", "x2"], projects: [b6Project] }),
+] }), "utf8")
+await writeFile(join(b6Global, "index.json"), JSON.stringify({ version: 1, keys: { [b6Key]: { projects: [b6Fwd, b6Project], lastSeen: new Date().toISOString() } } }, null, 2), "utf8")
+const b6Stores = new Stores(new GateStore(b6Global), new GateStore(b6ProjectStore))
+await b6Stores.reconcileAll()
+const b6Escalated = existsSync(join(b6Global, "gates.json")) && (await readGates(b6Global)).some((g) => g.key === b6Key)
+check("a mixed-spelling index counts one dir (reconcileAll does not escalate)", (await readGates(b6ProjectStore)).some((g) => g.key === b6Key) && !b6Escalated)
+
+const b7Global = join(tmp, "b7-global")
+await mkdir(b7Global, { recursive: true })
+const b7Key = patternKey("bash:canonical-index --run")
+const b7Canonical = { version: 1, keys: { [b7Key]: { projects: [resolve(b6Project)], lastSeen: "2026-09-20T00:00:00.000Z" } } }
+await writeFile(join(b7Global, "index.json"), JSON.stringify(b7Canonical, null, 2), "utf8")
+const b7Loaded = await new GateStore(b7Global).loadIndex()
+check("an already-canonical index loads byte-stable (idempotent normalization)", JSON.stringify(b7Loaded) === JSON.stringify(b7Canonical))
 
 if (process.env.BENCH === "1") {
   const benchProject = join(tmp, "bench-project")
