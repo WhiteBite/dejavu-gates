@@ -895,17 +895,22 @@ const n2bLower = n2bDir.charAt(0).toLowerCase() + n2bDir.slice(1)
 const n2bLowerFwd = n2bLower.replace(/\\/g, "/")
 const n2bParent = dirname(n2bDir)
 const n2bLeaf = basename(n2bDir)
-const n2bSpellings = [
-  n2bDir, n2bFwd, n2bLower, n2bLowerFwd,
-  `${n2bDir}\\`, `${n2bDir}/`, `${n2bFwd}/`, `${n2bLower}\\`, `${n2bLowerFwd}/`,
-  `${n2bDir}\\.`, `${n2bDir}/.`, `${n2bFwd}/.`, `${n2bLower}/.`, `${n2bLowerFwd}/.`,
-  `${n2bParent}\\.\\${n2bLeaf}`, `${n2bParent}/${n2bLeaf}`, `${n2bParent}\\\\${n2bLeaf}`, `${n2bParent}//${n2bLeaf}`, `${n2bParent}/./${n2bLeaf}`,
-]
+const n2bSpellings = process.platform === "win32"
+  ? [
+    n2bDir, n2bFwd, n2bLower, n2bLowerFwd,
+    `${n2bDir}\\`, `${n2bDir}/`, `${n2bFwd}/`, `${n2bLower}\\`, `${n2bLowerFwd}/`,
+    `${n2bDir}\\.`, `${n2bDir}/.`, `${n2bFwd}/.`, `${n2bLower}/.`, `${n2bLowerFwd}/.`,
+    `${n2bParent}\\.\\${n2bLeaf}`, `${n2bParent}/${n2bLeaf}`, `${n2bParent}\\\\${n2bLeaf}`, `${n2bParent}//${n2bLeaf}`, `${n2bParent}/./${n2bLeaf}`,
+  ]
+  : [
+    n2bDir, `${n2bDir}/`, `${n2bDir}/.`,
+    `${n2bParent}/${n2bLeaf}`, `${n2bParent}//${n2bLeaf}`, `${n2bParent}/./${n2bLeaf}`,
+  ]
 await writeFile(join(n2bGlobal, "gates.json"), JSON.stringify({ version: 1, gates: [
   seedGate({ key: "cccc00000002", signature: "bash:legacy-spellings cmd", projects: n2bSpellings }),
 ] }), "utf8")
 const n2bLoaded = (await new GateStore(n2bGlobal).load()).find((g) => g.key === "cccc00000002")
-check("N2: 20 legacy spellings of one dir collapse to one projects entry", (n2bLoaded?.projects.length ?? 0) === 1 && n2bLoaded?.projects[0] === resolve(n2bDir))
+check(`N2: ${n2bSpellings.length} legacy spellings of one dir collapse to one projects entry`, (n2bLoaded?.projects.length ?? 0) === 1 && n2bLoaded?.projects[0] === resolve(n2bDir))
 
 if (process.env.BENCH === "1") {
   const benchProject = join(tmp, "bench-project")
