@@ -16,7 +16,7 @@
 export type HarnessName = "opencode" | "claude" | "codex" | "gemini" | "cursor" | "copilot" | "crush" | "devin" | "kiro" | "cline"
 
 /** Phase at which the hook fires */
-export type HookPhase = "pre" | "post" | "session-event"
+export type HookPhase = "pre" | "post" | "session-event" | "session-start"
 
 /** Unified event shape that every adapter normalizes inbound payloads to */
 export interface NormalizedEvent {

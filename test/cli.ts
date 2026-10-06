@@ -326,6 +326,137 @@ check("SessionEnd without session_id → {} exit 0 (fail-open)", sessionEndNoSes
 const sessionEndGarbage = runCli("session-event", "claude", 42, se.storeDir, se.globalDir)
 check("garbage session-event payload → {} exit 0 (fail-open)", sessionEndGarbage.exitCode === 0 && sessionEndGarbage.stdout.trim() === "{}")
 
+// --- SessionStart digest: enforced gates are taught upfront via additionalContext ---
+interface SeedGate {
+  key: string
+  signature: string
+  tool: string
+  status: string
+  count: number
+  sessions: string[]
+  projects: string[]
+  firstSeen: string
+  lastSeen: string
+  snippet: string
+  correction: string
+}
+
+function digestGate(key: string, signature: string, status: string, count: number, sessions: string[], correction: string, lastSeenMs: number): SeedGate {
+  return {
+    key,
+    signature,
+    tool: "bash",
+    status,
+    count,
+    sessions,
+    projects: [],
+    firstSeen: new Date(Date.now() - 86_400_000).toISOString(),
+    lastSeen: new Date(lastSeenMs).toISOString(),
+    snippet: "digest-tool: command not found",
+    correction,
+  }
+}
+
+const ss = await makeWorld("session-start")
+const ssStoreDir = join(ss.storeDir, ".opencode", "dejavu")
+await mkdir(ssStoreDir, { recursive: true })
+await writeFile(
+  join(ssStoreDir, "gates.json"),
+  JSON.stringify({
+    version: 1,
+    gates: [
+      digestGate("d11111111111", "bash:tsc --noEmit", "reminding", 8, ["r1", "r2", "r3", "r4"], "fix the type errors before re-running", Date.now()),
+      digestGate("d22222222222", "bash:digest-block-stale --prod", "blocking", 5, ["s1", "s2", "s3"], "run digest-block-stale from the repo root", Date.now() - 86_400_000),
+      digestGate("d33333333333", "bash:digest-block-fresh --prod", "blocking", 4, ["f1", "f2", "f3"], "run digest-block-fresh with --env set", Date.now()),
+    ],
+  }),
+  "utf8",
+)
+// the global store (DEJAVU_HOME) contributes agent habits to the digest too
+await mkdir(ss.globalDir, { recursive: true })
+await writeFile(join(ss.globalDir, "gates.json"), JSON.stringify({ version: 1, gates: [digestGate("d44444444444", "bash:global-habit --run", "blocking", 6, ["g1", "g2", "g3"], "run global-habit inside tmux", Date.now())] }), "utf8")
+
+const sessionStart = runCli(
+  "session-start",
+  "claude",
+  { hook_event_name: "SessionStart", session_id: "ss-live", cwd: ss.storeDir, source: "startup" },
+  ss.storeDir,
+  ss.globalDir,
+)
+check("claude SessionStart → exit 0", sessionStart.exitCode === 0)
+const ssJson = JSON.parse(sessionStart.stdout) as { hookSpecificOutput?: { hookEventName?: string; additionalContext?: string } }
+check("claude SessionStart → hookEventName SessionStart", ssJson.hookSpecificOutput?.hookEventName === "SessionStart")
+const ssDigest = ssJson.hookSpecificOutput?.additionalContext ?? ""
+check("SessionStart digest carries the top blocking gate's signature", ssDigest.includes("bash:digest-block-fresh --prod"))
+check("SessionStart digest carries the top blocking gate's correction", ssDigest.includes("run digest-block-fresh with --env set"))
+check("SessionStart digest carries the reminding gate", ssDigest.includes("bash:tsc --noEmit"))
+check("SessionStart digest carries the global-store gate", ssDigest.includes("bash:global-habit --run"))
+check("SessionStart digest ranks blocking before reminding", ssDigest.indexOf("bash:digest-block-fresh") < ssDigest.indexOf("bash:tsc --noEmit"))
+check("SessionStart digest orders within a tier by lastSeen desc", ssDigest.indexOf("bash:digest-block-fresh") < ssDigest.indexOf("bash:digest-block-stale"))
+check("SessionStart digest frames gate data as data-to-read", ssDigest.includes("data to read"))
+
+// top-N: 7 seeded gates → exactly 5 digest lines, tail gates dropped
+const ssN = await makeWorld("session-start-topn")
+const ssNDir = join(ssN.storeDir, ".opencode", "dejavu")
+await mkdir(ssNDir, { recursive: true })
+await writeFile(
+  join(ssNDir, "gates.json"),
+  JSON.stringify({
+    version: 1,
+    gates: Array.from({ length: 7 }, (_, i): SeedGate => digestGate(`e${i.toString().padStart(11, "0")}`, `bash:n-tool-${i} --run`, "blocking", 3 + i, ["n1", "n2"], `fix n-tool-${i}`, Date.now() - i * 1000)),
+  }),
+  "utf8",
+)
+const sessionStartN = runCli("session-start", "claude", { hook_event_name: "SessionStart", session_id: "ss-n", cwd: ssN.storeDir, source: "startup" }, ssN.storeDir, ssN.globalDir)
+const ssNDigest = ((JSON.parse(sessionStartN.stdout) as { hookSpecificOutput?: { additionalContext?: string } }).hookSpecificOutput?.additionalContext) ?? ""
+const ssNLines = (ssNDigest.match(/^- \[/gm) ?? []).length
+check("SessionStart digest caps at 5 gate lines (7 seeded)", ssNLines === 5)
+check("SessionStart digest drops gates past the top-5", !ssNDigest.includes("n-tool-5") && !ssNDigest.includes("n-tool-6"))
+check("SessionStart digest stays within the char cap", ssNDigest.length <= 2000)
+
+// char cap: long signatures stop lines before the 2000-char budget, corrections truncate to ~120
+const ssCap = await makeWorld("session-start-cap")
+const ssCapDir = join(ssCap.storeDir, ".opencode", "dejavu")
+await mkdir(ssCapDir, { recursive: true })
+await writeFile(
+  join(ssCapDir, "gates.json"),
+  JSON.stringify({
+    version: 1,
+    gates: Array.from({ length: 7 }, (_, i): SeedGate => digestGate(`f${i.toString().padStart(11, "0")}`, `bash:${"k".repeat(400)}-${i}`, "blocking", 3 + i, ["c1", "c2"], "x".repeat(600), Date.now() - i * 1000)),
+  }),
+  "utf8",
+)
+const sessionStartCap = runCli("session-start", "claude", { hook_event_name: "SessionStart", session_id: "ss-cap", cwd: ssCap.storeDir, source: "clear" }, ssCap.storeDir, ssCap.globalDir)
+const ssCapDigest = ((JSON.parse(sessionStartCap.stdout) as { hookSpecificOutput?: { additionalContext?: string } }).hookSpecificOutput?.additionalContext) ?? ""
+const ssCapLines = (ssCapDigest.match(/^- \[/gm) ?? []).length
+check("SessionStart digest stops adding lines at the 2000-char budget", ssCapLines >= 1 && ssCapLines < 5 && ssCapDigest.length <= 2000)
+check("SessionStart digest truncates corrections to ~120 chars", !ssCapDigest.includes("x".repeat(121)))
+
+// empty store → no digest
+const ssEmpty = await makeWorld("session-start-empty")
+const sessionStartEmpty = runCli("session-start", "claude", { hook_event_name: "SessionStart", session_id: "ss-empty", cwd: ssEmpty.storeDir, source: "startup" }, ssEmpty.storeDir, ssEmpty.globalDir)
+check("SessionStart with no enforced gates → {} exit 0 (no digest)", sessionStartEmpty.exitCode === 0 && sessionStartEmpty.stdout.trim() === "{}")
+
+// watching-only store → no digest (probes never enforce)
+const ssWatch = await makeWorld("session-start-watch")
+const ssWatchDir = join(ssWatch.storeDir, ".opencode", "dejavu")
+await mkdir(ssWatchDir, { recursive: true })
+await writeFile(join(ssWatchDir, "gates.json"), JSON.stringify({ version: 1, gates: [{ ...digestGate("a1a1a1a1a1a1", "read:src/missing.ts", "watching", 5, ["w1", "w2", "w3", "w4", "w5"], "create the file first", Date.now()), tool: "read" }] }), "utf8")
+const sessionStartWatch = runCli("session-start", "claude", { hook_event_name: "SessionStart", session_id: "ss-watch", cwd: ssWatch.storeDir, source: "resume" }, ssWatch.storeDir, ssWatch.globalDir)
+check("SessionStart with watching-only gates → {} exit 0 (no digest)", sessionStartWatch.exitCode === 0 && sessionStartWatch.stdout.trim() === "{}")
+
+// malformed / unrecognized payloads → fail-open
+const sessionStartMalformed = runCli("session-start", "claude", "{not valid json", ss.storeDir, ss.globalDir)
+check("SessionStart malformed stdin → {} exit 0 (fail-open)", sessionStartMalformed.exitCode === 0 && sessionStartMalformed.stdout.trim() === "{}")
+const sessionStartWrongEvent = runCli("session-start", "claude", { hook_event_name: "SessionEnd", session_id: "s", cwd: ss.storeDir }, ss.storeDir, ss.globalDir)
+check("SessionStart phase with a non-SessionStart event → {} exit 0", sessionStartWrongEvent.exitCode === 0 && sessionStartWrongEvent.stdout.trim() === "{}")
+const sessionStartNoSession = runCli("session-start", "claude", { hook_event_name: "SessionStart", cwd: ss.storeDir }, ss.storeDir, ss.globalDir)
+check("SessionStart without session_id → {} exit 0 (fail-open)", sessionStartNoSession.exitCode === 0 && sessionStartNoSession.stdout.trim() === "{}")
+
+// non-claude harness → no verified session-start context surface
+const sessionStartCodex = runCli("session-start", "codex", { hook_event_name: "SessionStart", session_id: "s", cwd: ss.storeDir, source: "startup" }, ss.storeDir, ss.globalDir)
+check("SessionStart on a non-claude harness → {} exit 0 (no verified session-start surface)", sessionStartCodex.exitCode === 0 && sessionStartCodex.stdout.trim() === "{}")
+
 // --- usage error: missing --harness → exit 1 (distinct from allow/block) ---
 const noHarness = spawnSync("bun", [cliPath, "pre"], { input: "{}", env: { ...process.env, DEJAVU_HOME: block.globalDir }, cwd: repoRoot, encoding: "utf8" })
 check("missing --harness → exit 1 + usage on stderr", (noHarness.status ?? 0) === 1 && (noHarness.stderr ?? "").includes("usage"))

@@ -7,6 +7,9 @@
 - **`env` with flags keeps diagnostic immunity** - `env -u FOO pytest` / `env -i tsc` were block-eligible because the flag token became the segment head; the wrapper skip now consumes env's flags (and `-u`'s argument, per POSIX env semantics).
 - **Literal-? mojibake detected** - console-codepage loss that turns Cyrillic error text into runs of `?` before the hook payload now trips the same readable-output re-run teaching as U+FFFD mojibake instead of quoting garbage in corrections.
 
+### Added
+- **Claude Code SessionStart gate digest** - a new `session-start` hook phase injects the project's top-5 enforced gates (blocking first, then reminding, lastSeen-desc within a tier) as `additionalContext` at session start: the agent is taught upfront instead of losing a first call to a reminder. Read-only stores, never denies, fail-open in the harness's own allow dialect, 2000-char whole-line budget over sanitized fields; the installer wires SessionStart with SessionEnd parity and uninstall/hooks --check recognize it.
+
 ## 2.52.0 - 2026-10-04
 
 ### Fixed

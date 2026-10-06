@@ -74,12 +74,17 @@ const end1 = s1.hooks?.SessionEnd ?? []
 check("install wrote exactly one dejavu SessionEnd entry", Array.isArray(end1) && end1.length === 1)
 const endCmd1 = JSON.stringify(end1)
 check("SessionEnd command runs session-event --harness claude", endCmd1.includes("session-event") && endCmd1.includes("--harness claude"))
+const start1 = s1.hooks?.SessionStart ?? []
+check("install wrote exactly one dejavu SessionStart entry", Array.isArray(start1) && start1.length === 1)
+const startCmd1 = JSON.stringify(start1)
+check("SessionStart command runs session-start --harness claude", startCmd1.includes("session-start") && startCmd1.includes("--harness claude"))
 
 const inst2 = run(["install", "--harness", "claude", "--project", "--yes"], a.cwd, a.home)
 check("re-install exits 0", inst2.code === 0)
 const s2 = JSON.parse(await readFile(settingsA, "utf8")) as Settings
 check("re-install stays idempotent (still one PreToolUse entry)", (s2.hooks?.PreToolUse ?? []).length === 1)
 check("re-install stays idempotent (still one SessionEnd entry)", (s2.hooks?.SessionEnd ?? []).length === 1)
+check("re-install stays idempotent (still one SessionStart entry)", (s2.hooks?.SessionStart ?? []).length === 1)
 check("re-install rotated a .dejavu-bak backup", existsSync(`${settingsA}.dejavu-bak`))
 
 // --- S3+S4: foreign hook survives install AND uninstall ---
@@ -88,7 +93,8 @@ await mkdir(join(b.cwd, ".claude"), { recursive: true })
 const settingsB = join(b.cwd, ".claude", "settings.json")
 const foreignEntry = { matcher: "Bash", hooks: [{ type: "command", command: "echo foreign" }] }
 const foreignEnd = { hooks: [{ type: "command", command: "echo foreign-end" }] }
-await writeFile(settingsB, JSON.stringify({ hooks: { PreToolUse: [foreignEntry], SessionEnd: [foreignEnd] } }, null, 2), "utf8")
+const foreignStart = { hooks: [{ type: "command", command: "echo foreign-start" }] }
+await writeFile(settingsB, JSON.stringify({ hooks: { PreToolUse: [foreignEntry], SessionEnd: [foreignEnd], SessionStart: [foreignStart] } }, null, 2), "utf8")
 run(["install", "--harness", "claude", "--project", "--yes"], b.cwd, b.home)
 const sB1 = JSON.parse(await readFile(settingsB, "utf8")) as Settings
 const preB1 = JSON.stringify(sB1.hooks?.PreToolUse ?? [])
@@ -96,6 +102,8 @@ check("install preserves the foreign hook entry", preB1.includes("echo foreign")
 check("install adds dejavu alongside foreign", preB1.includes("--harness claude"))
 const endB1 = JSON.stringify(sB1.hooks?.SessionEnd ?? [])
 check("install adds dejavu SessionEnd alongside the foreign one", endB1.includes("--harness claude") && endB1.includes("echo foreign-end"))
+const startB1 = JSON.stringify(sB1.hooks?.SessionStart ?? [])
+check("install adds dejavu SessionStart alongside the foreign one", startB1.includes("--harness claude") && startB1.includes("echo foreign-start"))
 
 const un = run(["uninstall", "--harness", "claude", "--project", "--yes"], b.cwd, b.home)
 check("uninstall exits 0", un.code === 0)
@@ -106,6 +114,9 @@ check("uninstall keeps the foreign entry", preB2.includes("echo foreign"))
 const endB2 = JSON.stringify(sB2.hooks?.SessionEnd ?? [])
 check("uninstall strips the dejavu SessionEnd entry", !endB2.includes("--harness claude"))
 check("uninstall keeps the foreign SessionEnd hook", endB2.includes("echo foreign-end"))
+const startB2 = JSON.stringify(sB2.hooks?.SessionStart ?? [])
+check("uninstall strips the dejavu SessionStart entry", !startB2.includes("--harness claude"))
+check("uninstall keeps the foreign SessionStart hook", startB2.includes("echo foreign-start"))
 
 // --- S5: auto-detect from user-scope markers (no --harness) ---
 const c = await world("c")
@@ -419,6 +430,7 @@ const MATCHER_PINS: Array<{ harness: string; event: string; matcher: string }> =
   { harness: "claude", event: "PostToolUse", matcher: "*" },
   { harness: "claude", event: "PostToolUseFailure", matcher: "*" },
   { harness: "claude", event: "SessionEnd", matcher: "*" },
+  { harness: "claude", event: "SessionStart", matcher: "*" },
   { harness: "codex", event: "PreToolUse", matcher: "^(Bash)$" },
   { harness: "codex", event: "PostToolUse", matcher: "^(Bash|apply_patch)$" },
   { harness: "gemini", event: "BeforeTool", matcher: "^(run_shell_command)$" },
@@ -448,6 +460,7 @@ for (const matcherless of ["cursor", "copilot"]) {
 const bundledClaude = JSON.parse(await readFile(join(repoRoot, "hooks", "claude.json"), "utf8")) as Json
 check("bundled hooks/claude.json pre matcher is anchored to Bash", eventMatchers(bundledClaude, "PreToolUse").join("|") === "^(Bash)$")
 check("bundled hooks/claude.json post matcher stays *", eventMatchers(bundledClaude, "PostToolUse").join("|") === "*")
+check("bundled hooks/claude.json SessionStart matcher stays *", eventMatchers(bundledClaude, "SessionStart").join("|") === "*")
 const bundledGemini = JSON.parse(await readFile(join(repoRoot, "hooks", "hooks.json"), "utf8")) as Json
 check("bundled hooks/hooks.json BeforeTool matcher is anchored to run_shell_command", eventMatchers(bundledGemini, "BeforeTool").join("|") === "^(run_shell_command)$")
 check("bundled hooks/hooks.json AfterTool matcher stays wide", eventMatchers(bundledGemini, "AfterTool").join("|") === "run_shell_command|read_file|write_file|replace|glob|search_file_content")

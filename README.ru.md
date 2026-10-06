@@ -36,7 +36,7 @@ dejavu report
 | Харнесс | Установка | Блок (pre) | Remind NOTE (post) | Примечания |
 |---|---|---|---|---|
 | **OpenCode** | npm plugin / source | ✅ | ✅ | полная интеграция: все каналы, repeat guard, контекст компакции |
-| **Claude Code** | `install-hooks.ts` | ✅ | ✅ | аннотации через `additionalContext`; хуки не несут exit codes → текстовая детекция |
+| **Claude Code** | `install-hooks.ts` | ✅ | ✅ | аннотации через `additionalContext`; хук `SessionStart` вносит дайджест гейтов (топ enforced-гейтов) в начале сессии; хуки не несут exit codes → текстовая детекция |
 | **Codex CLI** | `install-hooks.ts` | ✅ | ✅ | хуки стабильны и включены по умолчанию; Pre/PostToolUse срабатывают на каждый инструмент (matcher покрывает `Bash` + `apply_patch`); для project hooks может остаться trust prompt при первом запуске |
 | **Gemini CLI** | `install-hooks.ts` | ✅ | ✅ | BeforeTool/AfterTool |
 | **Cursor** | `install-hooks.ts` | ✅ | ✅ | shell events + CC-совместимые события |
@@ -169,7 +169,7 @@ bun scripts/install-hooks.ts --harness codex --dry-run   # preview without writi
 - **Crush**: только PreToolUse (AfterTool в upstream нет) — dejavu работает в degraded: блокирование работает, напоминания не могут аннотировать; общий store всё равно обучает Crush гейтами, выученными в других местах.
 - **Devin CLI**: хуки живут в `.devin/hooks.v1.json`, где корень файла И ЕСТЬ карта событий — установщик мержит записи dejavu в него и снимает их при uninstall, чужие события выживают. Devin также авто-импортирует хуки Claude-формата из `.claude/settings.json` (`read_config_from.claude`, включено по умолчанию), поэтому установка для Claude уже гейтит и Devin-сессии. Пользовательского файла хуков не документировано — только project scope.
 - **Kiro**: хуки — отдельные файлы в `.kiro/hooks/`; dejavu владеет там `dejavu-gates.json`. Kiro блокирует на любом ненулевом exit хука и инжектирует stdout успешного хука в контекст агента, поэтому напоминающий NOTE летит сырым stdout, а allow ничего не пишет. Пользовательского пути хуков Kiro не документирует — только project scope.
-- **Claude Code**: `PostToolUseFailure` подключен к тому же post-обработчику; payloads не несут exit codes, поэтому детекция сбоев идет по тексту вывода (текстовый канал движка).
+- **Claude Code**: `PostToolUseFailure` подключен к тому же post-обработчику; payloads не несут exit codes, поэтому детекция сбоев идет по тексту вывода (текстовый канал движка). Хук `SessionStart` вносит дайджест топ enforced-гейтов проекта (сначала blocking, затем reminding) как `additionalContext` — агент узнает гейтнутые вызовы до того, как потеряет первый на напоминании.
 
 Ручной вызов (любой харнесс с command hooks):
 

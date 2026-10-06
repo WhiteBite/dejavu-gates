@@ -31,6 +31,14 @@
           { "type": "command", "command": "{{CLI}} session-event --harness claude", "timeout": 30 }
         ]
       }
+    ],
+    "SessionStart": [
+      {
+        "matcher": "*",
+        "hooks": [
+          { "type": "command", "command": "{{CLI}} session-start --harness claude", "timeout": 30 }
+        ]
+      }
     ]
   }
 }

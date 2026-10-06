@@ -36,7 +36,7 @@ Tests: `npm run test`
 | Harness | Install | Block (pre) | Remind NOTE (post) | Notes |
 |---|---|---|---|---|
 | **OpenCode** | npm plugin / source | ✅ | ✅ | full integration: all channels, repeat guard, compaction context |
-| **Claude Code** | `install-hooks.ts` | ✅ | ✅ | `additionalContext` annotations; hooks carry no exit codes → text detection |
+| **Claude Code** | `install-hooks.ts` | ✅ | ✅ | `additionalContext` annotations; `SessionStart` hook injects a gate digest (top enforced gates) at session start; hooks carry no exit codes → text detection |
 | **Codex CLI** | `install-hooks.ts` | ✅ | ✅ | hooks are stable and on by default; Pre/PostToolUse fire for every tool (matcher covers `Bash` + `apply_patch`); a first-run trust prompt may still apply to project hooks |
 | **Gemini CLI** | `install-hooks.ts` | ✅ | ✅ | BeforeTool/AfterTool |
 | **Cursor** | `install-hooks.ts` | ✅ | ✅ | shell events + CC-compatible events |
@@ -169,7 +169,7 @@ Harness specifics:
 - **Crush**: PreToolUse only (no AfterTool upstream) — dejavu runs degraded: blocking works, reminders can't annotate; the shared store still teaches Crush from gates learned elsewhere.
 - **Devin CLI**: hooks live in `.devin/hooks.v1.json` where the file root IS the event map — the installer merges dejavu entries into it and strips them on uninstall, foreign events survive. Devin also auto-imports Claude-format hooks from `.claude/settings.json` (`read_config_from.claude`, on by default), so a Claude install already gates Devin sessions. No user-level hooks file is documented — project scope only.
 - **Kiro**: hooks are standalone files under `.kiro/hooks/`; dejavu owns `dejavu-gates.json` there. Kiro blocks on any non-zero hook exit and injects a successful hook's stdout into agent context, so the reminding NOTE rides raw on stdout and an allow writes nothing. Kiro documents no user-level hooks path — project scope only.
-- **Claude Code**: `PostToolUseFailure` is wired to the same post handler; payloads carry no exit codes, so failure detection runs on output text (the engine's text channel).
+- **Claude Code**: `PostToolUseFailure` is wired to the same post handler; payloads carry no exit codes, so failure detection runs on output text (the engine's text channel). The `SessionStart` hook injects a digest of the project's top enforced gates (blocking first, then reminding) as `additionalContext`, so the agent knows the gated calls before losing a first one to a reminder.
 
 Manual invocation (any harness with command hooks):
 

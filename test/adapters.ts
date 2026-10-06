@@ -63,6 +63,23 @@ check("claude SessionEnd without session_id → null", claudeAdapter.mapInbound(
 check("claude session-event with a non-SessionEnd hook event → null", claudeAdapter.mapInbound("session-event", { hook_event_name: "SessionStart", session_id: "s" }) === null)
 check("claude session-event non-object payload → null", claudeAdapter.mapInbound("session-event", 42) === null)
 
+// --- claude: mapInbound session-start (SessionStart digest channel) ---
+const claudeSessionStart = { hook_event_name: "SessionStart", session_id: "cs-start-1", cwd: "/tmp", source: "startup" }
+const ceStart = claudeAdapter.mapInbound("session-start", claudeSessionStart)
+check("claude SessionStart → phase session-start", ceStart?.phase === "session-start")
+check("claude SessionStart → tool 'session'", ceStart?.tool === "session")
+check("claude SessionStart → sessionId", ceStart?.sessionId === "cs-start-1")
+check("claude SessionStart → cwd", ceStart?.cwd === "/tmp")
+check("claude SessionStart → callId null", ceStart?.callId === null)
+check("claude SessionStart → output null (digest-only, nothing to record)", ceStart?.output === null)
+check("claude SessionStart → exitCode null", ceStart?.exitCode === null)
+check("claude SessionStart → channel 'event'", ceStart?.channel === "event")
+check("claude SessionStart → harness", ceStart?.harness === "claude")
+
+check("claude SessionStart without session_id → null", claudeAdapter.mapInbound("session-start", { hook_event_name: "SessionStart" }) === null)
+check("claude session-start with a non-SessionStart hook event → null", claudeAdapter.mapInbound("session-start", { hook_event_name: "SessionEnd", session_id: "s" }) === null)
+check("claude session-start non-object payload → null", claudeAdapter.mapInbound("session-start", 42) === null)
+
 // --- claude: mapInbound post ---
 const claudePostOk = { tool_name: "Bash", tool_input: { command: "echo hi" }, session_id: "cs-5", tool_use_id: "tu-cla-5", tool_response: "hello world" }
 const ce5 = claudeAdapter.mapInbound("post", claudePostOk)
@@ -119,6 +136,21 @@ check("claude post annotation truncated to 10000", (((claudeTrunc.json as Record
 // --- claude: pre deny → exit-2 dialect ---
 const fbPre = claudeAdapter.mapOutbound("pre", { action: "deny", reason: "reason", annotation: null })
 check("claude pre deny → denyDecision exit 2 + stderr", fbPre.exitCode === 2 && fbPre.stderr === "reason")
+
+// --- claude: mapOutbound session-start (digest rides additionalContext, never denies) ---
+const ssDigest = claudeAdapter.mapOutbound("session-start", { action: "allow", reason: null, annotation: "[dejavu] GATE DIGEST: x" })
+const ssJson = (ssDigest.json as Record<string, unknown>).hookSpecificOutput as Record<string, unknown>
+check("claude session-start digest → hookSpecificOutput.additionalContext exit 0", ssDigest.exitCode === 0 && ssJson.additionalContext === "[dejavu] GATE DIGEST: x")
+check("claude session-start digest → hookEventName SessionStart", ssJson.hookEventName === "SessionStart")
+
+const ssEmpty = claudeAdapter.mapOutbound("session-start", { action: "allow", reason: null, annotation: null })
+check("claude session-start no digest → allowDecision ({} exit 0)", ssEmpty.exitCode === 0 && Object.keys(ssEmpty.json as object).length === 0)
+
+const ssDeny = claudeAdapter.mapOutbound("session-start", { action: "deny", reason: "never", annotation: "digest wins" })
+check("claude session-start never denies — annotation wins over deny", ssDeny.exitCode === 0 && ((ssDeny.json as Record<string, unknown>).hookSpecificOutput as Record<string, unknown>).additionalContext === "digest wins")
+
+const ssTrunc = claudeAdapter.mapOutbound("session-start", { action: "allow", reason: null, annotation: "z".repeat(11000) })
+check("claude session-start digest truncated to 10000", (((ssTrunc.json as Record<string, unknown>).hookSpecificOutput as Record<string, unknown>).additionalContext as string).length === 10000)
 
 // --- codex: mapInbound pre ---
 const codexPreBash = { tool_name: "Bash", tool_input: { command: "npm run build" }, session_id: "xs-1", tool_use_id: "tu-x-1", cwd: "/proj" }
