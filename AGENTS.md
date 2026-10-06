@@ -204,7 +204,7 @@ bun scripts/install-hooks.ts --harness <claude|codex|gemini|cursor|copilot|crush
 - Structural gates live in `.ast-grep/rules/` + `sgconfig.yml`: `no-load-force-flag` forbids `load(true)`/`loadIndex(true)` (use the named `loadForMutation()`/`loadIndexForMutation()`). Add a gate here when a bug class is structurally repeatable; sabotage-test it (introduce the bug shape → gate must fire)
 - Install = npm (`{ "plugin": ["dejavu-gates"] }`) or clone + re-export from `~/.config/opencode/plugins/dejavu.ts` (see README); other harnesses via `scripts/install-hooks.ts`
 - `DEJAVU_HOME` env var overrides the global store dir — smoke test and scripts rely on it
-- Bump `PLUGIN_VERSION` (src/store.ts) on behavior changes — doctor detects version drift via `init` log events — AND keep `package.json` `version` in sync (npm publish uses the package version)
+- Bump `PLUGIN_VERSION` (src/store.ts) on behavior changes — doctor detects version drift via `init` log events — AND keep `package.json` `version` in sync (npm publish uses the package version); tag the release's final commit `vX.Y.Z` (lightweight, matching existing tags) and push the tag — an untagged release is an unfinished release (the convention broke at v2.51.0 and was restored with 2.53.0)
 - gates.json files are human-editable by design: delete a gate object to disable, edit `correction` to teach
 - Project stores self-ignore: init writes `.opencode/dejavu/.gitignore` (gates.json committable, runtime files ignored); `doctor --repair` sweeps orphan `*.tmp`/stale `*.lock` artifacts (`--prune-corrupt=<days>` opt-in prunes quarantine files)
 
