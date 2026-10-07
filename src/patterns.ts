@@ -1528,16 +1528,21 @@ export function looksLikeMojibake(text: string): boolean {
 export function detectFailure(outputText: string): FailureDetection {
   // PowerShell colors errors with VT sequences — strip before scanning, or
   // the escapes persist into snippets/corrections shown to the agent.
+  let bareExit: string | null = null
   for (const line of stripControl(outputText).split("\n")) {
     // a pass-summary line is never failure evidence ("All tests passed - panic: none")
     if (looksLikeSuccess(line)) continue
     for (const signature of FAILURE_SIGNATURES) {
-      if (signature.test(line)) {
-        return { matched: true, snippet: line.trim().slice(0, 200) }
+      if (!signature.test(line)) continue
+      // a bare exit banner carries no error content — a later cause line must win over it
+      if (isBareExitSnippet(line)) {
+        if (bareExit === null) bareExit = line.trim().slice(0, 200)
+        break
       }
+      return { matched: true, snippet: line.trim().slice(0, 200) }
     }
   }
-  return { matched: false, snippet: "" }
+  return bareExit === null ? { matched: false, snippet: "" } : { matched: true, snippet: bareExit }
 }
 
 /**

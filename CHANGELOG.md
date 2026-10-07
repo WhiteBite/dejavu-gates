@@ -1,5 +1,10 @@
 # Changelog
 
+## 2.53.1 - 2026-10-07
+
+### Fixed
+- **Banner-first output keeps the real error as evidence** - `detectFailure` scanned forward and the exit banner (`Exit code 1`) is failure-shaped, so harness renderings that put the banner ABOVE the compiler output stored the banner as the snippet and lost the `error TS…` line (bare-exit snippets also disable `errorMoved`, compounding iteration pressure). The bare-exit banner is now last-resort: the first non-banner failure line wins, banner-only output keeps its snippet and its `matched` verdict (text-channel detection semantics unchanged), natural order and the success-shaped guard are untouched.
+
 ## 2.53.0 - 2026-10-06
 
 ### Fixed

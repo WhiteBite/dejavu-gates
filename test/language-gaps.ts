@@ -169,6 +169,16 @@ for (const [line, name] of TEXT_FAILURES) {
   check(`detects ${name}`, detectFailure(line).matched)
 }
 check("detects a bare exit-code line", detectFailure("compiling...\nexit code 1").matched)
+check(
+  "a banner-first exit line loses to the real error line",
+  detectFailure("Exit code 1\nsrc/x.ts:3:5 - error TS2304: Cannot find name 'foo'.").matched === true &&
+    detectFailure("Exit code 1\nsrc/x.ts:3:5 - error TS2304: Cannot find name 'foo'.").snippet.includes("TS2304"),
+)
+check("a banner-first exit line loses to a panic line", detectFailure("Exit code 2\npanic: runtime error\n").snippet.includes("panic:"))
+check("banner-only output keeps the bare exit snippet", detectFailure("Exit code 1").matched === true && detectFailure("Exit code 1").snippet === "Exit code 1")
+check("a colon-form banner line still detects", detectFailure("exit code: 3").matched === true && detectFailure("exit code: 3").snippet === "exit code: 3")
+check("natural order (error first, banner last) is unchanged", detectFailure("error TS2304: x\nExit code 1").snippet.includes("TS2304"))
+check("a success line after the banner never wins", detectFailure("Exit code 1\n17 passed").snippet === "Exit code 1")
 const NOT_FAILURES: Array<[string, string]> = [
   ["npm warn deprecated left-pad@1.3.0: use fpkg", "npm warn"],
   ["10:30 session started", "time-prefixed line"],
