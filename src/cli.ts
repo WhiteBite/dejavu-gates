@@ -192,6 +192,7 @@ export async function runHook(argv: string[]): Promise<number> {
       logInitEvent: false,
       rotateLogs: false,
       healthLog: false,
+      versionDriftCheck: false,
       log: (_level, message) => {
         process.stderr.write(`[dejavu] ${message}\n`)
       },

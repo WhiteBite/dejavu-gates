@@ -69,6 +69,7 @@ export async function cleanupSession(sessionId: string, ctx: EnforceContext): Pr
   await ctx.stores.forgetSession(sessionId).catch(() => {})
   ctx.ephemeral.repeatSeries.delete(sessionId)
   ctx.ephemeral.repeatWindowLogged.delete(sessionId)
+  ctx.ephemeral.bashChain.delete(sessionId)
   for (const key of ctx.ephemeral.loopBreakInjected) {
     if (key.startsWith(`${sessionId}:`)) ctx.ephemeral.loopBreakInjected.delete(key)
   }

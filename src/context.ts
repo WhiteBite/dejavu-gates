@@ -1,4 +1,4 @@
-import { scrubSecrets } from "./patterns"
+import { commandExtension, scrubSecrets } from "./patterns"
 import { envInt, type Stores } from "./store"
 import type { Verdict } from "./types"
 
@@ -19,9 +19,14 @@ const RECENT_RECORDS_KEEP = 500
  *  lesson — the agent changed behavior, so no success can ever heal it */
 export const TAUGHT_REMINDERS = envInt("DEJAVU_TAUGHT_REMINDERS", 5, 1, 100)
 /** anti-nag retirement (the negative twin of taught): a gate reminded this many
- *  times whose reminders are CONSISTENTLY IGNORED is nagging, not teaching */
+ * times whose reminders are CONSISTENTLY IGNORED is nagging, not teaching */
 export const ANTI_NAG_REMINDERS = 5
 export const ANTI_NAG_REOFFENSE = 3
+/** chronic-reminder exit: 1-2 reoffenses block taught retirement (needs 0) but
+ * never reach anti-nag (needs 3) — retire instead of nagging once per session forever */
+export const CHRONIC_REMINDERS = 10
+/** snowball guard: consecutive prefix-growth bash calls before the guard interrupts */
+export const SNOWBALL_CHAIN_MIN = envInt("DEJAVU_SNOWBALL_CHAIN_MIN", 3, 1, 100)
 
 /** repeat channel: per-session live tail series + log watermark + consecutive block count */
 export interface RepeatEntry {
@@ -46,6 +51,8 @@ export interface EphemeralState {
   loopBreakInjected: Set<string>
   /** shape loops: session:shapeKey → times already noted (escalation ladder) */
   shapeLoopNotes: Map<string, number>
+  /** snowball guard: sessionID → last committed bash command + chain depth */
+  bashChain: Map<string, { command: string; depth: number }>
   /** iteration discriminator: projectDir → count of landed edit/write calls;
  *  a failure with a moved version is debugging, not a blind retry */
   workspaceVersions: Map<string, number>
@@ -60,7 +67,7 @@ export interface EphemeralState {
 /** Fresh in-process state. A long-lived host (the OpenCode plugin process)
  * creates ONE instance and threads it through every hook call. A short-lived
  * CLI host (one process per hook event) creates a fresh empty one per
- * invocation — repeat-series blocking, the pendingCalls args fallback and the
+ * invocation — repeat-series blocking, the snowball chain, the pendingCalls args fallback and the
  * cross-channel dedup window then weaken to the single call the process
  * serves. Iteration grace does NOT weaken: a landed edit leaves an
  * edit-heartbeat sidecar in the project store that the next process's
@@ -77,6 +84,7 @@ export function createEphemeralState(): EphemeralState {
     repeatWindowLogged: new Map(),
     loopBreakInjected: new Set(),
     shapeLoopNotes: new Map(),
+    bashChain: new Map(),
     workspaceVersions: new Map(),
     versionBumpedCalls: new Set(),
     handledParts: new Set(),
@@ -147,6 +155,32 @@ export function trackPendingCall(eph: EphemeralState, callId: string, signature:
     const oldest = eph.pendingCalls.keys().next()
     if (oldest.done) break
     eph.pendingCalls.delete(oldest.value)
+  }
+}
+
+const BASH_CHAIN_CAP = 100
+const BASH_CHAIN_COMMAND_CAP = 8192
+
+/** Snowball guard peek: the depth the command would commit at — a PURE read, the chain only moves via commitBashChain. */
+export function nextBashChainDepth(eph: EphemeralState, session: string, command: string): { extends: boolean; depth: number } {
+  const prev = eph.bashChain.get(session)
+  if (prev !== undefined && commandExtension(prev.command, command) !== null) {
+    return { extends: true, depth: prev.depth + 1 }
+  }
+  return { extends: false, depth: 1 }
+}
+
+/** Snowball guard commit: store the session's last committed command (truncated) and chain depth, FIFO-evicting sessions past the cap. */
+export function commitBashChain(eph: EphemeralState, session: string, command: string, extendsChain: boolean): void {
+  const prev = eph.bashChain.get(session)
+  eph.bashChain.set(session, {
+    command: command.slice(0, BASH_CHAIN_COMMAND_CAP),
+    depth: extendsChain && prev !== undefined ? prev.depth + 1 : 1,
+  })
+  while (eph.bashChain.size > BASH_CHAIN_CAP) {
+    const oldest = eph.bashChain.keys().next()
+    if (oldest.done) break
+    eph.bashChain.delete(oldest.value)
   }
 }
 

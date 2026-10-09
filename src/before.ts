@@ -1,8 +1,8 @@
 import { bashSegmentSignatures, callSignature, cmdWrapperPayload, patternKey, stripQuotedSpans } from "./patterns"
 import { checkFeedbackDemotion, MAX_SESSIONS, retireAntiNag, retireTaught, type Gate, type GateStore, type LogEvent } from "./store"
-import { ANTI_NAG_REMINDERS, ANTI_NAG_REOFFENSE, TAUGHT_REMINDERS, scrubbedArgs, trackPendingCall, type BeforeOutcome, type EnforceContext } from "./context"
+import { ANTI_NAG_REMINDERS, ANTI_NAG_REOFFENSE, commitBashChain, nextBashChainDepth, SNOWBALL_CHAIN_MIN, TAUGHT_REMINDERS, scrubbedArgs, trackPendingCall, type BeforeOutcome, type EnforceContext } from "./context"
 import { editHeartbeatPath, heartbeatSince, HEARTBEAT_EPSILON_MS } from "./fs"
-import { guardBypassWarnings, proactiveGuardMessage } from "./guards"
+import { guardBypassWarnings, proactiveGuardMessage, snowballBypassWarning, snowballGuardMessage } from "./guards"
 import { blockMessage, remindMessage } from "./messages"
 import { repeatSeriesDecision } from "./repeat"
 import type { NormalizedEvent } from "./types"
@@ -48,8 +48,20 @@ export async function enforceBefore(event: NormalizedEvent, ctx: EnforceContext)
     if (!proceeded) {
       const guardMessage = proactiveGuardMessage(command)
       if (guardMessage !== null) return denyOutcome(guardMessage, "guard")
+      if (session !== "") {
+        const next = nextBashChainDepth(ctx.ephemeral, session, command)
+        if (next.extends && next.depth >= SNOWBALL_CHAIN_MIN) return denyOutcome(snowballGuardMessage(next.depth), "guard")
+        commitBashChain(ctx.ephemeral, session, command, next.extends)
+      }
     } else {
       for (const warning of guardBypassWarnings(command)) await ctx.log("dejavu", "warn", warning)
+      if (session !== "") {
+        // the marker is not call identity — bypassed calls land on the real chain command
+        const chainCommand = command.replace(/\s*#[ \t]*dejavu:proceed\b/gi, "")
+        const next = nextBashChainDepth(ctx.ephemeral, session, chainCommand)
+        if (next.extends && next.depth >= SNOWBALL_CHAIN_MIN) await ctx.log("dejavu", "warn", snowballBypassWarning(next.depth))
+        commitBashChain(ctx.ephemeral, session, chainCommand, next.extends)
+      }
     }
   }
 

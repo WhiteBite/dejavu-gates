@@ -98,6 +98,9 @@ export function coerceGateShape(raw: unknown): Gate | null {
   if (typeof r.promotionCount === "number" && Number.isFinite(r.promotionCount) && r.promotionCount > 0) {
     gate.promotionCount = Math.floor(r.promotionCount)
   }
+  if (typeof r.retiredCount === "number" && Number.isFinite(r.retiredCount) && r.retiredCount > 0) {
+    gate.retiredCount = Math.floor(r.retiredCount)
+  }
   if (typeof r.iteratedVersion === "number" && Number.isFinite(r.iteratedVersion) && r.iteratedVersion >= 0) {
     gate.iteratedVersion = Math.floor(r.iteratedVersion)
   }

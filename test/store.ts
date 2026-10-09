@@ -11,6 +11,7 @@ import { tmpdir } from "node:os"
 import { basename, dirname, isAbsolute, join, relative, resolve } from "node:path"
 import { fileURLToPath } from "node:url"
 import { atomicWrite, CORRUPT_DEFAULT_DAYS, findProjectRoot, ntPath, sweepStoreArtifacts, TMP_ORPHAN_MS } from "../src/fs"
+import { initStores } from "../src/host-init"
 import { callSignature, fuzzySimilar, patternKey, suggestCorrection } from "../src/patterns"
 import { createStores, GateStore, GLOBAL_PROJECTS, lessonStaleness, mergeGate, NOISE_TTL_DAYS, PLUGIN_VERSION, STALE_LESSON_DAYS, Stores, TTL_DAYS, type Gate } from "../src/store"
 import { coerceGateShape, isAutoCorrection, repairGate } from "../src/validate"
@@ -911,6 +912,171 @@ await writeFile(join(n2bGlobal, "gates.json"), JSON.stringify({ version: 1, gate
 ] }), "utf8")
 const n2bLoaded = (await new GateStore(n2bGlobal).load()).find((g) => g.key === "cccc00000002")
 check(`N2: ${n2bSpellings.length} legacy spellings of one dir collapse to one projects entry`, (n2bLoaded?.projects.length ?? 0) === 1 && n2bLoaded?.projects[0] === resolve(n2bDir))
+
+// --- 29. initStores version-drift: a newer writer stamp surfaces once, then goes silent ---
+async function readLogLines(dir: string): Promise<string[]> {
+  const path = join(dir, "log.jsonl")
+  if (!existsSync(path)) return []
+  return (await readFile(path, "utf8")).split("\n").filter((l) => l !== "")
+}
+const vdGlobal = join(tmp, "drift-global")
+const vdProject = join(tmp, "drift-project", ".opencode", "dejavu")
+await mkdir(vdGlobal, { recursive: true })
+await mkdir(vdProject, { recursive: true })
+await writeFile(join(vdProject, "gates.json"), JSON.stringify({ version: 1, gates: [], lastInitVersion: "99.0.0" }), "utf8")
+const vdWarns: string[] = []
+const vdOpts = {
+  logInitEvent: false,
+  rotateLogs: false,
+  healthLog: false,
+  log: (level: string, message: string): void => {
+    if (level === "warn") vdWarns.push(message)
+  },
+}
+await initStores(new Stores(new GateStore(vdGlobal), new GateStore(vdProject)), vdOpts)
+const vdLogLines = await readLogLines(vdProject)
+const vdDriftLine = vdLogLines.find((l) => l.includes('"version-drift"'))
+const vdDriftSnippet = vdDriftLine === undefined ? "" : ((JSON.parse(vdDriftLine) as { snippet?: string }).snippet ?? "")
+check("a newer writer stamp warns the stale window (default on, opt absent)", vdWarns.length === 1 && (vdWarns[0] ?? "").includes("store last written by 99.0.0") && (vdWarns[0] ?? "").includes("restart the window to pick up the newer plugin"))
+check("a newer writer stamp logs exactly one version-drift event", vdLogLines.filter((l) => l.includes('"version-drift"')).length === 1 && vdDriftSnippet.includes(vdProject) && vdDriftSnippet.includes("99.0.0"))
+await writeFile(join(vdProject, "gates.json"), JSON.stringify({ version: 1, gates: [], lastInitVersion: "99.1.0" }), "utf8")
+await initStores(new Stores(new GateStore(vdGlobal), new GateStore(vdProject)), vdOpts)
+check("the drift surfaces at most once per process per store", vdWarns.length === 1 && (await readLogLines(vdProject)).filter((l) => l.includes('"version-drift"')).length === 1)
+
+const vd2Global = join(tmp, "drift2-global")
+const vd2Project = join(tmp, "drift2-project", ".opencode", "dejavu")
+await mkdir(vd2Global, { recursive: true })
+await mkdir(vd2Project, { recursive: true })
+const vd2Warns: string[] = []
+const vd2Opts = {
+  logInitEvent: false,
+  rotateLogs: false,
+  healthLog: false,
+  log: (level: string, message: string): void => {
+    if (level === "warn") vd2Warns.push(message)
+  },
+}
+for (const stamp of [PLUGIN_VERSION, "2.9.0", undefined]) {
+  const file: Record<string, unknown> = { version: 1, gates: [] }
+  if (stamp !== undefined) file.lastInitVersion = stamp
+  await writeFile(join(vd2Project, "gates.json"), JSON.stringify(file), "utf8")
+  await initStores(new Stores(new GateStore(vd2Global), new GateStore(vd2Project)), vd2Opts)
+}
+check("equal, numerically-older and missing stamps stay silent", vd2Warns.length === 0 && !existsSync(join(vd2Project, "log.jsonl")))
+
+const vd3Global = join(tmp, "drift3-global")
+const vd3Project = join(tmp, "drift3-project", ".opencode", "dejavu")
+await mkdir(vd3Global, { recursive: true })
+await mkdir(vd3Project, { recursive: true })
+await writeFile(join(vd3Project, "gates.json"), JSON.stringify({ version: 1, gates: [], lastInitVersion: "99.0.0" }), "utf8")
+const vd3Warns: string[] = []
+await initStores(new Stores(new GateStore(vd3Global), new GateStore(vd3Project)), {
+  logInitEvent: false,
+  rotateLogs: false,
+  healthLog: false,
+  versionDriftCheck: false,
+  log: (level: string, message: string): void => {
+    if (level === "warn") vd3Warns.push(message)
+  },
+})
+check("versionDriftCheck: false keeps the CLI-style init silent", vd3Warns.length === 0 && !existsSync(join(vd3Project, "log.jsonl")))
+
+const vd4Global = join(tmp, "drift4-global")
+const vd4Project = join(tmp, "drift4-project", ".opencode", "dejavu")
+await mkdir(vd4Global, { recursive: true })
+await mkdir(vd4Project, { recursive: true })
+await writeFile(join(vd4Global, "gates.json"), JSON.stringify({ version: 1, gates: [], lastInitVersion: "99.0.0" }), "utf8")
+const vd4Warns: string[] = []
+await initStores(new Stores(new GateStore(vd4Global), new GateStore(vd4Project)), {
+  logInitEvent: false,
+  rotateLogs: false,
+  healthLog: false,
+  log: (level: string, message: string): void => {
+    if (level === "warn") vd4Warns.push(message)
+  },
+})
+check("a newer stamp on the global store drifts too", vd4Warns.length === 1 && (vd4Warns[0] ?? "").includes("store last written by 99.0.0"))
+
+// --- 30. flappy terminal: 3 promotions + 3 retirements refuse the 4th mechanical promotion ---
+const ftGlobal = join(tmp, "flappy-global")
+const ftRoot = join(tmp, "flappy-project")
+const ftStore = join(ftRoot, ".opencode", "dejavu")
+await mkdir(ftGlobal, { recursive: true })
+await mkdir(ftStore, { recursive: true })
+const ftStores = new Stores(new GateStore(ftGlobal), new GateStore(ftStore))
+const ftSig = callSignature("bash", { command: "flappy-cmd --mode deploy" }) ?? ""
+const ftKey = patternKey(ftSig)
+const ftFail = async (session: string): Promise<void> => {
+  await ftStores.recordFailure({ key: ftKey, signature: ftSig, tool: "bash", sessionID: session, projectDir: ftRoot, snippet: "Error: flappy boom", globalProjects: GLOBAL_PROJECTS })
+}
+const ftHeal = async (): Promise<void> => {
+  for (let i = 0; i < 3; i++) await ftStores.recordSuccess({ key: ftKey, signature: ftSig, tool: "bash", sessionID: "ft-healer" })
+}
+await ftFail("ft-s1")
+await ftFail("ft-s1")
+await ftFail("ft-s2")
+await ftHeal()
+await ftFail("ft-s3")
+await ftFail("ft-s3")
+await ftFail("ft-s3")
+await ftHeal()
+await ftFail("ft-s4")
+await ftFail("ft-s4")
+await ftFail("ft-s4")
+await ftHeal()
+const ftGate3 = (await new GateStore(ftStore).load()).find((g) => g.key === ftKey)
+check("three promote→heal cycles leave 3 promotions and 3 retirements", ftGate3?.promotionCount === 3 && ftGate3?.retiredCount === 3 && ftGate3?.status === "watching")
+await ftFail("ft-s5")
+await ftFail("ft-s5")
+await ftFail("ft-s5")
+await ftStores.projectStore?.flushDeferred()
+const ftGate4 = (await new GateStore(ftStore).load()).find((g) => g.key === ftKey)
+check("the 4th mechanical promotion is refused (watching + feedbackDemoted)", ftGate4?.status === "watching" && ftGate4?.feedbackDemoted === true)
+check("the refusal logs a flappy-terminal demoted event", (await readLogLines(ftStore)).some((l) => l.includes("flappy terminal (promoted 3, retired 3)")))
+
+const fpGlobal = join(tmp, "flappy2-global")
+const fpRoot = join(tmp, "flappy2-project")
+const fpStore = join(fpRoot, ".opencode", "dejavu")
+await mkdir(fpGlobal, { recursive: true })
+await mkdir(fpStore, { recursive: true })
+const fpSig = callSignature("bash", { command: "flappy2-cmd --mode deploy" }) ?? ""
+const fpKey = patternKey(fpSig)
+const fpSeed = new GateStore(fpStore)
+await fpSeed.runLocked(async () => {
+  const gates = await fpSeed.loadForMutation()
+  gates.push({
+    key: fpKey,
+    signature: fpSig,
+    tool: "bash",
+    status: "watching",
+    count: 9,
+    sessions: ["fp-s1", "fp-s2"],
+    projects: [],
+    firstSeen: new Date().toISOString(),
+    lastSeen: new Date().toISOString(),
+    snippet: "Error: flappy boom",
+    remindedCount: 0,
+    blockedCount: 0,
+    recurredAfterReminder: 0,
+    recurredAfterGate: 0,
+    overrideCount: 0,
+    promotionCount: 3,
+    retiredCount: 2,
+    retireBaseline: { count: 6 },
+  })
+  await fpSeed.save()
+})
+await new Stores(new GateStore(fpGlobal), new GateStore(fpStore)).recordFailure({ key: fpKey, signature: fpSig, tool: "bash", sessionID: "fp-s3", projectDir: fpRoot, snippet: "Error: flappy boom", globalProjects: GLOBAL_PROJECTS })
+const fpGate = (await new GateStore(fpStore).load()).find((g) => g.key === fpKey)
+check("3 promotions / 2 retirements still promotes (below the flappy bar)", fpGate?.status === "blocking" && fpGate?.promotionCount === 4)
+
+const mgTarget = coerceGateShape(seedGate({ key: "eeee00000001", signature: "bash:merge retired cmd", promotionCount: 2, retiredCount: 2 }))
+const mgSource = coerceGateShape(seedGate({ key: "eeee00000001", signature: "bash:merge retired cmd", promotionCount: 1, retiredCount: 3 }))
+if (mgTarget === null || mgSource === null) throw new Error("merge fixtures unexpectedly null")
+mergeGate(mgTarget, mgSource)
+check("mergeGate sums retiredCount like promotionCount", mgTarget.retiredCount === 5 && mgTarget.promotionCount === 3)
+check("coerceGateShape preserves retiredCount", coerceGateShape(seedGate({ key: "eeee00000002", retiredCount: 4 }))?.retiredCount === 4)
+check("coerceGateShape leaves retiredCount absent when missing", coerceGateShape(seedGate({ key: "eeee00000003" }))?.retiredCount === undefined)
 
 if (process.env.BENCH === "1") {
   const benchProject = join(tmp, "bench-project")

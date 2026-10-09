@@ -3,7 +3,9 @@
  * pass-through, check-order precedence, and bypass-visibility warnings.
  * Run: bun test/guards.ts
  */
+import { commitBashChain, createEphemeralState, nextBashChainDepth } from "../src/context"
 import { guardBypassWarnings, proactiveGuardMessage } from "../src/guards"
+import { commandExtension } from "../src/patterns"
 import { makeChecker } from "./helpers"
 
 const { check, report } = makeChecker()
@@ -90,5 +92,49 @@ check("bypass warning names the wait-loop guard", (guardBypassWarnings("until cu
 const longCmd = "npm run dev # " + "x".repeat(250)
 const longWarns = guardBypassWarnings(longCmd)
 check("bypass warning embeds the command truncated to 200 chars", longWarns.length === 1 && (longWarns[0] ?? "").endsWith(longCmd.slice(0, 200)))
+
+// --- SNOWBALL ---
+check("commandExtension returns the tail for a real extension", commandExtension("echo a", "echo a; echo b") === "; echo b")
+check("commandExtension returns null for exact equality", commandExtension("echo a", "echo a") === null)
+check("commandExtension returns null for a shorter command", commandExtension("echo a; echo b", "echo a") === null)
+check("commandExtension returns null for a whitespace-only tail", commandExtension("echo a", "echo a   ") === null)
+check("commandExtension returns null for a separator-only tail", commandExtension("echo a", "echo a;;") === null)
+check("commandExtension returns null for an unrelated command", commandExtension("echo a", "grep needle file") === null)
+
+const snowEph = createEphemeralState()
+const s1 = nextBashChainDepth(snowEph, "s1", "echo one")
+check("a fresh command peeks at depth 1 without extending", s1.extends === false && s1.depth === 1)
+commitBashChain(snowEph, "s1", "echo one", s1.extends)
+const s2 = nextBashChainDepth(snowEph, "s1", "echo one; echo two")
+check("a prefix-growth command peeks at depth 2", s2.extends === true && s2.depth === 2)
+commitBashChain(snowEph, "s1", "echo one; echo two", s2.extends)
+const s3 = nextBashChainDepth(snowEph, "s1", "echo one; echo two; echo three")
+check("the third growth peeks at depth 3", s3.extends === true && s3.depth === 3)
+commitBashChain(snowEph, "s1", "echo one; echo two; echo three", s3.extends)
+const sReset = nextBashChainDepth(snowEph, "s1", "grep needle file")
+check("a non-extension resets the peek to depth 1", sReset.extends === false && sReset.depth === 1)
+commitBashChain(snowEph, "s1", "grep needle file", sReset.extends)
+const sAfter = nextBashChainDepth(snowEph, "s1", "grep needle file; echo more")
+check("growth after a reset starts from depth 2 again", sAfter.extends === true && sAfter.depth === 2)
+
+const peekEph = createEphemeralState()
+commitBashChain(peekEph, "p1", "echo base", false)
+const peekEntry = peekEph.bashChain.get("p1")
+nextBashChainDepth(peekEph, "p1", "echo base; more")
+const peekAfter = peekEph.bashChain.get("p1")
+check("nextBashChainDepth never mutates the chain", peekAfter === peekEntry && peekAfter?.command === "echo base" && peekAfter?.depth === 1)
+
+const truncEph = createEphemeralState()
+commitBashChain(truncEph, "t1", "x".repeat(9000), false)
+check("stored commands truncate at the 8192-char cap", (truncEph.bashChain.get("t1")?.command.length ?? 0) === 8192)
+
+const idemEph = createEphemeralState()
+let idemFired = false
+for (let i = 0; i < 5; i++) {
+  const peek = nextBashChainDepth(idemEph, "i1", "echo same")
+  if (peek.extends && peek.depth >= 3) idemFired = true
+  commitBashChain(idemEph, "i1", "echo same", peek.extends)
+}
+check("five identical commands never extend the chain", !idemFired && idemEph.bashChain.get("i1")?.depth === 1)
 
 report()

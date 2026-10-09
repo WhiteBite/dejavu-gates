@@ -898,6 +898,19 @@ function isUnixViewerSignature(signature: string): boolean {
 /** File probes: dedicated shapes, routine failures, measured only — never any enforcement tier. */
 export const PROBE_TOOLS = new Set(["read", "glob", "grep", "write", "edit"])
 
+/** literal word tokens (>= 3 chars, alphanumeric) a tool-error head needs to
+ * count as identity — the prose head is the only identity an argless call has */
+const TOOL_ERROR_IDENTITY_TOKENS = 3
+
+// a fully parameterized head matches every error of that tool — watch only
+function toolErrorHeadIdentity(signature: string): boolean {
+  const marker = ":tool-error:"
+  const at = signature.indexOf(marker)
+  if (at < 0) return false
+  const head = signature.slice(at + marker.length).replace(/<[^>]*>/g, " ")
+  return head.split(/\s+/).filter((token) => token.length >= 3 && /[a-z0-9]/i.test(token)).length >= TOOL_ERROR_IDENTITY_TOKENS
+}
+
 /** Only non-diagnostic bash may block; probes/generic remind or watch. */
 export function canBlock(tool: string, signature: string): boolean {
   if (tool !== "bash") return false
@@ -914,6 +927,7 @@ export function canRemind(tool: string, signature: string): boolean {
   }
   // generic tools (MCP/spawn_agent/custom) remind only, and only with residual identity
   if (PROBE_TOOLS.has(tool)) return false
+  if (toolErrorHeadIdentity(signature)) return true
   return hasGenericResidualIdentity(signature)
 }
 
@@ -1729,6 +1743,24 @@ const WAIT_LOOP: RegExp[] = [
 
 export function shouldWarnWaitLoop(command: string): boolean {
   return WAIT_LOOP.some((rule) => rule.test(command))
+}
+
+// --- Snowball guard (command accretion) ---------------------------------------
+
+/**
+ * Returns the appended tail when `next` re-issues `prev` verbatim as a strict
+ * prefix plus new sections (command accretion), null otherwise — including
+ * exact equality, which is the repeat channel's territory, not this guard's.
+ * Raw case-sensitive comparison; parameterized/normalized variants are
+ * deliberately out of scope.
+ */
+export function commandExtension(prev: string, next: string): string | null {
+  const p = prev.trim()
+  const n = next.trim()
+  if (p === "" || !n.startsWith(p)) return null
+  const tail = n.slice(p.length)
+  if (!/\w/.test(tail.replace(/^[\s;&|]+/, ""))) return null
+  return tail
 }
 
 // --- Detached spawn + suppressed stdout guard ---------------------------------

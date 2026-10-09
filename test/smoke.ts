@@ -81,6 +81,8 @@ interface GateRow {
   recurredAfterGate?: number
   recurredAfterReminder?: number
   promotionCount?: number
+  retiredCount?: number
+  retireBaseline?: { count: number; movedOn?: number }
 }
 
 const { check, report } = makeChecker()
@@ -2029,6 +2031,19 @@ await failOn(hooksRT)(RT_CMD, "rt1", "rt-f1", 2)
 const rtGate = (await readJson(join(rtDir, ".opencode", "dejavu", "gates.json"))).find((g) => g.key === rtKey)
 check("reminding gate retires to watching after clean reminders (taught)", rtGate?.status === "watching" && rtGate?.feedbackDemoted !== true)
 check("reminding taught retirement is logged", (await readFile(join(rtDir, ".opencode", "dejavu", "log.jsonl"), "utf8")).includes('"type":"retired-taught"'))
+
+// --- 87j2. chronic-reminder exit: 1-2 reoffenses sit between taught (0) and anti-nag (3) ---
+const crDir = join(tmp, "chronic-remind-project")
+const CR_CMD = "npm test"
+const crKey = patternKey(callSignature("bash", { command: CR_CMD }) ?? "")
+await seedGates(crDir, [seedGate({ key: crKey, signature: `bash:${CR_CMD}`, status: "reminding", remindedCount: 9, recurredAfterReminder: 1 })])
+const hooksCR = await Dejavu({ directory: crDir, client: { app: { log: async () => ({}) } } } as unknown as Ctx)
+await failOn(hooksCR)(CR_CMD, "cr1", "cr-f1", 2)
+const crGate = (await readJson(join(crDir, ".opencode", "dejavu", "gates.json"))).find((g) => g.key === crKey)
+check("chronic reminders with sub-anti-nag reoffense retire to watching", crGate?.status === "watching" && crGate?.feedbackDemoted !== true)
+check("chronic retirement captures the retireBaseline (re-promotion needs a fresh bar)", crGate?.retireBaseline !== undefined)
+check("chronic retirement is logged as retired-chronic", (await readFile(join(crDir, ".opencode", "dejavu", "log.jsonl"), "utf8")).includes('"type":"retired-chronic"'))
+check("chronic retirement increments retiredCount", crGate?.retiredCount === 1)
 
 // --- 87k. save() stamps lastInitVersion with the writer's plugin version. ---
 const livDir = join(tmp, "liv-project")

@@ -47,3 +47,13 @@ export function guardBypassWarnings(command: string): string[] {
   if (shouldWarnOrphanJob(command)) warnings.push(`dejavu: orphan-job guard bypassed via dejavu:proceed — job dies with the call: ${command.slice(0, 200)}`)
   return warnings
 }
+
+/** the snowball guard's deny message — the command re-runs the previous one verbatim as its prefix */
+export function snowballGuardMessage(depth: number): string {
+  return `[dejavu] SNOWBALL — this command re-runs your previous command verbatim as its prefix (call ${depth} of a growing chain); every earlier query in that prefix ALREADY ran and its output is in the conversation, so this re-executes answered work and floods context with duplicate output. CORRECTION: issue only the NEW query as a fresh command — the cd/setup prefix belongs in the bash tool's workdir parameter, and independent questions are parallel tool calls. To deliberately re-run the full chain, append the trailing comment "# dejavu:proceed".`
+}
+
+/** visibility log line when a snowball chain is bypassed via dejavu:proceed */
+export function snowballBypassWarning(depth: number): string {
+  return `dejavu: snowball guard bypassed via dejavu:proceed — chain depth ${depth} re-runs answered work`
+}

@@ -7,7 +7,7 @@ import { canBlock, canRemind, fuzzySimilar, FUZZY_MAX_LEN, hasGenericResidualIde
 import { coerceGateShape, failedAtMs, isAutoCorrection, repairGate } from "./validate"
 
 /** Bumped on behavior changes; stamped into init log events so stale sessions are visible. */
-export const PLUGIN_VERSION = "2.53.1"
+export const PLUGIN_VERSION = "2.55.0"
 
 /** Global store root — DEJAVU_HOME overrides it (testing, custom setups). */
 export function resolveGlobalDir(): string {
@@ -92,8 +92,12 @@ export interface Gate {
   succeededAfterGate?: number
   /** lifetime promotions of this pattern — never reset by the lifecycle reset.
    * The definitive flapping measure (promote→heal→promote oscillation); doctor
-   * escalates FLAPPY with it. Report-only: no mechanical auto-demotion. */
+   * escalates FLAPPY with it. */
   promotionCount?: number
+  /** lifetime retirements (healed + taught-retired) — never reset; with
+   * promotionCount it is the flappy-terminal signal: a gate promoted and
+   * retired FLAPPY_* times each never re-promotes mechanically. */
+  retiredCount?: number
   /** count at the moment the gate retired (healed or taught). `count`/`sessions`
    * are lifetime-cumulative, so without damping a retired gate re-promoted on the
    * VERY NEXT single failure (promote→heal→promote oscillation). Re-promotion now
@@ -169,11 +173,13 @@ export type LogEventType =
   | "demoted"
   | "init"
   | "health"
+  | "version-drift"
   | "repaired"
   | "quarantined"
   | "degraded"
   | "retired-healed"
   | "retired-taught"
+  | "retired-chronic"
   | "healed"
   | "corrected"
   | "repeat-detected"
@@ -196,6 +202,7 @@ const GLOBAL_LOG_EVENTS = new Set<LogEventType>([
   "healed",
   "retired-healed",
   "retired-taught",
+  "retired-chronic",
   "override",
   "corrected",
 ])
@@ -276,6 +283,10 @@ const DEMOTE_OVERRIDES_REMINDING = 5
  * reoffended after a reminder — one bad session (or one bad model in a shared
  * store) must not be able to demote a gate for everyone else */
 const DEMOTE_REOFFENSE_SESSIONS = 2
+/** flappy terminal bar: this many promotions AND retirements each means the
+ * promote→retire→promote oscillation never settles — stop re-promoting */
+const FLAPPY_PROMOTIONS = 3
+const FLAPPY_RETIREMENTS = 3
 /** an authored lesson unproven and unrecurred past this many days is dormant — the pattern died out */
 export const STALE_LESSON_DAYS = 120
 /** prune an index key absent from every scope visible to the sweeper after this many days (a live gate in an unopened project clears its own candidacy) */
@@ -517,6 +528,8 @@ export class GateStore {
   /** PLUGIN_VERSION that last ran migrate() — persisted in gates.json so the
    * 2nd..Nth start of the same version skips the full per-gate scan */
   private migratedStamp: string | null = null
+  /** PLUGIN_VERSION of the process that last saved this file — the durable version-drift signal */
+  private writerStamp: string | null = null
   /** events queued inside the gates lock, flushed on the next log() — logging
    * under the gates lock extends the critical section into degrade storms */
   private deferredEvents: LogEvent[] = []
@@ -546,6 +559,11 @@ export class GateStore {
   /** PLUGIN_VERSION that last ran migrate() on this store (null = never). */
   get migratedVersion(): string | null {
     return this.migratedStamp
+  }
+
+  /** PLUGIN_VERSION of the process that last saved this store (null = never saved). */
+  get lastWriterVersion(): string | null {
+    return this.writerStamp
   }
 
   /** Set the migration stamp (persisted by the next save()). */
@@ -703,6 +721,7 @@ export class GateStore {
       if (Array.isArray(parsed.gates)) {
         records = parsed.gates
         this.migratedStamp = typeof parsed.migrated === "string" ? parsed.migrated : null
+        this.writerStamp = typeof parsed.lastInitVersion === "string" ? parsed.lastInitVersion : null
       }
     } catch {
       // fall through to the corruption branch
@@ -795,6 +814,7 @@ export class GateStore {
     // The WRITER's own version, stamped on every save — a stale plugin session
     // leaves its old version here (durable drift signal; log inits rotate away).
     payload.lastInitVersion = PLUGIN_VERSION
+    this.writerStamp = PLUGIN_VERSION
     await atomicWrite(this.gatesPath, `${JSON.stringify(payload, null, 2)}\n`)
     try {
       this.mtimeMs = (await stat(ntPath(this.gatesPath))).mtimeMs
@@ -1184,6 +1204,7 @@ export function mergeGate(target: Gate, source: Gate): void {
   if (source.promotionCount !== undefined) {
     target.promotionCount = (target.promotionCount ?? 0) + source.promotionCount
   }
+  if (source.retiredCount !== undefined) target.retiredCount = (target.retiredCount ?? 0) + source.retiredCount
   if (source.movedOn !== undefined) target.movedOn = (target.movedOn ?? 0) + source.movedOn
   if (source.iteratedVersion !== undefined) target.iteratedVersion = Math.max(target.iteratedVersion ?? 0, source.iteratedVersion)
   // owner beats agent beats machine; equal ranks pick the newer correctionAt
@@ -1304,6 +1325,7 @@ export function checkFeedbackDemotion(gate: Gate): boolean {
  */
 export function retireTaught(gate: Gate): void {
   gate.status = "watching"
+  gate.retiredCount = (gate.retiredCount ?? 0) + 1
   gate.retireBaseline = { count: gate.count, ...(gate.movedOn !== undefined ? { movedOn: gate.movedOn } : {}) }
 }
 
@@ -2020,7 +2042,16 @@ export class Stores {
       const stuckEvidence = effectiveCount - ((gate.movedOn ?? 0) - (gate.retireBaseline?.movedOn ?? 0))
       // only bash blocks; diagnostics + identity-bearing generic tools remind; the rest watch
       if (gate.status === "watching" && gate.feedbackDemoted !== true && effectiveCount >= threshold && gate.sessions.length >= PROMOTE_SESSIONS && stuckEvidence > 1) {
-        if (canBlock(gate.tool, gate.signature)) {
+        // retireBaseline damps re-promotion speed, not the loop itself — past both lifetime bars it is terminal
+        if ((gate.promotionCount ?? 0) >= FLAPPY_PROMOTIONS && (gate.retiredCount ?? 0) >= FLAPPY_RETIREMENTS) {
+          gate.feedbackDemoted = true
+          store.deferEvent({
+            type: "demoted",
+            key: gate.key,
+            tool: gate.tool,
+            snippet: `flappy terminal (promoted ${gate.promotionCount ?? 0}, retired ${gate.retiredCount ?? 0}) — never re-promotes mechanically; a human re-enforces by editing gates.json`,
+          })
+        } else if (canBlock(gate.tool, gate.signature)) {
           // text-only evidence never blocks — assign the highest tier; an inert watching outcome is no promotion
           const tier = gate.textOnly === true ? (canRemind(gate.tool, gate.signature) ? "reminding" : "watching") : "blocking"
           gate.status = tier
@@ -2216,6 +2247,7 @@ export class Stores {
       const healed = fresh.succeededAfterGate >= HEAL_SUCCESSES
       if (healed) {
         fresh.status = "watching"
+        fresh.retiredCount = (fresh.retiredCount ?? 0) + 1
         // Oscillation damping: capture the count at retirement so re-promotion
         // needs a full fresh bar of failures, not the very next single one.
         fresh.retireBaseline = { count: fresh.count, ...(fresh.movedOn !== undefined ? { movedOn: fresh.movedOn } : {}) }

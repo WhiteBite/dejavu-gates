@@ -17,7 +17,7 @@ const HOOK_ERROR_LOG_INTERVAL_MS = 60_000
 
 /** Host log dialect for init lines: receives the semantic line ("initialized
  *  v…", "init failed: …"); the host adds its own prefix. Must never throw. */
-export type HostLogSink = (level: "info" | "error", message: string) => void | Promise<void>
+export type HostLogSink = (level: "info" | "warn" | "error", message: string) => void | Promise<void>
 
 export interface InitStoresOptions {
   /** emit the init log event + the "initialized" info line (long-lived hosts) */
@@ -26,7 +26,40 @@ export interface InitStoresOptions {
   rotateLogs: boolean
   /** surface NOT TEACHING / review gate health to the durable log */
   healthLog: boolean
+  /** surface a newer-writer version drift at boot (default on; the short-lived
+   * CLI opts out — one process per hook call would spam the log) */
+  versionDriftCheck?: boolean
   log: HostLogSink
+}
+
+/** Stores whose newer-writer drift was already surfaced in this process. */
+const driftSeenStores = new Set<string>()
+
+/** Numeric semver compare (2.10.0 > 2.9.0); a malformed component compares equal so a corrupt stamp never drifts. */
+function semverCompare(a: string, b: string): number {
+  const parse = (v: string): number[] => v.split(".").slice(0, 3).map((n) => Number.parseInt(n, 10))
+  const pa = parse(a)
+  const pb = parse(b)
+  for (let i = 0; i < 3; i++) {
+    const x = pa[i] ?? 0
+    const y = pb[i] ?? 0
+    if (Number.isNaN(x) || Number.isNaN(y)) return 0
+    if (x !== y) return x - y
+  }
+  return 0
+}
+
+// runs before reconcile — reconcile re-stamps the file with this process's version, erasing the newer-writer evidence
+async function checkVersionDrift(stores: Stores, log: HostLogSink): Promise<void> {
+  const scopes = stores.projectStore !== null ? [stores.projectStore, stores.globalStore] : [stores.globalStore]
+  for (const store of scopes) {
+    await store.load()
+    const stamp = store.lastWriterVersion
+    if (stamp === null || driftSeenStores.has(store.dir) || semverCompare(stamp, PLUGIN_VERSION) <= 0) continue
+    driftSeenStores.add(store.dir)
+    await log("warn", `dejavu: store last written by ${stamp}, this process is ${PLUGIN_VERSION} — restart the window to pick up the newer plugin`)
+    await stores.logAll({ type: "version-drift", key: "dejavu", snippet: `store ${store.dir} last written by ${stamp}, this process is ${PLUGIN_VERSION}` })
+  }
 }
 
 /**
@@ -37,6 +70,7 @@ export interface InitStoresOptions {
  */
 export async function initStores(stores: Stores, opts: InitStoresOptions): Promise<void> {
   try {
+    if (opts.versionDriftCheck !== false) await checkVersionDrift(stores, opts.log)
     await stores.reconcileAll(GLOBAL_PROJECTS)
     await stores.migrate()
     await stores.expireAll(TTL_DAYS, NOISE_TTL_DAYS)

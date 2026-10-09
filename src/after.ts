@@ -13,7 +13,7 @@ import {
   sanitizeForStore,
 } from "./patterns"
 import { checkFeedbackDemotion, GLOBAL_PROJECTS, MAX_SESSIONS, retireAntiNag, retireTaught, type LogEvent } from "./store"
-import { ANTI_NAG_REMINDERS, ANTI_NAG_REOFFENSE, TAUGHT_REMINDERS, isCrossChannelDuplicate, scrubbedArgs, trackVersionBump, type AfterOutcome, type EnforceContext } from "./context"
+import { ANTI_NAG_REMINDERS, ANTI_NAG_REOFFENSE, CHRONIC_REMINDERS, TAUGHT_REMINDERS, isCrossChannelDuplicate, scrubbedArgs, trackVersionBump, type AfterOutcome, type EnforceContext } from "./context"
 import { editHeartbeatPath, touchHeartbeat } from "./fs"
 import { remindNote } from "./messages"
 import type { NormalizedEvent } from "./types"
@@ -201,6 +201,17 @@ export async function enforceAfter(event: NormalizedEvent, ctx: EnforceContext):
             session,
             project: ctx.projectDir,
             snippet: `reminded ${fresh.remindedCount}x with zero in-session reoffense — teaching worked, retired to watching`,
+          })
+        } else if (fresh.remindedCount >= CHRONIC_REMINDERS && fresh.recurredAfterReminder < ANTI_NAG_REOFFENSE) {
+          // 1-2 reoffenses block taught forever but never reach anti-nag — the middle state has no other exit
+          retireTaught(fresh)
+          escalationLogs.push({
+            type: "retired-chronic",
+            key: fresh.key,
+            tool: event.tool,
+            session,
+            project: ctx.projectDir,
+            snippet: `reminded ${fresh.remindedCount}x, reoffended ${fresh.recurredAfterReminder}x (below anti-nag bar) — chronic note, retired to watching`,
           })
         }
       } else {

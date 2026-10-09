@@ -500,7 +500,55 @@ const ge = await makeWorld("ge")
 const geOut = await enforceAfter(ev({ tool: "mcp__srv__reboot", sessionId: "ge1", phase: "post", output: "Error: reboot failed", exitCode: null, channel: "text" }), ge.ctx)
 const geGate = (await readProjectGates(ge)).find((g) => g.tool === "mcp__srv__reboot")
 check("an argless generic failure is recorded under a tool-error signature", geOut.recorded === true && geGate !== undefined && geGate.signature.startsWith("mcp__srv__reboot:tool-error:"))
-check("the tool-error fallback gate stays watch-only (no residual identity)", geGate?.status === "watching")
+check("the tool-error fallback gate stays watch-only (below the probe bar)", geGate?.status === "watching")
+
+// --- te. tool-error head identity: the event channel's prose head is the call's identity ---
+const teStrong = "run_background_process:tool-error:background process commands may only reference paths within <path>"
+check("a strong tool-error head can remind", canRemind("run_background_process", teStrong))
+check("a fully parameterized tool-error head never reminds", !canRemind("mcp__srv__x", "mcp__srv__x:tool-error:<str>"))
+check("a one-word tool-error head never reminds", !canRemind("mcp__srv__x", "mcp__srv__x:tool-error:boom <str>"))
+check("a two-word tool-error head never reminds", !canRemind("mcp__srv__x", "mcp__srv__x:tool-error:bad thing <str>"))
+check("a placeholders-only tool-error head never reminds", !canRemind("mcp__srv__x", "mcp__srv__x:tool-error:<str> <path> <n>"))
+check("a tool-error signature can never block", !canBlock("run_background_process", teStrong))
+
+const te = await makeWorld("te")
+const teKey = patternKey(teStrong)
+for (const [sessionID, times] of [["te-seed-1", PROMOTE_COUNT_PROBE - 2], ["te-seed-2", 2]] as [string, number][]) {
+  for (let i = 0; i < times; i++) {
+    await te.stores.recordFailure({ key: teKey, signature: teStrong, tool: "run_background_process", sessionID, projectDir: te.projectDir, snippet: "background process commands may only reference paths within <path>", globalProjects: GLOBAL_PROJECTS })
+  }
+}
+const teGate = (await readProjectGates(te)).find((g) => g.key === teKey)
+check("a recurring tool-error signature promotes to reminding at the probe bar", teGate?.status === "reminding")
+check("a tool-error gate never promotes to blocking", teGate?.status !== "blocking")
+
+// legacy watching tool-error gate above the bar: the migrate catch-up lifts it to reminding
+const tm = await makeWorld("tm")
+const tmKey = patternKey(teStrong)
+const tmStore = new GateStore(tm.projectStoreDir)
+await tmStore.runLocked(async () => {
+  const gates = await tmStore.loadForMutation()
+  gates.push({
+    key: tmKey,
+    signature: teStrong,
+    tool: "run_background_process",
+    status: "watching",
+    count: 6,
+    sessions: ["tm-old-1", "tm-old-2"],
+    projects: [],
+    firstSeen: new Date().toISOString(),
+    lastSeen: new Date().toISOString(),
+    snippet: "background process commands may only reference paths within <path>",
+    remindedCount: 0,
+    blockedCount: 0,
+    recurredAfterReminder: 0,
+    recurredAfterGate: 0,
+    overrideCount: 0,
+  })
+  await tmStore.save()
+})
+await new Stores(new GateStore(tm.globalDir), new GateStore(tm.projectStoreDir)).migrate()
+check("the migrate catch-up lifts a legacy watching tool-error gate to reminding", (await readProjectGates(tm)).find((g) => g.key === tmKey)?.status === "reminding")
 
 // a successful generic result is CONTENT, not failure evidence — the adapter must not feed it
 const ge2 = await makeWorld("ge2")
@@ -703,6 +751,37 @@ await enforceAfter(ev({ tool: "bash", sessionId: "b3-3", args: { command: b3Cmd 
 const b3Struct = (await readProjectGates(b3)).find((g) => g.key === b3Key)
 check("B3: structural evidence promotes the gate to blocking", b3Struct?.status === "blocking")
 check("B3: the structural promotion earns a fresh baseline and one promotion", b3Struct?.promotionCount === 1 && b3Struct?.retireBaseline !== undefined)
+
+// --- sb. snowball guard: command accretion (the research-subagent incident) ---
+const sb = await makeWorld("sb")
+const c1 = 'cd $env:TEMP\\cdt-mcp\\chrome-devtools-mcp; Select-String -Path (Get-ChildItem -Recurse src -Filter ToolDefinition.ts).FullName -Pattern "viewportTransform" -Context 0,25 | Select-Object -First 30'
+const c2 = c1 + '; echo "---scroll tools?---"; Get-ChildItem -Recurse src -Filter *.ts | Select-String -Pattern "name: \'scroll|mouse.wheel|wheel" | Select-Object -First 8'
+const c3 = c2 + '; echo "---drag tool uses touch?---"; Select-String -Path src\\tools\\input.ts -Pattern "touchscreen" | Select-Object -First 6'
+const sb1 = await enforceBefore(ev({ tool: "bash", sessionId: "sb-live", args: { command: c1 } }), sb.ctx)
+check("snowball: the first incident command is allowed", sb1.verdict.action === "allow")
+const sb2 = await enforceBefore(ev({ tool: "bash", sessionId: "sb-live", args: { command: c2 } }), sb.ctx)
+check("snowball: the second growth call is allowed (below the chain minimum)", sb2.verdict.action === "allow")
+const sb3 = await enforceBefore(ev({ tool: "bash", sessionId: "sb-live", args: { command: c3 } }), sb.ctx)
+check("snowball: the third growth call is denied by the guard", sb3.verdict.action === "deny" && sb3.signalKind === "guard")
+check("snowball: the denial carries the SNOWBALL message", (sb3.verdict.reason ?? "").includes("SNOWBALL"))
+const sb3again = await enforceBefore(ev({ tool: "bash", sessionId: "sb-live", args: { command: c3 } }), sb.ctx)
+check("snowball: re-sending the denied command denies again (no commit on deny)", sb3again.verdict.action === "deny" && sb3again.signalKind === "guard")
+const sbFresh = await enforceBefore(ev({ tool: "bash", sessionId: "sb-live", args: { command: "Get-ChildItem src" } }), sb.ctx)
+check("snowball: a fresh command resets the chain and is allowed", sbFresh.verdict.action === "allow")
+
+let sbIdemAllowed = true
+for (let i = 0; i < 5; i++) {
+  const out = await enforceBefore(ev({ tool: "bash", sessionId: "sb-idem", args: { command: c1 } }), sb.ctx)
+  if (out.verdict.action !== "allow") sbIdemAllowed = false
+}
+check("snowball: five identical commands all allow (the repeat channel's business)", sbIdemAllowed)
+
+const sbp1 = await enforceBefore(ev({ tool: "bash", sessionId: "sb-proceed", args: { command: c1 } }), sb.ctx)
+const sbp2 = await enforceBefore(ev({ tool: "bash", sessionId: "sb-proceed", args: { command: c2 } }), sb.ctx)
+const sbp3 = await enforceBefore(ev({ tool: "bash", sessionId: "sb-proceed", args: { command: `${c3} # dejavu:proceed` } }), sb.ctx)
+check("snowball: a proceeded growth chain is allowed and commits", sbp1.verdict.action === "allow" && sbp2.verdict.action === "allow" && sbp3.verdict.action === "allow")
+const sbp4 = await enforceBefore(ev({ tool: "bash", sessionId: "sb-proceed", args: { command: `${c3}; echo done` } }), sb.ctx)
+check("snowball: the next unmarked growth after a proceeded commit fires", sbp4.verdict.action === "deny" && sbp4.signalKind === "guard")
 
 await rm(tmp, { recursive: true, force: true })
 
