@@ -3089,6 +3089,27 @@ const r106Git: R99Msg[] = [
 ]
 await r106Transform?.({} as never, { messages: r106Git } as never)
 check("shape loop: different commit hashes stay distinct shapes", !r106Git.some((m) => r106ShapeText(m).includes("SHAPE LOOP")))
+const r106ScratchCmd = (suffix: string): string =>
+  `cmd /c "git -C D:\\Sources\\kryptonit\\sensitive-log-sanitizer show HEAD:README.md > %TEMP%\\opencode\\head_${suffix}.md"; $h=[System.Text.Encoding]::UTF8.GetString([System.IO.File]::ReadAllBytes("$env:TEMP\\opencode\\head_${suffix}.md"))`
+const r106Scratch: R99Msg[] = [r99User("r106t"), r106Bash(r106ScratchCmd("cr"), "r106t"), r106Bash(r106ScratchCmd("cs"), "r106t"), r106Bash(r106ScratchCmd("cp"), "r106t")]
+await r106Transform?.({} as never, { messages: r106Scratch } as never)
+check("shape loop: rotating temp-scratch suffixes are one shape", r106Scratch.some((m) => r106ShapeText(m).includes("SHAPE LOOP")))
+const r106FullTmp: R99Msg[] = [
+  r99User("r106u"),
+  r106Bash('Get-Content "C:\\Users\\Mind\\AppData\\Local\\Temp\\a.md"', "r106u"),
+  r106Bash('Get-Content "C:\\Users\\Mind\\AppData\\Local\\Temp\\b.md"', "r106u"),
+  r106Bash('Get-Content "C:\\Users\\Mind\\AppData\\Local\\Temp\\c.md"', "r106u"),
+]
+await r106Transform?.({} as never, { messages: r106FullTmp } as never)
+check("shape loop: full-path temp files collapse to one shape", r106FullTmp.some((m) => r106ShapeText(m).includes("SHAPE LOOP")))
+const r106ProjTmp: R99Msg[] = [
+  r99User("r106q"),
+  r106Bash("Get-Content D:\\project\\tmp\\a.txt", "r106q"),
+  r106Bash("Get-Content D:\\project\\tmp\\b.txt", "r106q"),
+  r106Bash("Get-Content D:\\project\\tmp\\c.txt", "r106q"),
+]
+await r106Transform?.({} as never, { messages: r106ProjTmp } as never)
+check("shape loop: files in a project tmp dir stay distinct shapes", !r106ProjTmp.some((m) => r106ShapeText(m).includes("SHAPE LOOP")))
 // a byte-identical series gets the REPETITION note and no second SHAPE LOOP note on the same part
 const r106DupCmd = "node verify.js"
 const r106Dup: R99Msg[] = [

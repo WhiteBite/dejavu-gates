@@ -1,5 +1,17 @@
 # Changelog
 
+## 2.56.0 - 2026-10-10
+
+### Added
+- **Snowball guard** - an agent re-issuing its own previous bash command verbatim as a strict prefix with a new section appended (command accretion; the incident: a research subagent issued 30+ growing calls, re-executing every answered query — 46 minutes, no deliverable) is denied BEFORE execution on the third consecutive growth call, with a teaching message (issue only the NEW query as a fresh command; the cd/setup prefix belongs in the workdir parameter; independent questions are parallel calls). Exact repeats stay the repeat channel's business; `# dejavu:proceed` bypasses (logged); `DEJAVU_SNOWBALL_CHAIN_MIN` (3) tunes the depth; per-session state rides EphemeralState, so the short-lived CLI host stays inert by the documented degradation.
+- **Tool-error signatures can teach** - event-channel tool-error signatures (`<tool>:tool-error:<prose>` — the MCP/background-tool failure surface) could never leave `watching`: `canRemind` required a `key=value` literal while error prose has none, so a 56-failure/43-session pattern stayed measured-only forever. The prose head with ≥3 literal word tokens now counts as identity — such gates promote to `reminding` (never blocking), and the migrate catch-up lifts existing watching gates on next init.
+- **Version-drift self-surfacing** - a store whose `lastInitVersion` stamp is NEWER than the running plugin (a stale OpenCode window writing with weeks-old logic — 2.26.0 writers were live in the field data) logs a warn plus a `version-drift` event at init, before reconcile re-stamps the file. Numeric semver compare, once per process per store, long-lived hosts only (the CLI opts out; doctor remains its surface).
+- **Flappy-terminal policy** - a gate promoted 3+ AND retired (healed/taught) 3+ times over its lifetime (`retiredCount`, a new lifetime counter summed by `mergeGate`, preserved by `coerceGateShape`, incremented in heal and taught-retire paths only) never re-promotes mechanically: watching + `feedbackDemoted` + a `demoted` event telling a human how to re-enforce. `retireBaseline` damped the oscillation speed; this ends the loop (`wc -l` at 6 promotions / 5 retirements was the field record).
+- **Chronic-reminder exit** - reminding gates whose taught retirement was blocked forever by 1-2 historical blind re-runs (19 gates at 10-39 reminders in the field data, no exit below the anti-nag bar) retire at `CHRONIC_REMINDERS` (10) when reoffense stays below `ANTI_NAG_REOFFENSE`: `retired-chronic` event, watching, damped re-promotion. The partition is preserved — 0 reoffense → taught at 6, 1-2 → chronic at 10, 3+ → anti-nag at 5.
+
+### Fixed
+- **Rotating temp-scratch suffixes no longer defeat the shape loop** - shape normalization keeps paths/strings by design (different commits stay different shapes), so a model re-running the same call against a disposable `%TEMP%\…\head_cr.md` → `head_cs.md` → `head_cp.md` evaded SHAPE LOOP detection at any count (the incident: ~50 analogous forensic calls, identical answers each time). Scratch paths under the temp root (`%TEMP%`/`%TMP%`, `$env:TEMP`/`$env:TMP`, `$TMPDIR`, `/tmp`, `/var/tmp`, full `…\AppData\Local\Temp`) collapse to `<tmppath>`: the family is one shape and the note fires on the third call in the window. Project directories named `tmp` keep distinct files distinct.
+
 ## 2.53.1 - 2026-10-07
 
 ### Fixed

@@ -1993,6 +1993,8 @@ function signCallShape(tool: string, args: Record<string, unknown>): string {
 }
 
 /** Shape normalization keeps data (paths/hashes/quoted strings) so different commits stay different shapes. */
+// scratch files under the temp root are disposable: a rotating suffix must not split one shape
+const TEMP_SCRATCH_PATH = /(?:\$env:temp|\$env:tmp|%temp%|%tmp%|\$tmpdir|[a-z]:\\users\\[^\\\s/"']+\\appdata\\local\\temp|\/var\/tmp|\/tmp)[\\/][^\s"'`);|&]*/g
 function shapeNormalizeCommand(command: string): string {
   let s = stripControl(command)
   s = s.replace(/\r\n?/g, "\n")
@@ -2002,6 +2004,7 @@ function shapeNormalizeCommand(command: string): string {
   const parts = s.split(QUOTED_SPAN)
   const quoted = s.match(QUOTED_SPAN) ?? []
   s = parts.map((p) => p.replace(/[ \t]+#[^\n]*/g, "")).reduce((acc, p, i) => acc + p + (quoted[i] ?? ""), "")
+  s = s.replace(TEMP_SCRATCH_PATH, "<tmppath>")
   s = s.replace(/\b\d+\b/g, "<n>")
   return s.replace(/\s+/g, " ").trim()
 }
