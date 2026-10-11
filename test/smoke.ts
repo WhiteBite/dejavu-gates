@@ -3055,6 +3055,29 @@ const r106Iter: R99Msg[] = [r99User("r106i"), r106Bash("node build.js # a", "r10
 ] }, r106Bash("node build.js # c", "r106i")]
 await r106Transform?.({} as never, { messages: r106Iter } as never)
 check("shape loop: a round that landed an edit does not count toward the loop", !r106Iter.some((m) => r106ShapeText(m).includes("SHAPE LOOP")))
+const r106RedGreen: R99Msg[] = [
+  r99User("r106v"),
+  r106Bash("flutter test", "r106v"),
+  r106Edit("r106v"),
+  r106Bash("flutter test", "r106v"),
+  r106Edit("r106v"),
+  r106Bash("flutter test", "r106v"),
+]
+await r106Transform?.({} as never, { messages: r106RedGreen } as never)
+check("shape loop: red-green iteration (test, edit, test, edit, test) is not a stuck loop", !r106RedGreen.some((m) => r106ShapeText(m).includes("SHAPE LOOP")))
+const r106PostEdit: R99Msg[] = [
+  r99User("r106w"),
+  r106Bash("node build.js # a", "r106w"),
+  r106Edit("r106w"),
+  r106Bash("node build.js # b", "r106w"),
+  r106Bash("node build.js # c", "r106w"),
+  r106Bash("node build.js # d", "r106w"),
+]
+await r106Transform?.({} as never, { messages: r106PostEdit } as never)
+check("shape loop: three same-state post-edit runs still fire", r106PostEdit.some((m) => r106ShapeText(m).includes("SHAPE LOOP")))
+const r106NoEdit: R99Msg[] = [r99User("r106x"), r106Bash("node build.js # a", "r106x"), r106Bash("node build.js # b", "r106x"), r106Bash("node build.js # c", "r106x")]
+await r106Transform?.({} as never, { messages: r106NoEdit } as never)
+check("shape loop: three runs with no interleaved edits still fire", r106NoEdit.some((m) => r106ShapeText(m).includes("SHAPE LOOP")))
 // pagination slices collapse to one shape too
 const r106Page: R99Msg[] = [
   r99User("r106p"),

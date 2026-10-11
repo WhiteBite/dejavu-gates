@@ -1717,8 +1717,82 @@ function isDetached(command: string): boolean {
   return false
 }
 
+const START_PROCESS_HEAD = /^start-process\b/i
+/** Shell one-liner wrappers delegate to their payload like cmd /c. */
+const SHELL_ONELINER = /^(?:bash|sh|zsh)(?:\s+-\w+)*\s+-c\s+/i
+// -File is a script path, not a code payload — never unwrapped
+const PS_ONELINER = /^(?:pwsh|powershell)(?:\s+-\w+)*\s+-c(?:ommand)?\s+/i
+
+function shellOnelinerPayload(command: string): string | null {
+  const match = SHELL_ONELINER.exec(command) ?? PS_ONELINER.exec(command)
+  if (match === null) return null
+  let payload = command.slice(match[0].length).trim()
+  if ((payload.startsWith('"') && payload.endsWith('"') && payload.length >= 2) || (payload.startsWith("'") && payload.endsWith("'") && payload.length >= 2)) {
+    payload = payload.slice(1, -1).trim()
+  }
+  return payload === "" ? null : payload
+}
+
+/** Starters fire at segment heads only — quoted argument values are data, not launches. */
 function isLongRunningCommand(command: string): boolean {
-  return SERVER_STARTERS.some((rule) => rule.test(command))
+  for (const { text } of splitChainTagged(flattenSubshellParens(command))) {
+    if (longRunningSegment(text)) return true
+  }
+  return false
+}
+
+function longRunningSegment(text: string): boolean {
+  const wrapper = cmdWrapperPayload(text)
+  if (wrapper !== null) return isLongRunningCommand(wrapper)
+  const oneliner = shellOnelinerPayload(text)
+  if (oneliner !== null) return isLongRunningCommand(oneliner)
+  if (starterAtHead(longRunningHead(text))) return true
+  // Start-Process carries its command in a quoted argument, not at the segment head
+  if (START_PROCESS_HEAD.test(text)) {
+    for (const span of text.match(QUOTED_SPAN) ?? []) {
+      if (starterAtHead(longRunningHead(span.slice(1, -1)))) return true
+    }
+  }
+  return false
+}
+
+function starterAtHead(head: string): boolean {
+  if (matchesAtHead(SERVER_STARTERS, head)) return true
+  const tokens = tokensOf(head)
+  const verb = tokens[0] ?? ""
+  if (PATH_QUALIFIED_HEAD.test(verb)) {
+    const base = baseName(verb)
+    if (base !== "" && matchesAtHead(SERVER_STARTERS, [base, ...tokens.slice(1)].join(" "))) return true
+  }
+  return false
+}
+
+function longRunningHead(text: string): string {
+  const tokens = tokensOf(text)
+  let i = 0
+  for (;;) {
+    while (ENV_ASSIGNMENT_TOKEN.test(tokens[i] ?? "")) i += 1
+    const token = (tokens[i] ?? "").toLowerCase()
+    // nohup without & keeps the server in the foreground — the guard must still see the verb
+    if (token === "&" || token === "nohup") {
+      i += 1
+      continue
+    }
+    if (NAVIGATION_HEAD.test(token)) {
+      i += 2
+      continue
+    }
+    if (RUNNER_HEADS.has(token) || WRAPPER_COMMANDS.has(token)) {
+      i += 1
+      while (FLAG_HEAD.test(tokens[i] ?? "")) {
+        if (token === "env" && (tokens[i] ?? "").toLowerCase() === "-u") i += 1
+        i += 1
+      }
+      continue
+    }
+    break
+  }
+  return tokens.slice(i).join(" ")
 }
 
 /** Warn only for a foreground server start; a detached one is fine. */
@@ -1772,7 +1846,7 @@ export function commandExtension(prev: string, next: string): string | null {
  * hangs forever. Static, bounded class like SERVER_STARTERS. REMOVE this guard
  * when the upstream fix ships. The spawner matches the RAW statement (quoted
  * spans included), so `echo "siphon-supervisor.mjs start" > log` flags — rare,
- * accepted, same raw-match philosophy as the long-running guard.
+ * accepted.
  */
 const DETACHED_SPAWNERS: RegExp[] = [/\bsiphon-supervisor\.mjs["']?\s+(?:start|restart)\b/i] // quoted exe/script paths are the norm on Windows
 
@@ -2050,13 +2124,13 @@ export interface RepeatWindowScan {
 /** Shared window-scan skeleton: backward walk over the last `window` assistant
  *  rounds (first part wins per round), min-count filter, tail-anchored windows
  *  out. `sign` picks the identity (byte-exact vs shape); `skipEditRounds`
- *  drops rounds that landed an edit/write — iteration work, not a stuck loop. */
+ *  drops edit rounds; `stopOnEditRounds` ends the walk — pre-edit rounds are another era. */
 function scanTailWindows(
   messages: ReadonlyArray<{
     info: { role: string; sessionID?: string }
     parts: ReadonlyArray<{ type: string; tool?: string; state?: { input?: Record<string, unknown>; status?: string } }>
   }>,
-  opts: { window: number; min: number; sign: (tool: string, input: Record<string, unknown>) => string; skipEditRounds: boolean },
+  opts: { window: number; min: number; sign: (tool: string, input: Record<string, unknown>) => string; skipEditRounds: boolean; stopOnEditRounds?: boolean },
 ): RepeatWindowScan {
   let lastAssistant = -1
   for (let i = messages.length - 1; i >= 0; i--) {
@@ -2084,6 +2158,7 @@ function scanTailWindows(
       const key = opts.sign(part.tool, part.state.input)
       if (!roundKeys.has(key)) roundKeys.set(key, { tool: part.tool, partIndex: p })
     }
+    if (opts.stopOnEditRounds && roundLandedEdit) break
     if (opts.skipEditRounds && roundLandedEdit) continue
     for (const [key, found] of roundKeys) {
       const entry = counts.get(key) ?? { tool: found.tool, occurrences: [] }
@@ -2135,7 +2210,7 @@ export interface ShapeWindowScan {
 /** Shape-level repeats: the same call with cosmetic variation (trailing
  *  comments, numeric offsets) — evades the byte-identical channels. Windowed,
  *  tail-anchored like detectRepeatWindows. A round that also lands an
- *  edit/write is iteration work, not a stuck loop — its shapes don't count. */
+ *  edit/write ends the counted series — red-green iteration is not a stuck loop. */
 export function detectShapeLoops(
   messages: ReadonlyArray<{
     info: { role: string; sessionID?: string }
@@ -2143,7 +2218,7 @@ export function detectShapeLoops(
   }>,
   opts?: { window?: number; min?: number },
 ): ShapeWindowScan {
-  return scanTailWindows(messages, { window: opts?.window ?? 12, min: opts?.min ?? 4, sign: signCallShape, skipEditRounds: true })
+  return scanTailWindows(messages, { window: opts?.window ?? 12, min: opts?.min ?? 4, sign: signCallShape, skipEditRounds: true, stopOnEditRounds: true })
 }
 
 /** Detect series of byte-identical tool calls across consecutive assistant

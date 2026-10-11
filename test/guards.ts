@@ -28,6 +28,13 @@ check("long-running fires on a PowerShell call-operator foreground server", msg(
 check("long-running allows mid-chain background &", proactiveGuardMessage("npm run dev & sleep 1") === null)
 check("long-running allows subshell background (cmd &)", proactiveGuardMessage("(npm run dev &)") === null)
 check("long-running fires on a foreground && chain", msg("npm run dev && echo up").includes("[dejavu] LONG-RUNNING"))
+check("long-running ignores a server name inside quoted data (PR body)", proactiveGuardMessage('git push origin main && gh pr create --title "perf" --body "fix: vite dev startup regression in the dev panel"') === null)
+check("long-running still fires on a quoted command payload (cmd /c)", msg('cmd /c "npm run dev"').includes("[dejavu] LONG-RUNNING"))
+check("long-running fires on a server inside a bash -c payload", msg('bash -c "npm run dev"').includes("[dejavu] LONG-RUNNING"))
+check("long-running fires on a server inside a pwsh -Command payload", msg('pwsh -Command "npm run dev"').includes("[dejavu] LONG-RUNNING"))
+check("long-running ignores a one-shot bash -c payload", proactiveGuardMessage('bash -c "echo done"') === null)
+check("long-running ignores quoted data inside a pwsh -Command payload", proactiveGuardMessage(`pwsh -Command "write-host 'vite dev is fast'"`) === null)
+check("long-running ignores a one-shot build inside a bash -c payload", proactiveGuardMessage('bash -c "npm run build"') === null)
 
 // --- WAIT-LOOP ---
 check("wait-loop fires on bash until/curl/sleep poll", msg("until curl -sf http://localhost:3000; do sleep 2; done").includes("[dejavu] WAIT-LOOP"))
