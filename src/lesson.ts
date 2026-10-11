@@ -179,6 +179,8 @@ async function runSet(projectDir: string, args: readonly string[], author: "agen
       gate.correction = clean
       gate.correctionOrigin = author ?? "agent"
       gate.correctionAt = Date.now()
+      // the rewrite IS the inspection the review flag asked for — close the TODO
+      if (gate.review === true) delete gate.review
       gate.correctionBaseline = {
         recurred: gate.recurredAfterGate,
         reminded: gate.remindedCount,

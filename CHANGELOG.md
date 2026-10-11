@@ -1,5 +1,10 @@
 # Changelog
 
+## 2.59.0 - 2026-10-11
+
+### Changed
+- **`lesson set` closes the review TODO** - the `review` flag means "blocked repeatedly without killing the error — inspect and rewrite the correction", yet nothing sanctioned could ever clear it: a curated gate re-appeared in doctor's REVIEW-FLAGGED forever (17 gates stayed flagged after their corrections were rewritten through `lesson set` itself). A rewritten correction IS the inspection the flag asks for, so `lesson set` now deletes `review` in every owning scope as part of the same locked write; heal/retire clearing it is unchanged, and doctor's report stops re-listing finished reviews.
+
 ## 2.58.0 - 2026-10-11
 
 ### Fixed

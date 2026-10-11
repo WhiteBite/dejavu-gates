@@ -81,6 +81,7 @@ interface LessonGateRow {
   recurredAfterGate: number
   remindedCount: number
   overrideCount: number
+  review?: boolean
 }
 
 async function gateRow(file: string, gateKey: string): Promise<LessonGateRow | undefined> {
@@ -231,5 +232,14 @@ if (staleGate !== undefined) staleGate.recurredAfterGate = 3
 await writeFile(gatesPath, JSON.stringify(staleFile), "utf8")
 const staleList = runLesson(["--store", projectDir, "list"])
 check("list appends stale=stale for a stale gate", lineFor(staleList.stdout, key)?.includes("stale=stale") === true)
+
+// the rewrite IS the inspection the review flag asks for — set must close the TODO in every scope
+for (const file of [gatesPath, globalGatesPath]) {
+  const flagged = JSON.parse(await readFile(file, "utf8")) as { gates: LessonGateRow[] }
+  for (const row of flagged.gates) if (row.key === key) row.review = true
+  await writeFile(file, JSON.stringify(flagged), "utf8")
+}
+runLesson(["--store", projectDir, "set", key, "reviewed fix for the boom"])
+check("lesson set clears the review flag in every owning scope", (await gateRow(gatesPath, key))?.review === undefined && (await gateRow(globalGatesPath, key))?.review === undefined)
 
 report()
