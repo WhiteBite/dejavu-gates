@@ -3009,6 +3009,8 @@ const r105Stop = await r105Populate()
 check("loop break: a stop-blocked loop injects an automated user message", r105HasBreak(r105Stop))
 const r105BreakMsg = r105Stop.find((m) => m.info.role === "user" && r105LoopText(m).includes("loop protection"))
 check("loop break: the injected message is marked synthetic", (r105BreakMsg?.parts[0] as { synthetic?: boolean } | undefined)?.synthetic === true)
+const r105BreakText = r105BreakMsg === undefined ? "" : r105LoopText(r105BreakMsg)
+check("loop break: the stop-blocked message keeps the report framing", r105BreakText.includes("has been blocked") && r105BreakText.includes("(1) what you finished"))
 // a real user turn at the tail breaks the series — no injection over it
 const r105UserTail: R99Msg[] = [r99User("r105s"), r99Asst({ task_id: "t1" }, {}, "r105s"), r99Asst({ task_id: "t1" }, {}, "r105s"), r99User("r105s")]
 await r105Transform?.({} as never, { messages: r105UserTail } as never)
@@ -3048,6 +3050,8 @@ check("shape loop: an identical-call churn keeps the no-new-information claim", 
 check("shape loop: first detection does not inject", !r106First.some((m) => r106ShapeText(m).includes("loop protection")))
 const r106Second = await r106Populate()
 check("shape loop: a repeated detection injects a loop break", r106Second.some((m) => r106ShapeText(m).includes("loop protection")))
+const r106BreakText = r106Second.map((m) => r106ShapeText(m)).find((t) => t.includes("loop protection")) ?? ""
+check("shape loop: the break is call-level, not a task report", r106BreakText.includes("continue the task") && !r106BreakText.includes("(1) what you finished"))
 // a round that lands an edit alongside the call is iteration, not a loop round
 const r106Iter: R99Msg[] = [r99User("r106i"), r106Bash("node build.js # a", "r106i"), { info: { role: "assistant", sessionID: "r106i" }, parts: [
   { type: "tool", tool: "bash", state: { status: "completed", output: "ok", input: { command: "node build.js # b" } } },

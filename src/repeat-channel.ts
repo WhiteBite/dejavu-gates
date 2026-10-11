@@ -176,7 +176,7 @@ export async function applyRepeatChannel(messages: RepeatChannelMessage[], ctx: 
       const notedBefore = ephemeral.shapeLoopNotes.get(shapeKey) ?? 0
       if (notedBefore > 0) {
         if (lastIsAssistantForShape) {
-          const text = `[dejavu loop protection — automated message, not the user] You have run the same call ${sw.count} times in the last ${REPEAT_WINDOW_ROUNDS} rounds with only cosmetic variations (trailing comments, offsets). It is the same call and the result will not change. Reply in plain text ONLY — no tool calls: (1) what you finished, (2) what you verified, (3) what remains. If you are a subagent, this text reply IS your final report to whoever launched you.`
+          const text = `[dejavu loop protection — automated message, not the user] You have re-issued the same call ${sw.count} times in the last ${REPEAT_WINDOW_ROUNDS} rounds with only cosmetic variations; the result is already in your context and will not change. Do NOT re-issue it. Reply in plain text ONLY — no tool calls: state in one line what you will do next with the result you already have, then continue the task on your next turn. If you are a subagent that cannot proceed, this text reply is your report to whoever launched you.`
           await injectLoopBreak(text, sw.key, sw.tool, sw.count)
         }
         continue

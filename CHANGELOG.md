@@ -1,5 +1,10 @@
 # Changelog
 
+## 2.58.0 - 2026-10-11
+
+### Fixed
+- **Shape-loop loop-break speaks to the call, not the task** - the shape-loop ladder reused the blocked-variant message verbatim ("(1) what you finished, (2) what you verified, (3) what remains … this text reply IS your final report"), so a call that was never blocked was answered with a whole-task abort report: a survey session that had over-read one file was ordered to stop and report, ended its turn, and the run sat idle until the user poked it twice (its own words: "dejavu прав — дочитал достаточно", then it read the file once more). The shape-loop injection now says the result is already in context, forbids re-issuing, and tells the agent to continue the task on its next turn; the blocked ladder keeps the report framing (there the call genuinely cannot run); the text-only force — the one stimulus that reliably ends a loop — is unchanged in both, pinned by new smoke checks.
+
 ## 2.57.0 - 2026-10-11
 
 ### Fixed
