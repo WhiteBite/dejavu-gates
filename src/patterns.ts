@@ -1573,25 +1573,31 @@ export function failureSnippet(outputText: string, exitCode: number | null): str
     .split("\n")
     .map((l) => l.trim())
     .filter((l) => l !== "")
+  let snippet = ""
   if (exitCode !== null && exitCode !== 0) {
     for (let i = lines.length - 1; i >= 0; i--) {
       const line = lines[i] ?? ""
-      if (looksLikeFailure(line)) return line.slice(0, 200)
+      if (looksLikeFailure(line)) { snippet = line.slice(0, 200); break }
     }
-    // No failure-shaped line: the last non-success, non-frame line beats a bare exit code.
+    if (snippet === "") {
+      for (let i = lines.length - 1; i >= 0; i--) {
+        const line = lines[i] ?? ""
+        if (!looksLikeSuccess(line) && !/^\s*at\s/.test(line)) { snippet = line.slice(0, 200); break }
+      }
+    }
+    if (snippet === "") snippet = `exit code ${exitCode}`
+  } else {
     for (let i = lines.length - 1; i >= 0; i--) {
       const line = lines[i] ?? ""
-      if (!looksLikeSuccess(line) && !/^\s*at\s/.test(line)) return line.slice(0, 200)
+      if (!looksLikeSuccess(line) && !/^\s*at\s/.test(line)) { snippet = line.slice(0, 200); break }
     }
-    return `exit code ${exitCode}`
+    if (snippet === "") snippet = `exit code ${exitCode ?? "unknown"}`
   }
-  // the raw tail is often a crash banner or frame, not the cause
-  for (let i = lines.length - 1; i >= 0; i--) {
-    const line = lines[i] ?? ""
-    if (!looksLikeSuccess(line) && !/^\s*at\s/.test(line)) return line.slice(0, 200)
-  }
-  return `exit code ${exitCode ?? "unknown"}`
+  if (looksLikeMojibake(snippet)) snippet = UNREADABLE_SNIPPET
+  return snippet
 }
+
+const UNREADABLE_SNIPPET = "<unreadable: console codepage mojibake>"
 
 /** True for a bare "exit code N|null|unknown" snippet — no error content to quote or compare. */
 export function isBareExitSnippet(snippet: string): boolean {
@@ -1625,9 +1631,14 @@ const NOISE_ERRORS: RegExp[] = [
   // action ran — a transient startup/state hiccup fixed by relaunching, not an
   // agent habit (and a non-bash tool error could only ever watch anyway).
   /target page, context or browser has been closed/i,
-  // LSP too slow to answer a diagnostics request in the window — a latency
-  // hiccup, not an agent mistake (and lsp_* tools only ever watch anyway).
+  // LSP latency hiccup (lsp_* tools never enforce anyway)
   /timed out waiting for (?:fresh )?diagnostics/i,
+  // editor-plugin rejections are enforced by the rejecting tool — recording is redundant
+  /^comment-gate:/i,
+  // network transport failures — the pipe, not the command
+  /\bTLS handshake timeout\b/i,
+  /\bcheck your internet connection\b/i,
+  /\bcould not resolve host/i,
 ]
 
 export function isNoiseError(errorText: string): boolean {

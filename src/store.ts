@@ -7,7 +7,7 @@ import { canBlock, canRemind, fuzzySimilar, FUZZY_MAX_LEN, hasGenericResidualIde
 import { coerceGateShape, failedAtMs, isAutoCorrection, repairGate } from "./validate"
 
 /** Bumped on behavior changes; stamped into init log events so stale sessions are visible. */
-export const PLUGIN_VERSION = "2.59.0"
+export const PLUGIN_VERSION = "2.60.0"
 
 /** Global store root — DEJAVU_HOME overrides it (testing, custom setups). */
 export function resolveGlobalDir(): string {
@@ -525,6 +525,8 @@ export class GateStore {
   private enforcedCache: Gate[] | null = null
   private index: IndexFile | null = null
   private indexMtimeMs = 0
+  /** true when the last unlock peek (loadIndex) hit a SyntaxError — the sweep escalates to a locked quarantine pass */
+  private indexPeekCorrupt = false
   /** PLUGIN_VERSION that last ran migrate() — persisted in gates.json so the
    * 2nd..Nth start of the same version skips the full per-gate scan */
   private migratedStamp: string | null = null
@@ -850,6 +852,11 @@ export class GateStore {
     return this.loadIndexFile(true)
   }
 
+  /** True when the last unlocked index peek hit a SyntaxError — the sweep escalates to a locked quarantine pass. */
+  isIndexPeekCorrupt(): boolean {
+    return this.indexPeekCorrupt
+  }
+
   private async loadIndexFile(force: boolean): Promise<IndexFile> {
     let raw = ""
     try {
@@ -862,12 +869,14 @@ export class GateStore {
       const keys = parsed.keys
       this.index = { version: 1, keys: canonicalizeIndexKeys(keys !== null && typeof keys === "object" ? keys : {}) }
       this.indexMtimeMs = info.mtimeMs
+      this.indexPeekCorrupt = false
       return this.index
     } catch (error) {
       const code = (error as { code?: string }).code ?? ""
       // index corruption quarantines under the lock, never silently rebuilds
       if (error instanceof SyntaxError) {
-        if (force) await this.quarantineIndexFile(raw)
+        if (force) { await this.quarantineIndexFile(raw); this.indexPeekCorrupt = false }
+        else this.indexPeekCorrupt = true
         if (this.index === null) this.index = { version: 1, keys: {} }
         return this.index
       }
@@ -877,6 +886,7 @@ export class GateStore {
         throw new Error(`dejavu: index unreadable (${code || "unknown error"}): ${this.indexPath}`)
       }
       if (this.index === null) this.index = { version: 1, keys: {} }
+      this.indexPeekCorrupt = false
       return this.index
     }
   }
@@ -1531,8 +1541,10 @@ export class Stores {
     })
   }
 
-  /** Routing-hint peek: true when the locked index sweep has TTL rot or a candidacy flip to act on. */
+  /** Routing-hint peek: true when the locked index sweep has TTL rot, a candidacy flip, or
+   * a corrupt index that the unlocked peek could not quarantine (the locked pass will). */
   private async indexSweepPending(visibleKeys: Set<string>, ttlDays: number, now: number): Promise<boolean> {
+    if (this.globalStore.isIndexPeekCorrupt()) return true
     const index = await this.globalStore.loadIndex()
     const cutoff = now - ttlDays * DAY_MS
     for (const key of Object.keys(index.keys)) {

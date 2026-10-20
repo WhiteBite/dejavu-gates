@@ -783,6 +783,13 @@ check("snowball: a proceeded growth chain is allowed and commits", sbp1.verdict.
 const sbp4 = await enforceBefore(ev({ tool: "bash", sessionId: "sb-proceed", args: { command: `${c3}; echo done` } }), sb.ctx)
 check("snowball: the next unmarked growth after a proceeded commit fires", sbp4.verdict.action === "deny" && sbp4.signalKind === "guard")
 
+// --- noise: comment-gate rejections + network transport failures are not agent mistakes ---
+check("comment-gate long-comment rejection is noise", isNoiseError("comment-gate: long-comment [error] at D:\\Sources\\dejavu\\src\\patterns.ts:1"))
+check("comment-gate multi-line-comment rejection is noise", isNoiseError("comment-gate: multi-line-comment [error] at D:\\proj\\cli.ts:42"))
+check("TLS handshake timeout is infrastructure noise", isNoiseError("Get \"https://api.github.com/search\": net/http: TLS handshake timeout"))
+check("check your internet connection hint is infrastructure noise", isNoiseError("npm error check your internet connection or https://githubstatus.com"))
+check("could not resolve host is infrastructure noise", isNoiseError("ssh: Could not resolve hostname gh-proxy.internal: Name or service not known"))
+
 await rm(tmp, { recursive: true, force: true })
 
 report()
