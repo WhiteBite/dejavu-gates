@@ -537,6 +537,8 @@ check("plugin starts with a fresh store after quarantine", (await readJson(join(
 const healDir = join(tmp, "heal-project")
 const healDejavu = join(healDir, ".opencode", "dejavu")
 await mkdir(healDejavu, { recursive: true })
+const healFirstSeen = new Date(Date.now() - 5 * 86400000).toISOString()
+const healLastSeen = new Date(Date.now() - 10 * 86400000).toISOString()
 const healBase = {
   key: "beef00000001",
   signature: "bash:heal me",
@@ -545,8 +547,8 @@ const healBase = {
   count: 1,
   sessions: ["h1"],
   projects: [healDir],
-  firstSeen: "2026-08-20T00:00:00.000Z",
-  lastSeen: "2026-08-10T00:00:00.000Z",
+  firstSeen: healFirstSeen,
+  lastSeen: healLastSeen,
   snippet: "exit code 1",
   remindedCount: 0,
   blockedCount: 0,
