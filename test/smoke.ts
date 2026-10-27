@@ -721,8 +721,8 @@ const seedGate = (over: Record<string, unknown>): Record<string, unknown> => ({
   count: 3,
   sessions: ["s1", "s2"],
   projects: [],
-  firstSeen: "2026-08-20T00:00:00.000Z",
-  lastSeen: "2026-08-23T00:00:00.000Z",
+  firstSeen: new Date(Date.now() - 5 * 24 * 60 * 60 * 1000).toISOString(),
+  lastSeen: new Date(Date.now() - 2 * 24 * 60 * 60 * 1000).toISOString(),
   snippet: "exit code 1",
   remindedCount: 0,
   blockedCount: 0,
@@ -2587,6 +2587,8 @@ interface R99Part {
   type: string
   tool?: string
   text?: string
+  id?: string
+  synthetic?: boolean
   state?: { status?: string; input?: Record<string, unknown>; output?: string; error?: string }
 }
 interface R99Msg {
@@ -2880,7 +2882,11 @@ const r102B1 = await r102Block("r102a", "t1", "r102c1")
 const r102B2 = await r102Block("r102a", "t1", "r102c2")
 const r102B3 = await r102Block("r102a", "t1", "r102c3")
 check("repeat stop: first blocks use the regular wording", r102B1 !== null && r102B1.message.includes("REPEAT BLOCKED") && !r102B1.message.includes("REPEAT STOP") && r102B2 !== null && !r102B2.message.includes("REPEAT STOP"))
-check("repeat stop: Nth consecutive block switches to hard stop", r102B3 !== null && r102B3.message.includes("REPEAT STOP") && r102B3.message.includes("STOP this line of work"))
+check("repeat stop: Nth consecutive block switches to hard stop", r102B3 !== null && r102B3.message.includes("REPEAT STOP") && r102B3.message.includes("will not succeed"))
+check(
+  "repeat stop: the stop wording scopes to the blocked call, not the whole task",
+  r102B3 !== null && !r102B3.message.includes("STOP this line of work") && !r102B3.message.includes("report partial results") && r102B3.message.includes("continue with the rest of the task"),
+)
 // bypasses must not grow the stop counter
 const r102Dir2 = join(tmp, "r102-stop-bypass-project")
 const r102Hooks2 = await Dejavu({ directory: r102Dir2, client: { app: { log: async () => ({}) } } } as unknown as Ctx)
@@ -3012,7 +3018,7 @@ check("loop break: a stop-blocked loop injects an automated user message", r105H
 const r105BreakMsg = r105Stop.find((m) => m.info.role === "user" && r105LoopText(m).includes("loop protection"))
 check("loop break: the injected message is marked synthetic", (r105BreakMsg?.parts[0] as { synthetic?: boolean } | undefined)?.synthetic === true)
 const r105BreakText = r105BreakMsg === undefined ? "" : r105LoopText(r105BreakMsg)
-check("loop break: the stop-blocked message keeps the report framing", r105BreakText.includes("has been blocked") && r105BreakText.includes("(1) what you finished"))
+check("loop break: the stop-blocked message stays scoped to the blocked call", r105BreakText.includes("has been blocked") && r105BreakText.includes("continue with the rest of the task") && !r105BreakText.includes("final report"))
 // a real user turn at the tail breaks the series — no injection over it
 const r105UserTail: R99Msg[] = [r99User("r105s"), r99Asst({ task_id: "t1" }, {}, "r105s"), r99Asst({ task_id: "t1" }, {}, "r105s"), r99User("r105s")]
 await r105Transform?.({} as never, { messages: r105UserTail } as never)
@@ -3048,12 +3054,11 @@ const r106Populate = async (extra: R99Msg[] = []): Promise<R99Msg[]> => {
 }
 const r106First = await r106Populate()
 check("shape loop: same call with comment churn earns a SHAPE LOOP note", r106First.some((m) => r106ShapeText(m).includes("SHAPE LOOP")))
-check("shape loop: an identical-call churn keeps the no-new-information claim", r106First.some((m) => r106ShapeText(m).includes("will not produce new information")))
+check("shape loop: the note hedges the no-new-information claim instead of asserting it", r106First.some((m) => r106ShapeText(m).includes("unlikely to produce new information")))
+check("shape loop: the note explicitly allows continuing useful work", r106First.some((m) => r106ShapeText(m).includes("not a block")))
 check("shape loop: first detection does not inject", !r106First.some((m) => r106ShapeText(m).includes("loop protection")))
 const r106Second = await r106Populate()
-check("shape loop: a repeated detection injects a loop break", r106Second.some((m) => r106ShapeText(m).includes("loop protection")))
-const r106BreakText = r106Second.map((m) => r106ShapeText(m)).find((t) => t.includes("loop protection")) ?? ""
-check("shape loop: the break is call-level, not a task report", r106BreakText.includes("continue the task") && !r106BreakText.includes("(1) what you finished"))
+check("shape loop: a repeated detection never escalates to an injection", !r106Second.some((m) => r106ShapeText(m).includes("loop protection")))
 // a round that lands an edit alongside the call is iteration, not a loop round
 const r106Iter: R99Msg[] = [r99User("r106i"), r106Bash("node build.js # a", "r106i"), { info: { role: "assistant", sessionID: "r106i" }, parts: [
   { type: "tool", tool: "bash", state: { status: "completed", output: "ok", input: { command: "node build.js # b" } } },
@@ -3084,7 +3089,7 @@ check("shape loop: three same-state post-edit runs still fire", r106PostEdit.som
 const r106NoEdit: R99Msg[] = [r99User("r106x"), r106Bash("node build.js # a", "r106x"), r106Bash("node build.js # b", "r106x"), r106Bash("node build.js # c", "r106x")]
 await r106Transform?.({} as never, { messages: r106NoEdit } as never)
 check("shape loop: three runs with no interleaved edits still fire", r106NoEdit.some((m) => r106ShapeText(m).includes("SHAPE LOOP")))
-// pagination slices collapse to one shape too
+// pagination slices read different ranges — different offsets are different reads
 const r106Page: R99Msg[] = [
   r99User("r106p"),
   r106Bash(`Get-Content "$env:TMP/x.ts" | Select-Object -Skip 60 -First 20`, "r106p"),
@@ -3092,8 +3097,7 @@ const r106Page: R99Msg[] = [
   r106Bash(`Get-Content "$env:TMP/x.ts" | Select-Object -Skip 482 -First 30`, "r106p"),
 ]
 await r106Transform?.({} as never, { messages: r106Page } as never)
-check("shape loop: pagination with moving offsets is one shape", r106Page.some((m) => r106ShapeText(m).includes("SHAPE LOOP")))
-// paging reads produce new content per slice — the note must stay truthful about that
+check("shape loop: pagination with moving offsets is not one shape", !r106Page.some((m) => r106ShapeText(m).includes("SHAPE LOOP")))
 const r106Read = (input: Record<string, unknown>, sessionID = "r106r"): R99Msg => ({
   info: { role: "assistant", sessionID },
   parts: [{ type: "tool", tool: "read", state: { status: "completed", output: "chunk", input } }],
@@ -3105,10 +3109,7 @@ const r106Chunk: R99Msg[] = [
   r106Read({ filePath: "a.ts", offset: 200, limit: 50 }),
 ]
 await r106Transform?.({} as never, { messages: r106Chunk } as never)
-const r106ChunkNote = r106Chunk.map((m) => r106ShapeText(m)).find((t) => t.includes("SHAPE LOOP")) ?? ""
-check("shape loop: a chunked read note drops the no-new-information claim", r106ChunkNote.includes("SHAPE LOOP") && !r106ChunkNote.includes("will not produce new information"))
-check("shape loop: a chunked read note advises reading the whole file once", r106ChunkNote.includes("whole file") && r106ChunkNote.includes("bigger limit"))
-check("shape loop: a comment-churn bash note keeps the no-new-information claim", r106First.some((m) => r106ShapeText(m).includes("SHAPE LOOP") && r106ShapeText(m).includes("will not produce new information")))
+check("shape loop: chunked reads with moving offsets are not a shape loop", !r106Chunk.some((m) => r106ShapeText(m).includes("SHAPE LOOP")))
 // different commits stay different shapes — git archaeology is not a loop
 const r106Git: R99Msg[] = [
   r99User("r106g"),
@@ -3130,7 +3131,7 @@ const r106FullTmp: R99Msg[] = [
   r106Bash('Get-Content "C:\\Users\\Mind\\AppData\\Local\\Temp\\c.md"', "r106u"),
 ]
 await r106Transform?.({} as never, { messages: r106FullTmp } as never)
-check("shape loop: full-path temp files collapse to one shape", r106FullTmp.some((m) => r106ShapeText(m).includes("SHAPE LOOP")))
+check("shape loop: full-path temp files stay distinct shapes", !r106FullTmp.some((m) => r106ShapeText(m).includes("SHAPE LOOP")))
 const r106ProjTmp: R99Msg[] = [
   r99User("r106q"),
   r106Bash("Get-Content D:\\project\\tmp\\a.txt", "r106q"),
@@ -3229,6 +3230,193 @@ await (r108Hooks.event as EventHook)({
   },
 } as unknown as EventInput)
 check("r108: the error part rolled the false bump back — the hard block holds", (await r108Attempt("r108b2")) !== null)
+
+// --- 109. repeat/shape-loop false-positive regressions (the chrome-devtools incident shape) ---
+const r109Dir = join(tmp, "r109-incident-project")
+const r109Hooks = await Dejavu({ directory: r109Dir, client: { app: { log: async () => ({}) } } } as unknown as Ctx)
+const r109Transform = r109Hooks["experimental.chat.messages.transform"]
+const r109Before = r109Hooks["tool.execute.before"] as BeforeHook
+const r109Tool = (tool: string, input: Record<string, unknown>, output: string, id: string, sessionID = "r109s"): R99Msg => ({
+  info: { role: "assistant", sessionID },
+  parts: [{ type: "tool", tool, id, state: { status: "completed", output, input } }],
+})
+const r109Text = (m: R99Msg | undefined): string => m?.parts[0]?.state?.output ?? m?.parts[0]?.state?.error ?? ""
+const r109HasNote = (msgs: R99Msg[], mark: string): boolean => msgs.some((m) => r109Text(m).includes(mark))
+const r109ShapeLogCount = async (session: string): Promise<number> => {
+  const raw = await readFile(join(r109Dir, ".opencode", "dejavu", "log.jsonl"), "utf8").catch(() => "")
+  return raw.split("\n").filter((l) => l.includes('"type":"shape-loop"') && l.includes(`"session":"${session}"`)).length
+}
+
+const r109Incident: R99Msg[] = [
+  r99User("r109s"),
+  r109Tool("chrome-devtools_take_snapshot", { pageId: 1 }, "onboarding screen: [Get started] [Skip]", "i1"),
+  r109Tool("chrome-devtools_click", { pageId: 1, uid: "2_47" }, "clicked Get started", "i2"),
+  r109Tool("chrome-devtools_take_snapshot", { pageId: 1 }, "account screen: [Email] [Password] [Continue]", "i3"),
+  r109Tool("chrome-devtools_click", { pageId: 1, uid: "2_47" }, "clicked Continue", "i4"),
+  r109Tool("chrome-devtools_take_snapshot", { pageId: 1 }, "chat screen: [Type a message]", "i5"),
+  r109Tool("chrome-devtools_click", { pageId: 1, uid: "2_47" }, "clicked Send", "i6"),
+  r109Tool("chrome-devtools_take_snapshot", { pageId: 1 }, "chat screen: [Type a message] [Message sent]", "i7"),
+]
+await r109Transform?.({} as never, { messages: r109Incident } as never)
+check("incident: a progressing browser flow earns no SHAPE LOOP note", !r109HasNote(r109Incident, "SHAPE LOOP"))
+check(
+  "incident: no loop-break injection and no plain-text-only demand",
+  !r109Incident.some((m) => JSON.stringify(m).includes("loop protection")) && !r109Incident.some((m) => JSON.stringify(m).includes("plain text ONLY")),
+)
+let r109NextErr: Error | null = null
+try {
+  await r109Before({ tool: "chrome-devtools_take_snapshot", sessionID: "r109s", callID: "i7" } as unknown as BeforeInput, { args: { pageId: 1 } } as unknown as BeforeOutput)
+} catch (e) {
+  r109NextErr = e as Error
+}
+check("incident: the next snapshot call is not blocked", r109NextErr === null)
+
+const r109Re: R99Msg[] = [
+  r99User("r109re"),
+  r109Tool("bash", { command: "node build.js # pass 1" }, "ok", "re1", "r109re"),
+  r109Tool("bash", { command: "node build.js # pass 2" }, "ok", "re2", "r109re"),
+  r109Tool("bash", { command: "node build.js # pass 3" }, "ok", "re3", "r109re"),
+]
+await r109Transform?.({} as never, { messages: r109Re } as never)
+await r109Transform?.({} as never, { messages: r109Re } as never)
+check("re-pass: the SHAPE LOOP note is appended exactly once", (r109Re[3]?.parts[0]?.state?.output ?? "").split("[dejavu] SHAPE LOOP").length - 1 === 1)
+check("re-pass: unchanged history never escalates to an injection", !r109Re.some((m) => JSON.stringify(m).includes("loop protection")))
+check("re-pass: identical history emits exactly one shape-loop log", (await r109ShapeLogCount("r109re")) === 1)
+const r109ReExact: R99Msg[] = [
+  r99User("r109ex"),
+  r109Tool("background_output", { task_id: "t1" }, "ok", "ex1", "r109ex"),
+  r109Tool("background_output", { task_id: "t1" }, "ok", "ex2", "r109ex"),
+  r109Tool("background_output", { task_id: "t1" }, "ok", "ex3", "r109ex"),
+]
+await r109Transform?.({} as never, { messages: r109ReExact } as never)
+await r109Transform?.({} as never, { messages: r109ReExact } as never)
+check("re-pass: the REPETITION note is appended exactly once", (r109ReExact[3]?.parts[0]?.state?.output ?? "").split("[dejavu] REPETITION").length - 1 === 1)
+
+const r109New: R99Msg[] = [
+  r99User("r109nw"),
+  r109Tool("bash", { command: "node build.js # pass 1" }, "ok", "nw1", "r109nw"),
+  r109Tool("bash", { command: "node build.js # pass 2" }, "ok", "nw2", "r109nw"),
+  r109Tool("bash", { command: "node build.js # pass 3" }, "ok", "nw3", "r109nw"),
+]
+await r109Transform?.({} as never, { messages: r109New } as never)
+r109New.push(r109Tool("bash", { command: "node build.js # pass 4" }, "ok", "nw4", "r109nw"))
+await r109Transform?.({} as never, { messages: r109New } as never)
+check("new repeat: the detector fires again on the new call after the warning", (r109New[4]?.parts[0]?.state?.output ?? "").includes("SHAPE LOOP"))
+check("new repeat: the shape-loop log count grows with the new detection", (await r109ShapeLogCount("r109nw")) === 2)
+
+const r109Ranges: R99Msg[] = [
+  r99User("r109rr"),
+  r109Tool("read", { filePath: "a.ts", offset: 0, limit: 50 }, "chunk A", "rr1", "r109rr"),
+  r109Tool("read", { filePath: "a.ts", offset: 100, limit: 50 }, "chunk B", "rr2", "r109rr"),
+  r109Tool("read", { filePath: "a.ts", offset: 200, limit: 50 }, "chunk C", "rr3", "r109rr"),
+]
+await r109Transform?.({} as never, { messages: r109Ranges } as never)
+check("reads: non-overlapping ranges are not one repeated action", !r109HasNote(r109Ranges, "SHAPE LOOP"))
+
+const r109Same: R99Msg[] = [
+  r99User("r109rs"),
+  r109Tool("read", { filePath: "a.ts", offset: 0, limit: 50 }, "chunk A", "rs1", "r109rs"),
+  r109Tool("read", { filePath: "b.ts" }, "other", "rs2", "r109rs"),
+  r109Tool("read", { filePath: "a.ts", offset: 0, limit: 50 }, "chunk A", "rs3", "r109rs"),
+  r109Tool("read", { filePath: "c.ts" }, "other2", "rs4", "r109rs"),
+  r109Tool("read", { filePath: "a.ts", offset: 0, limit: 50 }, "chunk A", "rs5", "r109rs"),
+]
+await r109Transform?.({} as never, { messages: r109Same } as never)
+check("reads: re-reading the same range earns a warning on the last result", (r109Same[5]?.parts[0]?.state?.output ?? "").includes("SHAPE LOOP"))
+check("reads: the same-range warning never stops the task", !r109Same.some((m) => JSON.stringify(m).includes("loop protection")))
+
+const r109Patch = (status: string, id: string): R99Msg => ({
+  info: { role: "assistant", sessionID: "r109p" },
+  parts: [
+    {
+      type: "tool",
+      tool: "apply_patch",
+      id,
+      state: { status, output: status === "completed" ? "patched" : undefined, error: status === "error" ? "patch failed" : undefined, input: { patch: "*** Update File: x.ts" } },
+    },
+  ],
+})
+const r109PatchOk: R99Msg[] = [
+  r99User("r109p"),
+  r109Tool("bash", { command: "npm test" }, "ok", "p1", "r109p"),
+  r109Tool("read", { filePath: "a.ts" }, "ok", "p2", "r109p"),
+  r109Tool("bash", { command: "npm test" }, "ok", "p3", "r109p"),
+  r109Tool("read", { filePath: "b.ts" }, "ok", "p4", "r109p"),
+  r109Tool("bash", { command: "npm test" }, "ok", "p5", "r109p"),
+  r109Patch("completed", "p6"),
+  r109Tool("bash", { command: "npm test" }, "ok", "p7", "r109p"),
+  r109Tool("read", { filePath: "c.ts" }, "ok", "p8", "r109p"),
+  r109Tool("bash", { command: "npm test" }, "ok", "p9", "r109p"),
+]
+await r109Transform?.({} as never, { messages: r109PatchOk } as never)
+check("apply_patch: a successful patch separates iterations — no shape loop", !r109HasNote(r109PatchOk, "SHAPE LOOP"))
+
+const r109PatchFail: R99Msg[] = [
+  r99User("r109pf"),
+  r109Tool("bash", { command: "npm test" }, "ok", "pf1", "r109pf"),
+  r109Tool("read", { filePath: "a.ts" }, "ok", "pf2", "r109pf"),
+  r109Tool("bash", { command: "npm test" }, "ok", "pf3", "r109pf"),
+  r109Tool("read", { filePath: "b.ts" }, "ok", "pf4", "r109pf"),
+  r109Tool("bash", { command: "npm test" }, "ok", "pf5", "r109pf"),
+  r109Patch("error", "pf6"),
+  r109Tool("bash", { command: "npm test" }, "ok", "pf7", "r109pf"),
+]
+await r109Transform?.({} as never, { messages: r109PatchFail } as never)
+check("apply_patch: a failed patch does not reset the loop detector", r109HasNote(r109PatchFail, "SHAPE LOOP"))
+
+const r109UserNew: R99Msg[] = [
+  r99User("r109u"),
+  r109Tool("bash", { command: "node build.js # a" }, "ok", "u1", "r109u"),
+  r109Tool("bash", { command: "node build.js # b" }, "ok", "u2", "r109u"),
+  r109Tool("bash", { command: "node build.js # c" }, "ok", "u3", "r109u"),
+  r99User("r109u"),
+  r109Tool("bash", { command: "node build.js # d" }, "ok", "u4", "r109u"),
+  r109Tool("bash", { command: "node build.js # e" }, "ok", "u5", "r109u"),
+]
+await r109Transform?.({} as never, { messages: r109UserNew } as never)
+check("user boundary: a new real instruction closes the repeat window", !r109HasNote(r109UserNew, "SHAPE LOOP"))
+const r109SyntheticMsg: R99Msg = { info: { role: "user", sessionID: "r109sy" }, parts: [{ type: "text", text: "[dejavu loop protection — automated message, not the user] reply in text", synthetic: true }] }
+const r109Synthetic: R99Msg[] = [
+  r99User("r109sy"),
+  r109Tool("bash", { command: "node build.js # a" }, "ok", "sy1", "r109sy"),
+  r109Tool("bash", { command: "node build.js # b" }, "ok", "sy2", "r109sy"),
+  r109Tool("bash", { command: "node build.js # c" }, "ok", "sy3", "r109sy"),
+  r109SyntheticMsg,
+  r109Tool("bash", { command: "node build.js # d" }, "ok", "sy4", "r109sy"),
+]
+await r109Transform?.({} as never, { messages: r109Synthetic } as never)
+check("user boundary: a synthetic host message does not close the window", (r109Synthetic[5]?.parts[0]?.state?.output ?? "").includes("SHAPE LOOP"))
+
+const r109Numeric: R99Msg[] = [
+  r99User("r109n"),
+  r109Tool("status_check", { jobId: 101 }, "state: running", "n1", "r109n"),
+  r109Tool("status_check", { jobId: 202 }, "state: running", "n2", "r109n"),
+  r109Tool("status_check", { jobId: 303 }, "state: running", "n3", "r109n"),
+]
+await r109Transform?.({} as never, { messages: r109Numeric } as never)
+check("numeric args: different object IDs are not one unchanged action", !r109HasNote(r109Numeric, "SHAPE LOOP"))
+const r109StatusNew: R99Msg[] = [
+  r99User("r109sn"),
+  r109Tool("status_check", { jobId: 7 }, "state: pending", "sn1", "r109sn"),
+  r109Tool("read", { filePath: "a.ts" }, "ok", "sn2", "r109sn"),
+  r109Tool("status_check", { jobId: 7 }, "state: running", "sn3", "r109sn"),
+  r109Tool("read", { filePath: "b.ts" }, "ok", "sn4", "r109sn"),
+  r109Tool("status_check", { jobId: 7 }, "state: done", "sn5", "r109sn"),
+]
+await r109Transform?.({} as never, { messages: r109StatusNew } as never)
+check("status: a check returning a new state each time is progress", !r109HasNote(r109StatusNew, "SHAPE LOOP"))
+const r109Tmp: R99Msg[] = [
+  r99User("r109t"),
+  r109Tool("bash", { command: 'Get-Content "C:\\Users\\Mind\\AppData\\Local\\Temp\\a.md"' }, "ok", "t1", "r109t"),
+  r109Tool("bash", { command: 'Get-Content "C:\\Users\\Mind\\AppData\\Local\\Temp\\b.md"' }, "ok", "t2", "r109t"),
+  r109Tool("bash", { command: 'Get-Content "C:\\Users\\Mind\\AppData\\Local\\Temp\\c.md"' }, "ok", "t3", "r109t"),
+]
+await r109Transform?.({} as never, { messages: r109Tmp } as never)
+check("temp files: reads of different temp files are not one unchanged action", !r109HasNote(r109Tmp, "SHAPE LOOP"))
+
+const r109MarkerArgs: Record<string, unknown> = { task_id: "t1", [REPEAT_MARKER]: 2 }
+await r109Before({ tool: "background_output", sessionID: "r109ex", callID: "ex9" } as unknown as BeforeInput, { args: r109MarkerArgs } as unknown as BeforeOutput).catch(() => {})
+check("markers: the internal repeat marker never reaches the tool args", !(REPEAT_MARKER in r109MarkerArgs))
 
 await rm(tmp, { recursive: true, force: true })
 

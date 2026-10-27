@@ -73,7 +73,7 @@ export async function cleanupSession(sessionId: string, ctx: EnforceContext): Pr
   for (const key of ctx.ephemeral.loopBreakInjected) {
     if (key.startsWith(`${sessionId}:`)) ctx.ephemeral.loopBreakInjected.delete(key)
   }
-  for (const key of ctx.ephemeral.shapeLoopNotes.keys()) {
-    if (key.startsWith(`${sessionId}:`)) ctx.ephemeral.shapeLoopNotes.delete(key)
+  for (const key of ctx.ephemeral.shapeLoopLogged.keys()) {
+    if (key.startsWith(`${sessionId}:`)) ctx.ephemeral.shapeLoopLogged.delete(key)
   }
 }

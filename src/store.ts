@@ -7,7 +7,7 @@ import { canBlock, canRemind, fuzzySimilar, FUZZY_MAX_LEN, hasGenericResidualIde
 import { coerceGateShape, failedAtMs, isAutoCorrection, repairGate } from "./validate"
 
 /** Bumped on behavior changes; stamped into init log events so stale sessions are visible. */
-export const PLUGIN_VERSION = "2.60.0"
+export const PLUGIN_VERSION = "2.61.0"
 
 /** Global store root — DEJAVU_HOME overrides it (testing, custom setups). */
 export function resolveGlobalDir(): string {
@@ -226,6 +226,16 @@ export interface LogEvent {
   version?: string
   /** length of the consecutive-identical-call series (repeat channel) */
   repeatCount?: number
+  /** repeat/shape-loop reaction kind: note on a result, injected synthetic message, before-hook block/stop/override */
+  reaction?: "note" | "inject" | "block" | "stop" | "override"
+  /** repeat/shape-loop stable reason code for the reaction */
+  reason?: string
+  /** repeat/shape-loop: part id of the relevant call when the payload carries one */
+  callID?: string
+  /** repeat/shape-loop: reactions already issued for this key before this one */
+  warned?: number
+  /** repeat/shape-loop: template code identifying the instruction text the reaction carried */
+  template?: string
   /** expired-gate tombstone: posthumous FP forensics — the counters and correction vanish with the gate */
   status?: Gate["status"]
   overrideCount?: number

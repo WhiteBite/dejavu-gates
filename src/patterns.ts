@@ -2062,23 +2062,16 @@ export function signRepeatedCall(tool: string, args: Record<string, unknown>): s
   return `${tool}:${canonicalArgs(args)}`
 }
 
-/** Shape identity: cosmetic variation (trailing comments, numeric offsets) collapses. */
+/** Shape identity: bash collapses trailing comments and scratch suffixes; other tools keep args verbatim (numeric args are data). */
 function signCallShape(tool: string, args: Record<string, unknown>): string {
   if (tool === "bash" && typeof args.command === "string") {
     return `bash:${shapeNormalizeCommand(args.command)}`
   }
-  const rebuilt: Record<string, unknown> = {}
-  for (const key of Object.keys(args)
-    .filter((k) => k !== REPEAT_MARKER && k !== REPEAT_PROCEED)
-    .sort()) {
-    const value = args[key]
-    rebuilt[key] = typeof value === "number" ? "<n>" : value
-  }
-  return `${tool}:${JSON.stringify(rebuilt)}`
+  return signRepeatedCall(tool, args)
 }
 
-/** Shape normalization keeps data (paths/hashes/quoted strings) so different commits stay different shapes. */
-// scratch files under the temp root are disposable: a rotating suffix must not split one shape
+/** Shape normalization keeps data (paths/hashes/quoted strings/numbers) so different commits, ports and offsets stay different shapes. */
+// a temp path touched twice by one command is scratch; mentioned once it is an external object
 const TEMP_SCRATCH_PATH = /(?:\$env:temp|\$env:tmp|%temp%|%tmp%|\$tmpdir|[a-z]:\\users\\[^\\\s/"']+\\appdata\\local\\temp|\/var\/tmp|\/tmp)[\\/][^\s"'`);|&]*/g
 function shapeNormalizeCommand(command: string): string {
   let s = stripControl(command)
@@ -2089,8 +2082,8 @@ function shapeNormalizeCommand(command: string): string {
   const parts = s.split(QUOTED_SPAN)
   const quoted = s.match(QUOTED_SPAN) ?? []
   s = parts.map((p) => p.replace(/[ \t]+#[^\n]*/g, "")).reduce((acc, p, i) => acc + p + (quoted[i] ?? ""), "")
-  s = s.replace(TEMP_SCRATCH_PATH, "<tmppath>")
-  s = s.replace(/\b\d+\b/g, "<n>")
+  const scratch = s.match(TEMP_SCRATCH_PATH)
+  if (scratch !== null && scratch.length >= 2) s = s.replace(TEMP_SCRATCH_PATH, "<tmppath>")
   return s.replace(/\s+/g, " ").trim()
 }
 
@@ -2132,14 +2125,19 @@ export interface RepeatWindowScan {
   windows: RepeatWindow[]
 }
 
+/** Synthetic host messages are not user instructions — they never close a repeat window. */
+function isSyntheticMessage(msg: { info: { synthetic?: boolean }; parts: ReadonlyArray<{ synthetic?: boolean }> }): boolean {
+  return msg.info.synthetic === true || msg.parts.some((p) => p.synthetic === true)
+}
+
 /** Shared window-scan skeleton: backward walk over the last `window` assistant
  *  rounds (first part wins per round), min-count filter, tail-anchored windows
  *  out. `sign` picks the identity (byte-exact vs shape); `skipEditRounds`
  *  drops edit rounds; `stopOnEditRounds` ends the walk — pre-edit rounds are another era. */
 function scanTailWindows(
   messages: ReadonlyArray<{
-    info: { role: string; sessionID?: string }
-    parts: ReadonlyArray<{ type: string; tool?: string; state?: { input?: Record<string, unknown>; status?: string } }>
+    info: { role: string; sessionID?: string; synthetic?: boolean }
+    parts: ReadonlyArray<{ type: string; tool?: string; synthetic?: boolean; state?: { input?: Record<string, unknown>; status?: string } }>
   }>,
   opts: { window: number; min: number; sign: (tool: string, input: Record<string, unknown>) => string; skipEditRounds: boolean; stopOnEditRounds?: boolean },
 ): RepeatWindowScan {
@@ -2156,7 +2154,11 @@ function scanTailWindows(
   for (let i = lastAssistant; i >= 0; i--) {
     const msg = messages[i]
     if (msg === undefined) continue
-    if (msg.info.role !== "assistant") continue
+    if (msg.info.role !== "assistant") {
+      // a real user instruction closes the window; synthetic host messages are transparent
+      if (msg.info.role === "user" && !isSyntheticMessage(msg)) break
+      continue
+    }
     roundsSeen += 1
     if (roundsSeen > opts.window) break
     // parallel duplicates inside one message are one round — first part wins
@@ -2165,7 +2167,7 @@ function scanTailWindows(
     for (let p = 0; p < msg.parts.length; p++) {
       const part = msg.parts[p]
       if (part?.type !== "tool" || typeof part.tool !== "string" || part.state?.input == null) continue
-      if ((part.tool === "edit" || part.tool === "write") && part.state.status === "completed") roundLandedEdit = true
+      if ((part.tool === "edit" || part.tool === "write" || part.tool === "apply_patch") && part.state.status === "completed") roundLandedEdit = true
       const key = opts.sign(part.tool, part.state.input)
       if (!roundKeys.has(key)) roundKeys.set(key, { tool: part.tool, partIndex: p })
     }
@@ -2196,8 +2198,8 @@ function scanTailWindows(
  *  what failure-form stability means. */
 export function detectRepeatWindows(
   messages: ReadonlyArray<{
-    info: { role: string; sessionID?: string }
-    parts: ReadonlyArray<{ type: string; tool?: string; state?: { input?: Record<string, unknown> } }>
+    info: { role: string; sessionID?: string; synthetic?: boolean }
+    parts: ReadonlyArray<{ type: string; tool?: string; synthetic?: boolean; state?: { input?: Record<string, unknown> } }>
   }>,
   opts?: { window?: number; min?: number },
 ): RepeatWindowScan {
@@ -2224,8 +2226,8 @@ export interface ShapeWindowScan {
  *  edit/write ends the counted series — red-green iteration is not a stuck loop. */
 export function detectShapeLoops(
   messages: ReadonlyArray<{
-    info: { role: string; sessionID?: string }
-    parts: ReadonlyArray<{ type: string; tool?: string; state?: { input?: Record<string, unknown>; status?: string } }>
+    info: { role: string; sessionID?: string; synthetic?: boolean }
+    parts: ReadonlyArray<{ type: string; tool?: string; synthetic?: boolean; state?: { input?: Record<string, unknown>; status?: string } }>
   }>,
   opts?: { window?: number; min?: number },
 ): ShapeWindowScan {
@@ -2233,14 +2235,15 @@ export function detectShapeLoops(
 }
 
 /** Detect series of byte-identical tool calls across consecutive assistant
- * rounds (DashScope rejects those in an outgoing payload, so the transform hook
- * sanitizes them). Parallel duplicates inside one message count as ONE round;
- * a non-assistant message — or an assistant message missing the key — breaks
- * the run. Pure: reads the payload shape, touches nothing else. */
+ *  rounds (DashScope rejects those in an outgoing payload, so the transform hook
+ *  sanitizes them). Parallel duplicates inside one message count as ONE round;
+ *  a non-assistant message — or an assistant message missing the key — breaks
+ *  the run, except synthetic host messages which are transparent. Pure: reads
+ *  the payload shape, touches nothing else. */
 export function detectRepeatSeries(
   messages: ReadonlyArray<{
-    info: { role: string; sessionID?: string }
-    parts: ReadonlyArray<{ type: string; tool?: string; state?: { input?: Record<string, unknown> } }>
+    info: { role: string; sessionID?: string; synthetic?: boolean }
+    parts: ReadonlyArray<{ type: string; tool?: string; synthetic?: boolean; state?: { input?: Record<string, unknown> } }>
   }>,
 ): RepeatScan {
   let lastAssistant = -1
@@ -2270,9 +2273,11 @@ export function detectRepeatSeries(
   for (let i = 0; i < messages.length; i++) {
     const msg = messages[i]
     if (msg?.info.role !== "assistant") {
-      // a user message interrupts every open run
-      for (const [key, run] of open) close(key, run)
-      open.clear()
+      // a real user message interrupts every open run; a synthetic host message does not
+      if (msg === undefined || msg.info.role !== "user" || !isSyntheticMessage(msg)) {
+        for (const [key, run] of open) close(key, run)
+        open.clear()
+      }
       continue
     }
     // parallel duplicates inside one message are one round - first part wins

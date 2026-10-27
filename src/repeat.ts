@@ -12,6 +12,10 @@ export const REPEAT_BLOCK_AT = 3
  *  to a hard stop — weak models keep retrying past a plain correction */
 export const REPEAT_STOP_AFTER = 3
 
+/** audit template codes — identify the instruction text a reaction carried */
+const TEMPLATE_REPEAT_BLOCK = "repeat-block-v2"
+const TEMPLATE_REPEAT_STOP = "repeat-stop-v2"
+
 export type RepeatDecision =
   | { kind: "block" | "stop"; message: string }
   | { kind: "override" }
@@ -35,16 +39,17 @@ export async function repeatSeriesDecision(event: NormalizedEvent, ctx: EnforceC
   const entry = ctx.ephemeral.repeatSeries.get(event.sessionId)
   if (entry === undefined || entry.length < REPEAT_BLOCK_AT - 1 || signRepeatedCall(event.tool, identArgs) !== entry.key) return null
   if (bypass) {
-    await ctx.stores.logAll({ type: "repeat-override", key: sanitizeForStore(entry.key).slice(0, 80), tool: event.tool, session: event.sessionId, project: ctx.projectDir, repeatCount: entry.length })
+    await ctx.stores.logAll({ type: "repeat-override", key: sanitizeForStore(entry.key).slice(0, 80), tool: event.tool, session: event.sessionId, project: ctx.projectDir, repeatCount: entry.length, reaction: "override", reason: "dejavu-proceed", callID: event.callId !== null ? sanitizeForStore(event.callId).slice(0, 80) : undefined, warned: entry.blocked })
     return { kind: "override" }
   }
   entry.blocked += 1
   entry.lastBlockAt = Date.now()
-  await ctx.stores.logAll({ type: "repeat-blocked", key: sanitizeForStore(entry.key).slice(0, 80), tool: event.tool, session: event.sessionId, project: ctx.projectDir, repeatCount: entry.length })
-  if (entry.blocked >= REPEAT_STOP_AFTER) {
+  const stop = entry.blocked >= REPEAT_STOP_AFTER
+  await ctx.stores.logAll({ type: "repeat-blocked", key: sanitizeForStore(entry.key).slice(0, 80), tool: event.tool, session: event.sessionId, project: ctx.projectDir, repeatCount: entry.length, reaction: stop ? "stop" : "block", reason: "consecutive-identical", callID: event.callId !== null ? sanitizeForStore(event.callId).slice(0, 80) : undefined, warned: entry.blocked - 1, template: stop ? TEMPLATE_REPEAT_STOP : TEMPLATE_REPEAT_BLOCK })
+  if (stop) {
     return {
       kind: "stop",
-      message: `[dejavu] REPEAT STOP — this exact call has been blocked ${entry.blocked} times in a row; it will not succeed in this session no matter how many times you retry.\nSTOP this line of work entirely: do not re-issue the call, do not rename it, do not work around it. Finish with what you already have and report partial results to whoever launched you.`,
+      message: `[dejavu] REPEAT STOP — this exact call has been blocked ${entry.blocked} times in a row; it will not succeed in this session no matter how many times you retry.\nDo not re-issue this call, rename it, or work around it. Take a different approach for this step, or report this specific blocker and continue with the rest of the task.`,
     }
   }
   return {

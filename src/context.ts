@@ -49,8 +49,8 @@ export interface EphemeralState {
   repeatWindowLogged: Map<string, number>
   /** loop-break: session:seriesKey pairs that already logged an injection */
   loopBreakInjected: Set<string>
-  /** shape loops: session:shapeKey → times already noted (escalation ladder) */
-  shapeLoopNotes: Map<string, number>
+  /** shape loops: session:shapeKey → highest repeatCount already logged (log watermark) */
+  shapeLoopLogged: Map<string, number>
   /** snowball guard: sessionID → last committed bash command + chain depth */
   bashChain: Map<string, { command: string; depth: number }>
   /** iteration discriminator: projectDir → count of landed edit/write calls;
@@ -83,7 +83,7 @@ export function createEphemeralState(): EphemeralState {
     repeatSeries: new Map(),
     repeatWindowLogged: new Map(),
     loopBreakInjected: new Set(),
-    shapeLoopNotes: new Map(),
+    shapeLoopLogged: new Map(),
     bashChain: new Map(),
     workspaceVersions: new Map(),
     versionBumpedCalls: new Set(),

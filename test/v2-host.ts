@@ -174,8 +174,8 @@ try {
   const v2User = (): object => ({ role: "user", content: [{ type: "text", text: "go" }] })
   const v2Assistant = (id: string): object => ({ role: "assistant", content: [v2Call(id)] })
   const v2Tool = (id: string): object => ({ role: "tool", content: [v2Result(id)] })
-  const generateEvent = (messages: object[]): object => ({
-    sessionID: "r99v2",
+  const generateEvent = (messages: object[], sessionID = "r99v2"): object => ({
+    sessionID,
     model: { providerID: "p", modelID: "m" },
     system: [],
     messages,
@@ -208,6 +208,44 @@ try {
     "generate: the injected message is marked synthetic",
     (injected as { metadata?: { synthetic?: boolean } } | undefined)?.metadata?.synthetic === true,
   )
+
+  // --- shape-loop parity: the V2 generate hook feeds the same engine logic as V1 ---
+  const v2BashRound = (id: string, comment: string, text: string): object[] => [
+    { role: "assistant", content: [{ type: "tool-call", id, name: "bash", input: { command: `node build.js # ${comment}` } }] },
+    { role: "tool", content: [{ type: "tool-result", id, name: "bash", result: { type: "content", value: [{ type: "text", text }] } }] },
+  ]
+  const v2ResultText = (msgs: object[], i: number): string => {
+    const msg = msgs[i] as { content: Array<{ result?: { value?: Array<{ text?: string }> } }> }
+    return (msg.content[0]?.result?.value ?? []).map((part) => part.text ?? "").join("")
+  }
+  const v2ShapeMsgs: object[] = [v2User(), ...v2BashRound("s1", "pass 1", "ok"), ...v2BashRound("s2", "pass 2", "ok"), ...v2BashRound("s3", "pass 3", "ok")]
+  check("generate: comment-churn shape loop callback does not throw", (await invokeHook("generate", generateEvent(v2ShapeMsgs, "r109v2a"))) === null)
+  check("generate: the shape loop notes the last tool result (V1 parity)", v2ResultText(v2ShapeMsgs, 6).includes("SHAPE LOOP"))
+  await invokeHook("generate", generateEvent(v2ShapeMsgs, "r109v2a"))
+  check(
+    "generate: a re-pass over unchanged history does not double-note or inject (V1 parity)",
+    v2ResultText(v2ShapeMsgs, 6).split("[dejavu] SHAPE LOOP").length - 1 === 1 && !v2ShapeMsgs.some((m) => (m as { role?: string }).role === "user" && JSON.stringify(m).includes("loop protection")),
+  )
+  const v2SnapRound = (id: string, text: string): object[] => [
+    { role: "assistant", content: [{ type: "tool-call", id, name: "chrome-devtools_take_snapshot", input: { pageId: 1 } }] },
+    { role: "tool", content: [{ type: "tool-result", id, name: "chrome-devtools_take_snapshot", result: { type: "content", value: [{ type: "text", text }] } }] },
+  ]
+  const v2ClickRound = (id: string, text: string): object[] => [
+    { role: "assistant", content: [{ type: "tool-call", id, name: "chrome-devtools_click", input: { pageId: 1, uid: "2_47" } }] },
+    { role: "tool", content: [{ type: "tool-result", id, name: "chrome-devtools_click", result: { type: "content", value: [{ type: "text", text }] } }] },
+  ]
+  const v2Incident: object[] = [v2User(), ...v2SnapRound("i1", "onboarding screen"), ...v2ClickRound("i2", "clicked Get started"), ...v2SnapRound("i3", "account screen"), ...v2ClickRound("i4", "clicked Continue"), ...v2SnapRound("i5", "chat screen")]
+  check("generate: the incident callback does not throw", (await invokeHook("generate", generateEvent(v2Incident, "r109v2b"))) === null)
+  check("generate: a progressing browser flow stays silent (V1 parity)", !JSON.stringify(v2Incident).includes("SHAPE LOOP") && !JSON.stringify(v2Incident).includes("loop protection"))
+  const v2RealUser = { role: "user", content: [{ type: "text", text: "new instruction" }] }
+  const v2Boundary: object[] = [v2User(), ...v2BashRound("b1", "a", "ok"), ...v2BashRound("b2", "b", "ok"), ...v2BashRound("b3", "c", "ok"), v2RealUser, ...v2BashRound("b4", "d", "ok"), ...v2BashRound("b5", "e", "ok")]
+  check(
+    "generate: a new real user message closes the window (V1 parity)",
+    (await invokeHook("generate", generateEvent(v2Boundary, "r109v2c"))) === null && !JSON.stringify(v2Boundary).includes("SHAPE LOOP") && !JSON.stringify(v2Boundary).includes("loop protection"),
+  )
+  const v2SyntheticUser = { role: "user", content: [{ type: "text", text: "automated" }], metadata: { synthetic: true } }
+  const v2SyntheticBoundary: object[] = [v2User(), ...v2BashRound("y1", "a", "ok"), ...v2BashRound("y2", "b", "ok"), ...v2BashRound("y3", "c", "ok"), v2SyntheticUser, ...v2BashRound("y4", "d", "ok")]
+  check("generate: a synthetic metadata message does not close the window (V1 parity)", (await invokeHook("generate", generateEvent(v2SyntheticBoundary, "r109v2d"))) === null && v2ResultText(v2SyntheticBoundary, 9).includes("SHAPE LOOP"))
 
   check("v2Setup returns a function", typeof cleanup === "function")
   let cleanupThrew: unknown = null

@@ -11,10 +11,20 @@ const REPEAT_SESSIONS_CAP = 1000
 /** repeat channel: a key this frequent within the last REPEAT_WINDOW_ROUNDS assistant rounds earns a NOTE */
 export const REPEAT_WINDOW_MIN = 3
 export const REPEAT_WINDOW_ROUNDS = 12
-/** shape channel: same call with cosmetic variation this often earns a NOTE; a second detection injects a loop break */
+/** shape channel: same call with cosmetic variation AND unchanged results this often earns a NOTE (never a block) */
 export const SHAPE_LOOP_MIN = 3
 /** a prompt-path block older than this is stale — compaction clones re-fire the channel on a cloned head */
 const BLOCK_LIVE_MS = 120_000
+
+/** audit template codes — identify the instruction text a reaction carried */
+export const TEMPLATE_REPEAT_NOTE = "repetition-note-v2"
+export const TEMPLATE_REPEAT_WINDOWED_NOTE = "repetition-windowed-note-v2"
+export const TEMPLATE_SHAPE_NOTE = "shape-loop-note-v2"
+export const TEMPLATE_LOOP_BREAK = "repeat-stop-inject-v2"
+
+/** idempotency marks — a result already carrying the note is never noted twice on re-passed history */
+const NOTE_REPETITION_MARK = "[dejavu] REPETITION"
+const NOTE_SHAPE_MARK = "[dejavu] SHAPE LOOP"
 
 /** Repeat-note correction advice — names only the params the repeated tool actually has. */
 export function repeatAdvice(tool: string): string {
@@ -38,11 +48,15 @@ export interface RepeatChannelState {
 export interface RepeatChannelPart {
   type: string
   tool?: string
+  /** part id from the host payload — the stable identity of one call (audit logs) */
+  id?: string
+  /** host-marked synthetic parts (dejavu injections) never count as user instructions */
+  synthetic?: boolean
   state?: RepeatChannelState
 }
 
 export interface RepeatChannelMessage {
-  info: { role: string; sessionID?: string }
+  info: { role: string; sessionID?: string; synthetic?: boolean }
   parts: RepeatChannelPart[]
 }
 
@@ -62,6 +76,19 @@ export interface RepeatChannelResult {
   noted: number
 }
 
+function partResultText(state: RepeatChannelState): string {
+  if (typeof state.output === "string") return state.output
+  if (state.status === "error" && typeof state.error === "string") return state.error
+  return ""
+}
+
+/** result text with dejavu's own notes cut off — comparisons must see what the tool returned, not what we appended */
+function rawResultText(state: RepeatChannelState): string {
+  const text = partResultText(state)
+  const cut = text.indexOf("\n\n[dejavu]")
+  return cut === -1 ? text : text.slice(0, cut)
+}
+
 /**
  * Repeat/shape-loop channel: the outgoing-payload orchestration (sanitize
  * markers, REPETITION notes, windowed repeats, shape loops, loop-break
@@ -76,16 +103,8 @@ export async function applyRepeatChannel(messages: RepeatChannelMessage[], ctx: 
   const repeatWindowLogged = ephemeral.repeatWindowLogged
   const scan = detectRepeatSeries(messages)
   const injected: LoopBreakInjection[] = []
-  const injectLoopBreak = async (text: string, logKey: string, tool: string, count: number): Promise<void> => {
-    const sessionID = scan.sessionID
-    if (sessionID === null) return
-    injected.push({ sessionID, text, logKey, tool, count })
-    const loopKey = `${sessionID}:${logKey}`
-    if (!ephemeral.loopBreakInjected.has(loopKey)) {
-      ephemeral.loopBreakInjected.add(loopKey)
-      await ctx.stores.logAll({ type: "loop-break", key: sanitizeForStore(logKey).slice(0, 80), tool, session: sessionID, project: ctx.projectDir, repeatCount: count })
-    }
-  }
+  const partId = (part: RepeatChannelPart | undefined): string | undefined =>
+    typeof part?.id === "string" ? sanitizeForStore(part.id).slice(0, 80) : undefined
   // payload-only markers (never persisted): a mimicked marker can collide post-mutation — bump until byte-distinct
   let mutated = 0
   for (const s of scan.series) {
@@ -107,6 +126,7 @@ export async function applyRepeatChannel(messages: RepeatChannelMessage[], ctx: 
   }
   // a tail series gets a NOTE on the last tool result — payload-only, the run is never interrupted
   let noted = 0
+  let notedCallID: string | undefined
   const annotatedParts = new Set<string>()
   for (const s of scan.series) {
     if (!s.reachesTail || s.occurrences.length < REPEAT_REMIND_AT) continue
@@ -114,6 +134,8 @@ export async function applyRepeatChannel(messages: RepeatChannelMessage[], ctx: 
     if (lastOcc === undefined) continue
     const part = messages[lastOcc.messageIndex]?.parts[lastOcc.partIndex]
     if (part === undefined || part.type !== "tool" || part.state == null) continue
+    annotatedParts.add(`${lastOcc.messageIndex}:${lastOcc.partIndex}`)
+    if (partResultText(part.state).includes(NOTE_REPETITION_MARK)) continue
     const note = `\n\n[dejavu] REPETITION — this exact call has now repeated ${s.occurrences.length} rounds in a row.\nCORRECTION: ${repeatAdvice(s.tool)}. One more identical repeat and this session dies at the provider (repetitive-call 400).`
     if (part.state.status === "error" && typeof part.state.error === "string") {
       part.state.error += note
@@ -121,22 +143,25 @@ export async function applyRepeatChannel(messages: RepeatChannelMessage[], ctx: 
     } else if ("output" in part.state && typeof part.state.output === "string") {
       part.state.output += note
       noted += 1
+    } else {
+      continue
     }
-    annotatedParts.add(`${lastOcc.messageIndex}:${lastOcc.partIndex}`)
+    notedCallID = partId(part)
   }
   // windowed repeats never block — interleaved rounds are provider-safe; a moving failure form is debugging
   let windowedNoted = 0
   let windowedMax = 0
+  let windowedCallID: string | undefined
   const tailKeys = new Set(scan.series.filter((s) => s.reachesTail).map((s) => s.key))
   for (const w of detectRepeatWindows(messages, { window: REPEAT_WINDOW_ROUNDS, min: REPEAT_WINDOW_MIN }).windows) {
     if (tailKeys.has(w.key)) continue // the consecutive path already annotated it
     const lastPart = messages[w.lastOccurrence.messageIndex]?.parts[w.lastOccurrence.partIndex]
     if (lastPart === undefined || lastPart.type !== "tool" || lastPart.state == null) continue
-    const lastText = "output" in lastPart.state && typeof lastPart.state.output === "string" ? lastPart.state.output : lastPart.state.status === "error" && typeof lastPart.state.error === "string" ? lastPart.state.error : ""
-    if (!looksLikeFailure(lastText)) continue
+    const lastText = partResultText(lastPart.state)
+    if (!looksLikeFailure(lastText) || lastText.includes(NOTE_REPETITION_MARK)) continue
     const prevPart = w.prevOccurrence === null ? undefined : messages[w.prevOccurrence.messageIndex]?.parts[w.prevOccurrence.partIndex]
-    const prevText = prevPart?.type === "tool" && prevPart.state != null ? ("output" in prevPart.state && typeof prevPart.state.output === "string" ? prevPart.state.output : prevPart.state.status === "error" && typeof prevPart.state.error === "string" ? prevPart.state.error : "") : ""
-    if (prevText !== "" && looksLikeFailure(prevText) && parameterizeError(prevText) !== parameterizeError(lastText)) continue
+    const prevText = prevPart?.type === "tool" && prevPart.state != null ? rawResultText(prevPart.state) : ""
+    if (prevText !== "" && looksLikeFailure(prevText) && parameterizeError(prevText) !== parameterizeError(rawResultText(lastPart.state))) continue
     const failingFile =
       /FAIL(?:ED)?\s+(\S+\.(?:test|spec)\.[tj]sx?)/.exec(lastText)?.[1] ?? /FAILED\s+(\S+?\.py)/.exec(lastText)?.[1] ?? null
     const advice =
@@ -150,40 +175,34 @@ export async function applyRepeatChannel(messages: RepeatChannelMessage[], ctx: 
     } else if (lastPart.state.status === "error" && typeof lastPart.state.error === "string") {
       lastPart.state.error += note
       windowedNoted += 1
+    } else {
+      continue
     }
+    windowedCallID = partId(lastPart)
     annotatedParts.add(`${w.lastOccurrence.messageIndex}:${w.lastOccurrence.partIndex}`)
     if (w.count > windowedMax) windowedMax = w.count
   }
   // windowed NOTEs carry their own per-session watermark — the loop may outlive any single tail series
   const windowSession = scan.sessionID
   if (windowedNoted > 0 && windowSession !== null && windowedMax > (repeatWindowLogged.get(windowSession) ?? 0)) {
+    const warned = repeatWindowLogged.get(windowSession) ?? 0
     repeatWindowLogged.set(windowSession, windowedMax)
-    await ctx.stores.logAll({ type: "repeat-windowed", key: "windowed", session: windowSession, project: ctx.projectDir, repeatCount: windowedMax })
+    await ctx.stores.logAll({ type: "repeat-windowed", key: "windowed", session: windowSession, project: ctx.projectDir, repeatCount: windowedMax, reaction: "note", reason: "windowed-identical", callID: windowedCallID, warned, template: TEMPLATE_REPEAT_WINDOWED_NOTE })
   }
-  // shape loops: same call with cosmetic variation (comment/offset churn) — invisible to byte-identical channels
+  // shape loops: cosmetic variation AND unchanged results earn a cautious NOTE, never an injection — shape coincidence alone proves nothing
   const shapeSession = scan.sessionID
   if (shapeSession !== null) {
-    const lastIsAssistantForShape = messages[messages.length - 1]?.info.role === "assistant"
     for (const sw of detectShapeLoops(messages, { window: REPEAT_WINDOW_ROUNDS, min: SHAPE_LOOP_MIN }).windows) {
       if (annotatedParts.has(`${sw.lastOccurrence.messageIndex}:${sw.lastOccurrence.partIndex}`)) continue
-      const shapeKey = `${shapeSession}:${sw.key}`
       const lastPart = messages[sw.lastOccurrence.messageIndex]?.parts[sw.lastOccurrence.partIndex]
       if (lastPart === undefined || lastPart.type !== "tool" || lastPart.state == null) continue
-      const shapeLastText = "output" in lastPart.state && typeof lastPart.state.output === "string" ? lastPart.state.output : lastPart.state.status === "error" && typeof lastPart.state.error === "string" ? lastPart.state.error : ""
+      const shapeLastText = partResultText(lastPart.state)
+      if (shapeLastText === "" || shapeLastText.includes(NOTE_SHAPE_MARK)) continue
       const shapePrevPart = sw.prevOccurrence === null ? undefined : messages[sw.prevOccurrence.messageIndex]?.parts[sw.prevOccurrence.partIndex]
-      const shapePrevText = shapePrevPart?.type === "tool" && shapePrevPart.state != null ? ("output" in shapePrevPart.state && typeof shapePrevPart.state.output === "string" ? shapePrevPart.state.output : shapePrevPart.state.status === "error" && typeof shapePrevPart.state.error === "string" ? shapePrevPart.state.error : "") : ""
-      if (shapePrevText !== "" && looksLikeFailure(shapePrevText) && looksLikeFailure(shapeLastText) && parameterizeError(shapePrevText) !== parameterizeError(shapeLastText)) continue
-      const notedBefore = ephemeral.shapeLoopNotes.get(shapeKey) ?? 0
-      if (notedBefore > 0) {
-        if (lastIsAssistantForShape) {
-          const text = `[dejavu loop protection — automated message, not the user] You have re-issued the same call ${sw.count} times in the last ${REPEAT_WINDOW_ROUNDS} rounds with only cosmetic variations; the result is already in your context and will not change. Do NOT re-issue it. Reply in plain text ONLY — no tool calls: state in one line what you will do next with the result you already have, then continue the task on your next turn. If you are a subagent that cannot proceed, this text reply is your report to whoever launched you.`
-          await injectLoopBreak(text, sw.key, sw.tool, sw.count)
-        }
-        continue
-      }
-      // a paged file read returns new content per slice — the identical-call claim would be false there
-      const paging = (sw.tool === "read" || sw.tool === "glob" || sw.tool === "grep") && lastPart.state.input != null && ("offset" in lastPart.state.input || "limit" in lastPart.state.input || "skip" in lastPart.state.input || "from_end" in lastPart.state.input)
-      const note = `\n\n[dejavu] SHAPE LOOP — this call has run ${sw.count} times in the last ${REPEAT_WINDOW_ROUNDS} rounds with only cosmetic variations (trailing comments, offsets, ordering). ${paging ? `This is the same file read in slices (${sw.tool} offset/limit churn) — read the whole file once with a bigger limit instead of re-issuing per-slice reads.` : "It is the same call; re-running it will not produce new information."} If you are verifying work, verify once and move on; ${repeatAdvice(sw.tool)}.`
+      const shapePrevText = shapePrevPart?.type === "tool" && shapePrevPart.state != null ? rawResultText(shapePrevPart.state) : ""
+      // differing results are progress evidence (new screen, new state, new content) — no warning
+      if (shapePrevText === "" || parameterizeError(shapePrevText) !== parameterizeError(rawResultText(lastPart.state))) continue
+      const note = `\n\n[dejavu] SHAPE LOOP — this call has run ${sw.count} times in the last ${REPEAT_WINDOW_ROUNDS} rounds with only cosmetic variations (trailing comments, scratch-file rotation), and its last two results showed no meaningful change. Another unchanged repeat is unlikely to produce new information. If you are verifying work, verify once and move on; ${repeatAdvice(sw.tool)}. This is a note, not a block — continue with any other useful work.`
       let attached = false
       if ("output" in lastPart.state && typeof lastPart.state.output === "string") {
         lastPart.state.output += note
@@ -192,9 +211,13 @@ export async function applyRepeatChannel(messages: RepeatChannelMessage[], ctx: 
         lastPart.state.error += note
         attached = true
       }
-      if (attached) {
-        ephemeral.shapeLoopNotes.set(shapeKey, 1)
-        await ctx.stores.logAll({ type: "shape-loop", key: sanitizeForStore(sw.key.slice(0, 80)), tool: sw.tool, session: shapeSession, project: ctx.projectDir, repeatCount: sw.count })
+      if (!attached) continue
+      annotatedParts.add(`${sw.lastOccurrence.messageIndex}:${sw.lastOccurrence.partIndex}`)
+      const shapeKey = `${shapeSession}:${sw.key}`
+      const loggedCount = ephemeral.shapeLoopLogged.get(shapeKey) ?? 0
+      if (sw.count > loggedCount) {
+        ephemeral.shapeLoopLogged.set(shapeKey, sw.count)
+        await ctx.stores.logAll({ type: "shape-loop", key: sanitizeForStore(sw.key.slice(0, 80)), tool: sw.tool, session: shapeSession, project: ctx.projectDir, repeatCount: sw.count, reaction: "note", reason: "shape-identical-results", callID: partId(lastPart), warned: loggedCount, template: TEMPLATE_SHAPE_NOTE })
       }
     }
   }
@@ -220,7 +243,7 @@ export async function applyRepeatChannel(messages: RepeatChannelMessage[], ctx: 
     if (maxLen > watermark && (mutated > 0 || noted > 0)) {
       const logKey = sanitizeForStore(tailKey ?? maxKey).slice(0, 80)
       if (mutated > 0) await ctx.stores.logAll({ type: "repeat-sanitized", key: logKey, session: sessionID, project: ctx.projectDir, repeatCount: maxLen })
-      if (noted > 0) await ctx.stores.logAll({ type: "repeat-reminded", key: logKey, session: sessionID, project: ctx.projectDir, repeatCount: maxLen })
+      if (noted > 0) await ctx.stores.logAll({ type: "repeat-reminded", key: logKey, session: sessionID, project: ctx.projectDir, repeatCount: maxLen, reaction: "note", reason: "consecutive-identical", callID: notedCallID, warned: watermark, template: TEMPLATE_REPEAT_NOTE })
       if (tailLen > 0) await ctx.stores.logAll({ type: "repeat-detected", key: logKey, session: sessionID, project: ctx.projectDir, repeatCount: tailLen })
     }
     // the block counter survives a rewrite only while the same series owns the tail — a new series is a new loop
@@ -232,8 +255,16 @@ export async function applyRepeatChannel(messages: RepeatChannelMessage[], ctx: 
     // compaction also triggers this hook on a cloned head — lastBlockAt proves a live prompt-path block
     const blockIsLive = entry !== undefined && Date.now() - entry.lastBlockAt < BLOCK_LIVE_MS
     if (tailKey !== null && tailLen > 0 && lastIsAssistant && blockIsLive && entry !== undefined && entry.blocked >= REPEAT_STOP_AFTER) {
-      const text = `[dejavu loop protection — automated message, not the user] The tool call you keep retrying has been blocked ${entry.blocked} times and will never run in this session. Do not re-issue it, rename it, or work around it. Reply in plain text ONLY — no tool calls: (1) what you finished, (2) what is blocked and why, (3) what remains. If you are a subagent, this text reply IS your final report to whoever launched you.`
-      await injectLoopBreak(text, tailKey, scan.series.find((s) => s.reachesTail && s.key === tailKey)?.tool ?? "unknown", entry.blocked)
+      const text = `[dejavu loop protection — automated message, not the user] The tool call you keep retrying has been blocked ${entry.blocked} times and will not run in this session. Do not re-issue it or rename it. Reply in text only this turn (no tool calls): state in one line how you will proceed instead — a different approach for this step, or reporting this specific blocker — then continue with the rest of the task.`
+      const tailSeries = scan.series.find((s) => s.reachesTail && s.key === tailKey)
+      const tailOcc = tailSeries?.occurrences[tailSeries.occurrences.length - 1]
+      const tailPart = tailOcc === undefined ? undefined : messages[tailOcc.messageIndex]?.parts[tailOcc.partIndex]
+      injected.push({ sessionID, text, logKey: tailKey, tool: tailSeries?.tool ?? "unknown", count: entry.blocked })
+      const loopKey = `${sessionID}:${tailKey}`
+      if (!ephemeral.loopBreakInjected.has(loopKey)) {
+        ephemeral.loopBreakInjected.add(loopKey)
+        await ctx.stores.logAll({ type: "loop-break", key: sanitizeForStore(tailKey).slice(0, 80), tool: tailSeries?.tool ?? "unknown", session: sessionID, project: ctx.projectDir, repeatCount: entry.blocked, reaction: "inject", reason: "blocked-series", callID: partId(tailPart), warned: entry.blocked, template: TEMPLATE_LOOP_BREAK })
+      }
     }
     while (repeatSeries.size > REPEAT_SESSIONS_CAP) {
       const oldest = repeatSeries.keys().next()
@@ -242,8 +273,8 @@ export async function applyRepeatChannel(messages: RepeatChannelMessage[], ctx: 
       for (const key of ephemeral.loopBreakInjected) {
         if (key.startsWith(`${oldest.value}:`)) ephemeral.loopBreakInjected.delete(key)
       }
-      for (const key of ephemeral.shapeLoopNotes.keys()) {
-        if (key.startsWith(`${oldest.value}:`)) ephemeral.shapeLoopNotes.delete(key)
+      for (const key of ephemeral.shapeLoopLogged.keys()) {
+        if (key.startsWith(`${oldest.value}:`)) ephemeral.shapeLoopLogged.delete(key)
       }
     }
   }

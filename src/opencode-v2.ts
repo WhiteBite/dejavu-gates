@@ -57,6 +57,7 @@ interface V2ContentPart {
 interface V2Message {
   role: string
   content: V2ContentPart[]
+  metadata?: { synthetic?: boolean }
 }
 
 function resultOutputText(result: { type: string; value: unknown }): string | undefined {
@@ -123,7 +124,7 @@ function toolPartView(call: V2ContentPart, result: { type: string; value: unknow
       }
     },
   }
-  return { type: "tool", tool: typeof call.name === "string" ? call.name : undefined, state }
+  return { type: "tool", tool: typeof call.name === "string" ? call.name : undefined, id: typeof call.id === "string" ? call.id : undefined, state }
 }
 
 function toRepeatChannelMessages(messages: unknown, sessionID: string): RepeatChannelMessage[] {
@@ -143,7 +144,7 @@ function toRepeatChannelMessages(messages: unknown, sessionID: string): RepeatCh
       if (part.type !== "tool-call") continue
       parts.push(toolPartView(part, typeof part.id === "string" ? resultsById.get(part.id) : undefined))
     }
-    structural.push({ info: { role: msg.role, sessionID }, parts })
+    structural.push({ info: { role: msg.role, sessionID, synthetic: msg.metadata?.synthetic }, parts })
   }
   return structural
 }
