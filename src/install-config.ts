@@ -9,7 +9,7 @@ import { readFile } from "node:fs/promises"
 import { homedir } from "node:os"
 import { dirname, join } from "node:path"
 import { ntPath } from "./fs"
-import { collectCommands as kitCollectCommands, mergeHooks, renderTemplate, type MergeShape } from "./kit"
+import { collectCommands as kitCollectCommands, harness as kitHarness, loadRegistry, mergeHooks, renderPath, renderTemplate, type MergeShape } from "./kit"
 
 export type Harness = "claude" | "codex" | "gemini" | "cursor" | "copilot" | "crush" | "devin" | "kiro"
 
@@ -23,34 +23,46 @@ interface HarnessSpec {
   readonly merge: boolean
   /** true = the config root IS the hook event map (no "hooks" wrapper) */
   readonly rootHooks?: boolean
+  readonly shape: MergeShape
   readonly note?: string
 }
 
-export const HARNESSES: Record<Harness, HarnessSpec> = {
-  claude: { project: ".claude/settings.json", user: ".claude/settings.json", merge: true },
-  codex: {
-    project: ".codex/hooks.json",
-    user: ".codex/hooks.json",
-    merge: true,
-    note: "codex: hooks are enabled by default; the first run may require a trust prompt for project hooks",
-  },
-  gemini: { project: ".gemini/settings.json", user: ".gemini/settings.json", merge: true },
-  cursor: { project: ".cursor/hooks.json", user: ".cursor/hooks.json", merge: true },
-  copilot: { project: ".github/hooks/dejavu.json", user: ".copilot/hooks/dejavu.json", merge: false },
-  crush: {
-    project: ".crush/crush.json",
-    user: ".config/crush/crush.json",
-    merge: true,
-    note: "crush: no AfterTool hook exists - failure observation is degraded (pre-tool only)",
-  },
-  devin: {
-    project: ".devin/hooks.v1.json",
-    merge: true,
-    rootHooks: true,
-    note: "devin: hooks also auto-import from .claude/settings.json (read_config_from.claude) - a Claude install already gates Devin sessions",
-  },
-  kiro: { project: ".kiro/hooks/dejavu-gates.json", merge: false },
+const REGISTRY = loadRegistry()
+
+const SUPPORTED: readonly Harness[] = ["claude", "codex", "gemini", "cursor", "copilot", "crush", "devin", "kiro"]
+
+const TOOL_ID: Record<Harness, string> = {
+  claude: "dejavu-gates",
+  codex: "dejavu-gates",
+  gemini: "dejavu-gates",
+  cursor: "dejavu-gates",
+  copilot: "dejavu",
+  crush: "dejavu-gates",
+  devin: "dejavu-gates",
+  kiro: "dejavu-gates",
 }
+
+const NOTES: Partial<Record<Harness, string>> = {
+  codex: "codex: hooks are enabled by default; the first run may require a trust prompt for project hooks",
+  crush: "crush: no AfterTool hook exists - failure observation is degraded (pre-tool only)",
+  devin: "devin: hooks also auto-import from .claude/settings.json (read_config_from.claude) - a Claude install already gates Devin sessions",
+}
+
+export const HARNESSES: Record<Harness, HarnessSpec> = Object.fromEntries(
+  SUPPORTED.map((id) => {
+    const hooks = kitHarness(REGISTRY, id).hooks!
+    const tool = TOOL_ID[id]
+    const spec: HarnessSpec = {
+      project: renderPath(hooks.config.project, { tool }),
+      user: hooks.config.user === undefined ? undefined : renderPath(hooks.config.user, { tool }),
+      merge: hooks.write === "merge",
+      rootHooks: hooks.shape === "root-events",
+      shape: hooks.shape ?? "nested-hooks",
+      note: NOTES[id],
+    }
+    return [id, spec]
+  }),
+) as Record<Harness, HarnessSpec>
 
 /** import.meta.dir is a Bun extension absent from @types/node. */
 const SRC_DIR = (import.meta as ImportMeta & { dir: string }).dir
@@ -197,7 +209,7 @@ export function stripDejavu(entries: unknown, harness: string): unknown[] {
 
 /** Append fresh template entries after stripping prior dejavu ones; unknown fields and foreign hooks survive. */
 export function mergeConfig(existing: Json, template: Json, harness: string): Json {
-  return mergeHooks(existing, template, { shape: "nested-hooks", isMine: (command) => isDejavuCommand(command, harness) })
+  return mergeHooks(existing, template, { shape: configShape(harness as Harness), isMine: (command) => isDejavuCommand(command, harness) })
 }
 
 /** Root-hooks variant of mergeConfig: template.hooks entries are merged into the config root as event keys.
@@ -218,8 +230,7 @@ export function collectCommandsRoot(config: Json, match: (command: unknown) => b
   return kitCollectCommands(config, { shape: "root-events" }).filter((command) => match(command))
 }
 
-/** Kit collector/drift shape for a harness's hook config. */
+/** Kit collector/drift shape for a harness's hook config, straight from the registry. */
 export function configShape(harness: Harness): MergeShape {
-  if (HARNESSES[harness].rootHooks === true) return "root-events"
-  return harness === "kiro" ? "hooks-array" : "nested-hooks"
+  return HARNESSES[harness].shape
 }

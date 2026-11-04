@@ -11,3 +11,14 @@ export function renderTemplate(text, vars = {}) {
   }
   return out;
 }
+
+const PATH_PLACEHOLDER = /\{([^{}]+)\}/g;
+
+export function renderPath(template, vars = {}) {
+  if (typeof template !== 'string' || template === '') throw new Error('renderPath: template is required');
+  return template.replace(PATH_PLACEHOLDER, (match, key) => {
+    const value = vars[key];
+    if (typeof value !== 'string' || value === '') throw new Error(`renderPath: no value for ${match} in ${JSON.stringify(template)}`);
+    return value;
+  });
+}

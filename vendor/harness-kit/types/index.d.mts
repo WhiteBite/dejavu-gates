@@ -168,6 +168,7 @@ export function readJsonConfig(path: string): Record<string, unknown> | null;
 export function writeJsonAtomic(path: string, data: unknown): void;
 
 export function renderTemplate(text: string, vars?: Record<string, unknown>): string;
+export function renderPath(template: string, vars?: Record<string, string>): string;
 export function escapeForJsonString(value: unknown): string;
 
 export const SIDECAR_DIR: string;
