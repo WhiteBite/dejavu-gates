@@ -165,7 +165,7 @@ export declare class ConfigParseError extends Error {
   path: string;
 }
 export function readJsonConfig(path: string): Record<string, unknown> | null;
-export function writeJsonAtomic(path: string, data: unknown): void;
+export function writeJsonAtomic(path: string, data: unknown, opts?: { backup?: boolean }): void;
 
 export function renderTemplate(text: string, vars?: Record<string, unknown>): string;
 export function renderPath(template: string, vars?: Record<string, string>): string;
