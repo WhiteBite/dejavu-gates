@@ -41,11 +41,15 @@ export function linkDir(source, target) {
     return { state, ok: false, action: `skipped (${state} content present at ${target})` };
   }
   const parent = dirname(target);
-  if (!existsSync(parent)) {
-    if (!existsSync(dirname(parent))) return { state, ok: false, action: 'skipped (harness not installed)' };
-    mkdirSync(parent, { recursive: true });
+  try {
+    if (!existsSync(parent)) {
+      if (!existsSync(dirname(parent))) return { state, ok: false, action: 'skipped (harness not installed)' };
+      mkdirSync(parent, { recursive: true });
+    }
+    symlinkSync(source, target, process.platform === 'win32' ? 'junction' : 'dir');
+  } catch (error) {
+    return { state, ok: false, action: `skipped (${error && error.code ? error.code : 'link failed'})` };
   }
-  symlinkSync(source, target, process.platform === 'win32' ? 'junction' : 'dir');
   return { state: 'linked', ok: true, action: 'linked' };
 }
 

@@ -1,7 +1,7 @@
 /** Atomic JSON config writes: validate before touching disk, skip byte-identical rewrites, optional retained backup, refuse symlinks, retry locked renames on Windows. */
+import { randomBytes } from 'node:crypto';
 import { copyFileSync, chmodSync, existsSync, lstatSync, mkdirSync, readFileSync, renameSync, rmSync, writeFileSync } from 'node:fs';
-import { tmpdir } from 'node:os';
-import { basename, dirname, join } from 'node:path';
+import { basename, dirname, join, parse, resolve, sep } from 'node:path';
 
 export class ConfigParseError extends Error {
   constructor(message, path) {
@@ -35,24 +35,39 @@ function sleepSync(ms) {
   Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms);
 }
 
+/** Refuses a write if any existing component of the path (parent dirs or the file itself) is a symlink, so a write cannot be redirected outside the target tree. */
+export function assertNoSymlinkComponents(target) {
+  const absolute = resolve(target);
+  const root = parse(absolute).root;
+  let current = root;
+  for (const part of absolute.slice(root.length).split(sep).filter(Boolean)) {
+    current = join(current, part);
+    let stat;
+    try {
+      stat = lstatSync(current);
+    } catch {
+      return;
+    }
+    if (stat.isSymbolicLink()) throw new Error(`refusing to write through a symlinked path component: ${current}`);
+  }
+}
+
 export function writeJsonAtomic(path, data, { backup = true } = {}) {
+  assertNoSymlinkComponents(path);
   let stat = null;
   try {
     stat = lstatSync(path);
   } catch {
     stat = null;
   }
-  if (stat && stat.isSymbolicLink()) {
-    throw new Error(`refusing to write through a symlink: ${path}`);
-  }
   const serialized = `${JSON.stringify(data, null, 2).replace(/\r\n/g, '\n')}\n`;
   JSON.parse(serialized);
   if (stat !== null && readFileSync(path, 'utf8') === serialized) return;
   mkdirSync(dirname(path), { recursive: true });
   if (stat && backup) {
-    copyFileSync(path, `${path}.bak`);
+    copyFileSync(path, `${path}.harness-kit.bak`);
   }
-  const tmp = join(dirname(path), `.${basename(path)}.${process.pid}.tmp`);
+  const tmp = join(dirname(path), `.${basename(path)}.${process.pid}.${randomBytes(6).toString('hex')}.tmp`);
   writeFileSync(tmp, serialized, 'utf8');
   let renamed = false;
   for (let attempt = 0; attempt < RENAME_RETRIES && !renamed; attempt += 1) {

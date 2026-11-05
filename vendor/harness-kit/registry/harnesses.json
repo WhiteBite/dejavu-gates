@@ -1,7 +1,7 @@
 {
   "$schema": "./harnesses.schema.json",
   "schemaVersion": 1,
-  "registryVersion": "0.1.0",
+  "registryVersion": "0.3.0",
   "conventions": {
     "ownership": {
       "sidecar": ".harness-kit/ownership.json",
@@ -16,12 +16,14 @@
       "{id}": "rule or file id chosen by the consumer",
       "{name}": "plugin module name"
     },
-    "scopeResolution": "project paths resolve against the repository root; user paths against the home directory unless an envOverrides key is set"
+    "scopeResolution": "project paths resolve against the repository root; user paths against the home directory unless an envOverrides key is set",
+    "mcpPolicy": "MCP configs are keyed maps (server name -> server object). Container key, url field name and token-env syntax differ per client; the map is a shared file so writes must be owner-scoped by server name. Non-JSON formats (jsonc/toml) are print-only."
   },
   "harnesses": {
     "claude": {
       "name": "Claude Code",
       "status": "stable",
+      "verified": { "against": "observed in at least one family installer", "at": "2026-10-03" },
       "hooks": {
         "config": { "project": ".claude/settings.json", "user": ".claude/settings.json" },
         "write": "merge",
@@ -37,11 +39,25 @@
         "marketplace": ".claude-plugin/marketplace.json",
         "bundledHooks": ".claude-plugin/{tool}/hooks/hooks.json"
       },
+      "mcp": {
+        "status": "experimental",
+        "config": { "project": ".mcp.json", "user": "~/.claude.json" },
+        "format": "json",
+        "container": "mcpServers",
+        "urlField": "url",
+        "typeField": "type",
+        "typeValue": "http",
+        "tokenEnvSyntax": "${VAR}",
+        "write": "print-only",
+        "source": "remote-devbox-mcp/home/rdm/prompt.py",
+        "note": "env var name must not look like a credential (ANTHROPIC_*/AWS_* are substituted empty); verify against /mcp"
+      },
       "notes": "Marketplace install delivers skills and bundled hooks together; plugin.json may carry \"skills\" and \"hooks\" fields."
     },
     "codex": {
       "name": "Codex CLI",
       "status": "stable",
+      "verified": { "against": "observed in at least one family installer", "at": "2026-10-03" },
       "hooks": {
         "config": { "project": ".codex/hooks.json", "user": ".codex/hooks.json" },
         "write": "merge",
@@ -52,11 +68,24 @@
       },
       "skills": { "global": [".codex/skills"] },
       "manifests": { "plugin": ".codex-plugin/plugin.json" },
+      "mcp": {
+        "status": "experimental",
+        "config": { "user": "~/.codex/config.toml" },
+        "format": "toml",
+        "container": "mcp_servers",
+        "urlField": "url",
+        "tokenEnvSyntax": null,
+        "authField": "bearer_token_env_var",
+        "write": "print-only",
+        "source": "remote-devbox-mcp/home/rdm/prompt.py",
+        "note": "TOML; literal tokens forbidden - only the env var NAME goes in the file; verify with `codex mcp list`"
+      },
       "notes": "Hooks are enabled by default; the first run may show a trust prompt for project hooks. Matcher vocabulary is product policy, not registry data. Known shared-file site: two family tools write this file - use ownership sidecar."
     },
     "opencode": {
       "name": "OpenCode",
       "status": "stable",
+      "verified": { "against": "observed in at least one family installer", "at": "2026-10-03" },
       "hooks": null,
       "plugin": {
         "stubs": { "user": ".config/opencode/plugins/{name}.ts", "project": ".opencode/plugin/{name}.ts" },
@@ -65,11 +94,25 @@
         "stateDirs": [".opencode/"]
       },
       "skills": { "global": [".config/opencode/skills"], "project": [".opencode/skills"] },
+      "mcp": {
+        "status": "experimental",
+        "config": { "project": "opencode.json" },
+        "format": "jsonc",
+        "container": "mcp",
+        "urlField": "url",
+        "typeField": "type",
+        "typeValue": "remote",
+        "tokenEnvSyntax": "{env:VAR}",
+        "write": "print-only",
+        "source": "remote-devbox-mcp/home/rdm/prompt.py",
+        "note": "JSONC file; container is `mcp` not `mcpServers`; server object carries enabled/oauth booleans"
+      },
       "notes": "No hook-config file: integration is a plugin module plus a one-line re-export stub."
     },
     "gemini": {
       "name": "Gemini CLI",
       "status": "stable",
+      "verified": { "against": "observed in at least one family installer", "at": "2026-10-03" },
       "hooks": {
         "config": { "project": ".gemini/settings.json", "user": ".gemini/settings.json" },
         "write": "merge",
@@ -80,6 +123,17 @@
         "toolNames": ["run_shell_command", "read_file", "write_file", "replace", "glob", "search_file_content"]
       },
       "manifests": { "extension": "gemini-extension.json" },
+      "mcp": {
+        "status": "experimental",
+        "config": { "user": "~/.gemini/settings.json" },
+        "format": "json",
+        "container": "mcpServers",
+        "urlField": "httpUrl",
+        "tokenEnvSyntax": "${VAR}",
+        "write": "print-only",
+        "source": "remote-devbox-mcp/home/rdm/prompt.py",
+        "note": "url field is `httpUrl` (not `url`); verify with /mcp"
+      },
       "notes": "Timeout unit differs from Claude-dialect harnesses (ms, not s). Family policy split observed: dejavu auto-merges user scope, stop-ai-slop prints snippets only - the kit default is print-only for user scope."
     },
     "qwen": {
@@ -98,6 +152,7 @@
     "cursor": {
       "name": "Cursor",
       "status": "stable",
+      "verified": { "against": "observed in at least one family installer", "at": "2026-10-03" },
       "hooks": {
         "config": { "project": ".cursor/hooks.json", "user": ".cursor/hooks.json" },
         "write": "merge",
@@ -109,23 +164,48 @@
       },
       "rules": [{ "path": ".cursor/rules/{id}.mdc", "format": "mdc", "frontmatter": ["description", "globs", "alwaysApply"] }],
       "manifests": { "plugin": ".cursor-plugin/plugin.json" },
+      "mcp": {
+        "status": "experimental",
+        "config": { "project": ".cursor/mcp.json" },
+        "format": "json",
+        "container": "mcpServers",
+        "urlField": "url",
+        "tokenEnvSyntax": "${env:VAR}",
+        "write": "print-only",
+        "source": "remote-devbox-mcp/home/rdm/prompt.py",
+        "note": "no type field; env syntax is `${env:VAR}`; verify in Cursor MCP panel"
+      },
       "notes": "Entries are flat {command, timeout} - no type field, unlike the Claude dialect."
     },
     "windsurf": {
       "name": "Windsurf",
       "status": "stable",
+      "verified": { "against": "observed in at least one family installer", "at": "2026-10-03" },
       "hooks": null,
-      "rules": [{ "path": ".windsurfrules", "format": "plain", "ownership": "first-line-marker" }]
+      "rules": [{ "path": ".windsurfrules", "format": "plain", "ownership": "first-line-marker" }],
+      "mcp": {
+        "status": "experimental",
+        "config": { "user": "~/.codeium/windsurf/mcp_config.json" },
+        "format": "json",
+        "container": "mcpServers",
+        "urlField": "url",
+        "tokenEnvSyntax": "${env:VAR}",
+        "write": "print-only",
+        "source": "remote-devbox-mcp/home/rdm/prompt.py",
+        "note": "%APPDATA%\\devin\\mcp_config.json is a Windows variant of the same file"
+      }
     },
     "aider": {
       "name": "Aider",
       "status": "stable",
+      "verified": { "against": "observed in at least one family installer", "at": "2026-10-03" },
       "hooks": null,
       "rules": [{ "path": "CONVENTIONS.md", "format": "plain", "ownership": "first-line-marker", "note": "pair with aider --read CONVENTIONS.md" }]
     },
     "cline": {
       "name": "Cline",
       "status": "stable",
+      "verified": { "against": "observed in at least one family installer", "at": "2026-10-03" },
       "hooks": null,
       "plugin": {
         "inProcess": "long-lived sandbox subprocess host (see dejavu src/cline-plugin.ts); declared via package.json \"cline.plugins\"",
@@ -133,11 +213,25 @@
       },
       "rules": [{ "path": ".clinerules", "format": "plain", "ownership": "first-line-marker" }],
       "manifests": { "plugin": "plugin.json" },
+      "mcp": {
+        "status": "experimental",
+        "config": { "project": "mcp_settings.json" },
+        "format": "json",
+        "container": "mcpServers",
+        "urlField": "url",
+        "typeField": "type",
+        "typeValue": "streamableHttp",
+        "tokenEnvSyntax": null,
+        "write": "print-only",
+        "source": "remote-devbox-mcp/home/rdm/prompt.py",
+        "note": "panel-managed file (no env interpolation in headers - token is literal); server object carries disabled:false"
+      },
       "notes": "Root plugin.json points its hooks field at a Claude-dialect bundle file - a dialect reuse that must stay documented."
     },
     "kiro": {
       "name": "Kiro",
       "status": "stable",
+      "verified": { "against": "observed in at least one family installer", "at": "2026-10-03" },
       "hooks": {
         "config": { "project": ".kiro/hooks/{tool}.json" },
         "write": "overwrite",
@@ -146,11 +240,25 @@
         "triggers": ["PreToolUse", "PostToolUse"],
         "entryFields": { "nameConvention": "{tool}-pre | {tool}-post", "commandPath": ["action", "command"], "timeoutUnit": "seconds" }
       },
+      "mcp": {
+        "status": "experimental",
+        "config": { "project": ".kiro/settings/mcp.json", "user": "~/.kiro/settings/mcp.json" },
+        "format": "json",
+        "container": "mcpServers",
+        "urlField": "url",
+        "typeField": "type",
+        "typeValue": "http",
+        "tokenEnvSyntax": "${VAR}",
+        "write": "print-only",
+        "source": "remote-devbox-mcp/home/rdm/prompt.py",
+        "note": "Kiro requires https (except localhost)"
+      },
       "notes": "Top-level hooks is an ARRAY of {name, trigger, matcher, action:{type,command}, timeout}; informational output rides raw stdout."
     },
     "devin": {
       "name": "Devin CLI",
       "status": "stable",
+      "verified": { "against": "observed in at least one family installer", "at": "2026-10-03" },
       "hooks": {
         "config": { "project": ".devin/hooks.v1.json" },
         "write": "merge",
@@ -187,9 +295,80 @@
       },
       "notes": "No AfterTool hook exists - failure observation is degraded (pre-tool only). Entries are flat {matcher, command}."
     },
+    "vscode": {
+      "name": "VS Code (MCP)",
+      "status": "experimental",
+      "hooks": null,
+      "mcp": {
+        "status": "experimental",
+        "config": { "project": ".vscode/mcp.json" },
+        "format": "json",
+        "container": "servers",
+        "urlField": "url",
+        "typeField": "type",
+        "typeValue": "http",
+        "tokenEnvSyntax": "${input:VAR}",
+        "write": "print-only",
+        "source": "remote-devbox-mcp/home/rdm/prompt.py",
+        "note": "container is `servers` not `mcpServers`; secrets go through a top-level `inputs` array of {type:promptString,...} referenced as ${input:VAR}"
+      }
+    },
+    "roo": {
+      "name": "Roo Code",
+      "status": "experimental",
+      "hooks": null,
+      "mcp": {
+        "status": "experimental",
+        "config": { "project": ".roo/mcp.json" },
+        "format": "json",
+        "container": "mcpServers",
+        "urlField": "url",
+        "typeField": "type",
+        "typeValue": "streamable-http",
+        "tokenEnvSyntax": null,
+        "write": "print-only",
+        "source": "remote-devbox-mcp/home/rdm/prompt.py",
+        "note": "type value is `streamable-http` (hyphen); literal token in header; server object carries disabled:false"
+      }
+    },
+    "zed": {
+      "name": "Zed",
+      "status": "experimental",
+      "hooks": null,
+      "mcp": {
+        "status": "experimental",
+        "config": { "project": ".zed/settings.json", "user": "~/.config/zed/settings.json" },
+        "format": "json",
+        "container": "context_servers",
+        "urlField": "url",
+        "tokenEnvSyntax": null,
+        "write": "print-only",
+        "source": "remote-devbox-mcp/home/rdm/prompt.py",
+        "note": "container is `context_servers`; Zed does not interpolate env in headers - token is literal, do not commit the file"
+      }
+    },
+    "factory": {
+      "name": "Factory (Droid)",
+      "status": "experimental",
+      "hooks": null,
+      "mcp": {
+        "status": "experimental",
+        "config": { "user": "~/.factory/mcp.json" },
+        "format": "json",
+        "container": "mcpServers",
+        "urlField": "url",
+        "typeField": "type",
+        "typeValue": "http",
+        "tokenEnvSyntax": "${VAR}",
+        "write": "print-only",
+        "source": "remote-devbox-mcp/home/rdm/prompt.py",
+        "note": "server object carries oauth:false; verify with `droid` MCP list"
+      }
+    },
     "git": {
       "name": "git (pre-commit enforcement surface)",
       "status": "stable",
+      "verified": { "against": "observed in at least one family installer", "at": "2026-10-03" },
       "hooks": {
         "config": { "project": ".git/hooks/pre-commit" },
         "resolveVia": "git config core.hooksPath",

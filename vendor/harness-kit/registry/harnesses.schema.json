@@ -22,6 +22,14 @@
       "properties": {
         "name": { "type": "string", "minLength": 1 },
         "status": { "enum": ["stable", "preview", "experimental"] },
+        "verified": {
+          "type": "object",
+          "required": ["against", "at"],
+          "properties": {
+            "against": { "type": "string", "minLength": 1 },
+            "at": { "type": "string", "pattern": "^\\d{4}-\\d{2}-\\d{2}$" }
+          }
+        },
         "hooks": {
           "oneOf": [
             { "type": "null" },
@@ -54,6 +62,37 @@
           ]
         },
         "plugin": { "type": "object" },
+        "mcp": {
+          "oneOf": [
+            { "type": "null" },
+            {
+              "type": "object",
+              "required": ["config", "format", "container"],
+              "properties": {
+                "status": { "enum": ["stable", "preview", "experimental"] },
+                "verified": {
+                  "type": "object",
+                  "required": ["against", "at"],
+                  "properties": {
+                    "against": { "type": "string", "minLength": 1 },
+                    "at": { "type": "string", "pattern": "^\\d{4}-\\d{2}-\\d{2}$" }
+                  }
+                },
+                "config": { "type": "object" },
+                "format": { "enum": ["json", "jsonc", "toml"] },
+                "container": { "type": "string" },
+                "urlField": { "type": "string" },
+                "typeField": { "type": "string" },
+                "typeValue": { "type": "string" },
+                "tokenEnvSyntax": { "type": ["string", "null"] },
+                "authField": { "type": "string" },
+                "write": { "enum": ["merge", "print-only"] },
+                "source": { "type": "string" },
+                "note": { "type": "string" }
+              }
+            }
+          ]
+        },
         "skills": {
           "type": "object",
           "properties": {

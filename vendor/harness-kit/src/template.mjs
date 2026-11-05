@@ -5,11 +5,7 @@ export function escapeForJsonString(value) {
 }
 
 export function renderTemplate(text, vars = {}) {
-  let out = String(text);
-  for (const [key, value] of Object.entries(vars)) {
-    out = out.replaceAll(`{{${key}}}`, escapeForJsonString(value));
-  }
-  return out;
+  return String(text).replace(/\{\{([A-Za-z0-9_]+)\}\}/g, (match, key) => (key in vars ? escapeForJsonString(vars[key]) : match));
 }
 
 const PATH_PLACEHOLDER = /\{([^{}]+)\}/g;
@@ -19,6 +15,9 @@ export function renderPath(template, vars = {}) {
   return template.replace(PATH_PLACEHOLDER, (match, key) => {
     const value = vars[key];
     if (typeof value !== 'string' || value === '') throw new Error(`renderPath: no value for ${match} in ${JSON.stringify(template)}`);
+    if (!/^[A-Za-z0-9._-]+$/.test(value) || value.includes('..')) {
+      throw new Error(`renderPath: unsafe value for ${match}: ${JSON.stringify(value)}`);
+    }
     return value;
   });
 }

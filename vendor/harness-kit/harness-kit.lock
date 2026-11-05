@@ -1,0 +1,11 @@
+{
+  "lockVersion": 1,
+  "kitVersion": "0.9.0",
+  "registryVersion": "0.3.0",
+  "schemaVersion": 1,
+  "tag": "v0.9.0",
+  "files": {
+    "registry/harnesses.json": "cbcc1616688dc8f0711ed4ff5c60b3584272dda12280887307f8e1f1ab45a4ab",
+    "registry/harnesses.schema.json": "6952906533babe4d2323ad5924f82ca18e4aa0c8304133ff263aa0cdf88170dc"
+  }
+}

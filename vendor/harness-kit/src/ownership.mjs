@@ -26,6 +26,7 @@ export function hashValue(value) {
 
 /** Walks string keys and numeric array indices; undefined when any segment misses. */
 export function resolveLocator(root, locator) {
+  if (!Array.isArray(locator)) return undefined;
   let current = root;
   for (const segment of locator) {
     if (current === null || current === undefined) return undefined;
@@ -43,7 +44,9 @@ export function resolveLocator(root, locator) {
 export function readOwnership(root) {
   const data = readJsonConfig(sidecarPath(root));
   if (data === null) return { version: 1, entries: [] };
-  const entries = Array.isArray(data.entries) ? data.entries.filter((entry) => entry && typeof entry === 'object') : [];
+  const entries = Array.isArray(data.entries)
+    ? data.entries.filter((entry) => entry && typeof entry === 'object' && typeof entry.owner === 'string' && typeof entry.file === 'string' && Array.isArray(entry.locator) && typeof entry.sha256 === 'string')
+    : [];
   return { version: typeof data.version === 'number' ? data.version : 1, entries };
 }
 
@@ -55,7 +58,8 @@ export function recordOwnership(root, owner, file, config, locators) {
     if (value === undefined) throw new Error(`locator does not resolve in ${file}: ${JSON.stringify(locator)}`);
     return { owner, file, locator, sha256: hashValue(value) };
   });
-  const kept = sidecar.entries.filter((entry) => !(entry.owner === owner && entry.file === file));
+  const freshKeys = new Set(locators.map((locator) => canonicalJson(locator)));
+  const kept = sidecar.entries.filter((entry) => !(entry.owner === owner && entry.file === file && freshKeys.has(canonicalJson(entry.locator))));
   writeJsonAtomic(sidecarPath(root), { version: 1, entries: [...kept, ...fresh] });
 }
 

@@ -1,4 +1,5 @@
 /** Owner-scoped hook-config merge: strip only the caller's entries, append fresh ones, preserve every foreign byte. */
+import { shapeDescriptor } from './shapes.mjs';
 
 export function entryCommands(entry) {
   const commands = [];
@@ -76,10 +77,11 @@ function mergeHooksArray(existing, template, isMine) {
  */
 export function mergeHooks(existing, template, { shape, isMine }) {
   if (typeof isMine !== 'function') throw new Error('mergeHooks requires an isMine(command) predicate');
-  if (shape === 'hooks-array') return mergeHooksArray(existing, template, isMine);
+  const descriptor = shapeDescriptor(shape);
+  if (descriptor.container === 'hooks-array') return mergeHooksArray(existing, template, isMine);
 
-  const rootScoped = shape === 'root-events';
-  const grouped = shape === 'nested-hooks' || shape === 'root-events';
+  const rootScoped = descriptor.container === 'root';
+  const grouped = descriptor.grouped;
   const merged = { ...existing };
 
   if (!rootScoped) {

@@ -4,6 +4,27 @@ export type HarnessStatus = 'stable' | 'preview' | 'experimental';
 export type MergeShape = 'nested-hooks' | 'root-events' | 'versioned-flat' | 'versioned-typed' | 'flat-matcher' | 'hooks-array';
 export type WriteMode = 'merge' | 'overwrite' | 'marker-block' | 'print-only';
 
+export interface Verified {
+  against: string;
+  at: string;
+}
+
+export interface RegistryMcp {
+  status?: HarnessStatus;
+  verified?: Verified;
+  config: { project?: string; user?: string };
+  format: 'json' | 'jsonc' | 'toml';
+  container: string;
+  urlField?: string;
+  typeField?: string;
+  typeValue?: string;
+  tokenEnvSyntax?: string | null;
+  authField?: string;
+  write?: 'merge' | 'print-only';
+  source?: string;
+  note?: string;
+}
+
 export interface RegistryRule {
   path: string;
   format: 'plain' | 'mdc' | 'marker-block';
@@ -31,7 +52,9 @@ export interface RegistryHooks {
 export interface RegistryHarness {
   name: string;
   status: HarnessStatus;
+  verified?: Verified;
   hooks?: RegistryHooks | null;
+  mcp?: RegistryMcp | null;
   plugin?: Record<string, unknown>;
   skills?: { global?: string[]; project?: string[] };
   rules?: RegistryRule[];

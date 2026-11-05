@@ -55,12 +55,17 @@ function checkMarkerSurface(surface, path, pathExists) {
     return finding(surface.id, 'broken', null);
   }
   if (content === null) return finding(surface.id, 'missing', null);
-  const block = readMarkerBlock(content, { variant: surface.variant, id: surface.markerId });
+  let block;
+  try {
+    block = readMarkerBlock(content, { variant: surface.variant, id: surface.markerId });
+  } catch {
+    return finding(surface.id, 'broken', null);
+  }
   if (!block.present) return finding(surface.id, 'missing', null);
   const extract = surface.extract ?? extractCliPath;
   const cliPath = extract(block.text);
   if (typeof cliPath !== 'string' || cliPath === '') return finding(surface.id, 'stale', null);
-  if (pathExists(cliPath) === false) return finding(surface.id, 'stale', cliPath);
+  if (!pathExists(cliPath)) return finding(surface.id, 'stale', cliPath);
   return finding(surface.id, 'ok', null);
 }
 

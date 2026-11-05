@@ -1,6 +1,7 @@
 /** Marker-block writers plus the shell-block reader share one marker regex; no message strings in the kit. */
 import { chmodSync, existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { dirname } from 'node:path';
+import { assertNoSymlinkComponents } from './atomic.mjs';
 
 function requireString(value, name) {
   if (typeof value !== 'string' || value === '') throw new Error(`writeMarkerBlock: opts.${name} is required`);
@@ -20,6 +21,7 @@ function readCurrent(path) {
 }
 
 function write(path, content) {
+  assertNoSymlinkComponents(path);
   mkdirSync(dirname(path), { recursive: true });
   writeFileSync(path, content, 'utf8');
 }
@@ -83,7 +85,7 @@ function writeFirstLineMarker(path, content, opts) {
     write(path, content);
     return { action: 'created' };
   }
-  if (current.split('\n')[0] !== opts.marker) return { action: 'skipped-foreign' };
+  if (current.split('\n')[0].replace(/\r$/, '') !== opts.marker) return { action: 'skipped-foreign' };
   if (current === content) return { action: 'unchanged' };
   write(path, content);
   return { action: 'replaced' };

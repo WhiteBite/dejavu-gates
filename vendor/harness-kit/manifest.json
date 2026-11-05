@@ -1,21 +1,23 @@
 {
   "kit": "@whitebite/harness-kit",
-  "kitVersion": "0.5.0",
-  "registryVersion": "0.1.0",
+  "kitVersion": "0.9.0",
+  "registryVersion": "0.3.0",
   "files": {
-    "src/atomic.mjs": "b1036ba718d1dfe85bf8141114366139eb3d6f075956ebc02dc05f436e7c9ef0",
-    "src/doctor.mjs": "d592e256174f81a6e37917c5af7909814cfc52000fb435412ffe72e5e61c4c91",
-    "src/drift.mjs": "eb9fac3dcc775d5e9a6bcdf91d57fbba1de31beb9d892a8dddd08d164ed2d99d",
+    "src/atomic.mjs": "4d2bae5cd4b7dcfe287217b2545bdfe6f3dcc109494aaf501d4e52a2679514d5",
+    "src/doctor.mjs": "d112f655d1a063ae1e3ac52d5ad62ad0dd8910a1822d82e83e3d13a2d7e67a7f",
+    "src/drift.mjs": "49a61a2c2018324317f3974e1f061a85066dce2049bc8a901462ab17a4b770fb",
     "src/index.mjs": "1ae44d0e67b47d898e40531fdbda6068c2ed81a601c33be4a86e8d50ad02ba87",
-    "src/marker.mjs": "57d8e605c1b7ff3f98f6bc2f2710b40d2f8ffeb853417d66ba3cb8298839a435",
-    "src/merge.mjs": "c0c666167c22d22091de211642615d6844d6a99202888a6e24582e124ad93ba5",
-    "src/ownership.mjs": "8e768c012d082d56e46ba0d0f8b2a4c3a4520983f731d8e9c9dbd6c919f59019",
-    "src/registry.mjs": "e8b4fbaaf882d8a13c772be586cdc0bd53d668d9ba930e4f7c6194a614685e58",
-    "src/symlink.mjs": "dd225abf327d72c2f6cdd069fdc8403b2d3852203ea0aa3f511eecc07ba866c1",
-    "src/template.mjs": "31afd7f737bc9eb84e874817788ff2853a6fe468bc8f2c5c3fd97de6ba828374",
-    "registry/CHANGELOG.md": "8740ba3c7ef0098b01619b580d5c566c89bc3a8b0a46c5ce878b9a9eea88da9b",
-    "registry/harnesses.json": "4554ab8fff7fd6c6b06292016e737d48c925b838d6c65d8a5294bd35d44bd152",
-    "registry/harnesses.schema.json": "b73abef890e0ee424bb2f9e4515ceacf2ca98efdf42d16f2873cf8a9dba53b94",
-    "types/index.d.mts": "8938fbd0ce9b4e952127ae84c50ca4675326c1b65e1c5b06fa6021b5fdc8ca72"
+    "src/manifest.mjs": "9724b86b0514055bdf635ef10619a7dc429f42a04c3d6749e430d756225ee37b",
+    "src/marker.mjs": "e0d6cffd42668ce246a4a974e33bd048e412998cd3f7fbe57310451e25dc5009",
+    "src/merge.mjs": "f9a24e2a073c5315ae6f3bb12617b79bb55e5a38534e2e48f5ece71044c1de22",
+    "src/ownership.mjs": "c9510616a37035745c4b4330556512367798500dbf54b33855f6417eb131fe86",
+    "src/registry.mjs": "731e782585f81d60e09b9e63e0e959acf34824a12b1785075fd0b3c869834a58",
+    "src/shapes.mjs": "3a5b6eac457d1133997639e5caa7ac4a679dd25da6e33f9563449a03fa6934dc",
+    "src/symlink.mjs": "7d84cff17f2a1840f6e6a6c85b7d685196af92f3c7f02eaf113d118dd523b971",
+    "src/template.mjs": "03fe01081c2478af5cbd545f72a1d2ffebdf2392ce7f2aee778abd8c8431bd17",
+    "registry/CHANGELOG.md": "5b5194eb0d6a214aac0fdc0f9bff3cbbdf37a522de85bc3d7bccf062a872cddc",
+    "registry/harnesses.json": "cbcc1616688dc8f0711ed4ff5c60b3584272dda12280887307f8e1f1ab45a4ab",
+    "registry/harnesses.schema.json": "6952906533babe4d2323ad5924f82ca18e4aa0c8304133ff263aa0cdf88170dc",
+    "types/index.d.mts": "756a1e2027ea4c9f75745ca603d5caf09091898bd6a11b1f22ef044a78fe1a1d"
   }
 }
