@@ -11,3 +11,4 @@ build/
 .env
 .opencode/
 .codenomad/
+.discoverability/cache/

@@ -1,0 +1,14 @@
+[
+  {
+    "target": "hashgraph-online/awesome-ai-plugins",
+    "pr_url": "https://github.com/hashgraph-online/awesome-ai-plugins/pull/861",
+    "branch": "rdk/awesome-ai-plugins/add-dejavu-gates",
+    "fork": "WhiteBite/awesome-ai-plugins",
+    "submitted_at": "2026-10-18T23:40:25.780Z",
+    "status": "open",
+    "channel": "awesome-list",
+    "mechanism": "git-pr",
+    "artifact": "readme-row",
+    "dedupe_key": "awesome-list:hashgraph-online/awesome-ai-plugins"
+  }
+]
