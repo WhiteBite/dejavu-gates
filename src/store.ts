@@ -7,7 +7,7 @@ import { canBlock, canRemind, fuzzySimilar, FUZZY_MAX_LEN, hasGenericResidualIde
 import { coerceGateShape, failedAtMs, isAutoCorrection, repairGate } from "./validate"
 
 /** Bumped on behavior changes; stamped into init log events so stale sessions are visible. */
-export const PLUGIN_VERSION = "2.61.0"
+export const PLUGIN_VERSION = "2.62.0"
 
 /** Global store root — DEJAVU_HOME overrides it (testing, custom setups). */
 export function resolveGlobalDir(): string {
@@ -21,6 +21,16 @@ export function envInt(name: string, fallback: number, min: number, max: number)
   const value = Number(raw)
   if (!Number.isInteger(value) || value < min || value > max) return fallback
   return value
+}
+
+/** Resolve a DEJAVU_* boolean override once at module load; unknown values fall back. */
+export function envFlag(name: string, fallback: boolean): boolean {
+  const raw = process.env[name]
+  if (raw === undefined) return fallback
+  const value = raw.toLowerCase()
+  if (value === "1" || value === "true" || value === "yes" || value === "on") return true
+  if (value === "0" || value === "false" || value === "no" || value === "off" || value === "") return false
+  return fallback
 }
 
 /** Shared two-scope construction ("" = global only); the init sequence (reconcile/migrate/expire) stays at each call site. */
@@ -190,6 +200,7 @@ export type LogEventType =
   | "repeat-override"
   | "loop-break"
   | "shape-loop"
+  | "leak-recovery"
 
 /** Events that change what the machine remembers — the only ones worth the
  * global log lock (the most-contended lock, shared by every window of every

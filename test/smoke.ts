@@ -3418,6 +3418,56 @@ const r109MarkerArgs: Record<string, unknown> = { task_id: "t1", [REPEAT_MARKER]
 await r109Before({ tool: "background_output", sessionID: "r109ex", callID: "ex9" } as unknown as BeforeInput, { args: r109MarkerArgs } as unknown as BeforeOutput).catch(() => {})
 check("markers: the internal repeat marker never reaches the tool args", !(REPEAT_MARKER in r109MarkerArgs))
 
+// --- 110. leaked tool-call recovery (opt-in; LEAK_RECOVERY is read at module load) ---
+const r110Leak = '<|DSL|calls>\n<|DSL|invoke name="compress">\n<|DSL|parameter name="content" string="false">{}</|DSL|parameter>\n</|DSL|invoke>\n</|DSL|calls>'
+const r110Dir = join(tmp, "r110-leak-project")
+await mkdir(r110Dir, { recursive: true })
+const r110Hooks = await Dejavu({ directory: r110Dir, client: { app: { log: async () => ({}) } } } as unknown as Ctx)
+const r110Transform = r110Hooks["experimental.chat.messages.transform"]
+const r110Off: R99Msg[] = [r99User("r110off"), { info: { role: "assistant", sessionID: "r110off" }, parts: [{ type: "text", text: r110Leak }] }]
+await r110Transform?.({} as never, { messages: r110Off } as never)
+check("leak recovery: flag off leaves the leaked block untouched", r110Off[1]?.parts[0]?.text === r110Leak)
+check("leak recovery: flag off injects nothing", !r110Off.some((m) => m.info.role === "user" && (m.parts[0] as { synthetic?: boolean } | undefined)?.synthetic === true))
+
+const r110Probe = `
+import { Dejavu } from ${JSON.stringify(new URL("../index.ts", import.meta.url).href)}
+const hooks = await Dejavu({ directory: process.env.R110_PROJECT, client: { app: { log: async () => ({}) } } })
+const transform = hooks["experimental.chat.messages.transform"]
+const leak = ${JSON.stringify(r110Leak)}
+const nl = String.fromCharCode(10)
+const fence = String.fromCharCode(96, 96, 96)
+const mk = (sessionID, text) => [
+  { info: { role: "user", sessionID }, parts: [{ type: "text", text: "go" }] },
+  { info: { role: "assistant", sessionID }, parts: [{ type: "text", text }] },
+]
+const leakMsgs = mk("r110p", leak)
+await transform({}, { messages: leakMsgs })
+await transform({}, { messages: leakMsgs })
+const fencedMsgs = mk("r110f", fence + nl + leak + nl + fence)
+await transform({}, { messages: fencedMsgs })
+const bareMsgs = mk("r110b", "the marker <|DSL|calls> appears inline")
+await transform({}, { messages: bareMsgs })
+console.log(JSON.stringify({
+  text: leakMsgs[1].parts[0].text,
+  injected: leakMsgs.filter((m) => m.info.role === "user" && m.parts[0] && m.parts[0].synthetic === true).map((m) => m.parts[0].text),
+  fenced: fencedMsgs[1].parts[0].text,
+  bare: bareMsgs[1].parts[0].text,
+}))
+`
+const r110Run = spawnSync(process.execPath, ["-e", r110Probe], {
+  env: { ...process.env, DEJAVU_LEAK_RECOVERY: "1", DEJAVU_HOME: join(tmp, "r110-home"), R110_PROJECT: r110Dir },
+  encoding: "utf8",
+})
+const r110Line = (r110Run.stdout ?? "").trim().split("\n").filter((l) => l.startsWith("{")).pop()
+const r110 = JSON.parse(r110Line ?? "{}") as { text?: string; injected?: string[]; fenced?: string; bare?: string }
+check("leak recovery: raw block replaced in the outgoing payload", typeof r110.text === "string" && r110.text.includes("[dejavu] (leaked tool-call serialization removed"))
+check("leak recovery: placeholder carries no raw markers", typeof r110.text === "string" && !r110.text.includes("<|DSL|") && !r110.text.includes("</|DSL|"))
+check("leak recovery: a synthetic recovery turn is appended", (r110.injected?.length ?? 0) === 1 && (r110.injected?.[0] ?? "").includes("Re-issue the intended call now"))
+check("leak recovery: a fenced block is left untouched", r110.fenced === "```\n" + r110Leak + "\n```")
+check("leak recovery: a bare marker mention is left untouched", r110.bare === "the marker <|DSL|calls> appears inline")
+const r110Log = await readFile(join(r110Dir, ".opencode", "dejavu", "log.jsonl"), "utf8").catch(() => "")
+check("leak recovery: exactly one leak-recovery log event per session", r110Log.split("\n").filter((l) => l.includes('"type":"leak-recovery"')).length === 1)
+
 await rm(tmp, { recursive: true, force: true })
 
 report()

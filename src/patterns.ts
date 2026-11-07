@@ -2034,6 +2034,34 @@ export function suggestCorrection(signature: string, snippet: string, platform: 
   return "This exact call keeps failing without a readable error line — re-run it once and read the actual output before changing anything."
 }
 
+// --- Leaked tool-call serialization (payload hygiene) -----------------------
+
+const LEAK_BLOCK = /<\|DSL\|calls>[\s\S]*?<\/\|DSL\|calls>/gi
+const FENCE_LINE = /(?:^|\n)[ \t]*(?:```|~~~)/g
+
+export const NEUTRAL_PLACEHOLDER = "[dejavu] (leaked tool-call serialization removed - re-issue the intended call as a proper tool call)"
+
+function insideFence(text: string, index: number): boolean {
+  const fences = text.slice(0, index).match(FENCE_LINE)
+  return fences !== null && fences.length % 2 === 1
+}
+
+/** Last full block only, fence-guarded and tail-anchored — a leak is the model's output, not an inline mention. */
+export function detectLeakedToolCall(text: string): { start: number; end: number } | null {
+  let last: RegExpExecArray | null = null
+  let m: RegExpExecArray | null
+  const re = new RegExp(LEAK_BLOCK.source, "gi")
+  while ((m = re.exec(text)) !== null) last = m
+  if (last === null) return null
+  if (insideFence(text, last.index)) return null
+  if (text.slice(last.index + last[0].length).trim() !== "") return null
+  return { start: last.index, end: last.index + last[0].length }
+}
+
+export function neutralizeLeakedToolCalls(text: string): string {
+  return text.replace(new RegExp(LEAK_BLOCK.source, "gi"), NEUTRAL_PLACEHOLDER)
+}
+
 // --- Repeat channel (outgoing-payload series detection) -------------------------
 
 /** Marker keys the repeat channel injects into outgoing payloads (sanitize) and

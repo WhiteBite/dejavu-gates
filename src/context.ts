@@ -15,6 +15,8 @@ const CROSS_CHANNEL_WINDOW_MS = 2000
 /** recentRecords is bounded FIFO-style like handledParts */
 const RECENT_RECORDS_CAP = 1000
 const RECENT_RECORDS_KEEP = 500
+/** leak recovery: per-session injection map cap (in-process) */
+export const LEAK_RECOVERY_SESSIONS_CAP = 1000
 /** a gate reminded this many times with ZERO in-session reoffense has taught its
  *  lesson — the agent changed behavior, so no success can ever heal it */
 export const TAUGHT_REMINDERS = envInt("DEJAVU_TAUGHT_REMINDERS", 5, 1, 100)
@@ -62,6 +64,10 @@ export interface EphemeralState {
   handledParts: Set<string>
   /** (key|session) -> last recording channel/time, for the cross-channel dedup */
   recentRecords: Map<string, { ts: number; channel: string }>
+  /** leak recovery: session IDs that already logged a recovery injection */
+  leakRecoveryLogged: Set<string>
+  /** leak recovery: sessionID → injected count (per-session cap) */
+  leakRecoveryInjected: Map<string, number>
 }
 
 /** Fresh in-process state. A long-lived host (the OpenCode plugin process)
@@ -89,6 +95,8 @@ export function createEphemeralState(): EphemeralState {
     versionBumpedCalls: new Set(),
     handledParts: new Set(),
     recentRecords: new Map(),
+    leakRecoveryLogged: new Set(),
+    leakRecoveryInjected: new Map(),
   }
 }
 

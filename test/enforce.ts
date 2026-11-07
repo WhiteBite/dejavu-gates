@@ -21,10 +21,13 @@ import {
   canBlock,
   canRemind,
   detectFailure,
+  detectLeakedToolCall,
   hasGenericResidualIdentity,
   isIntendedNonzero,
   isNoiseError,
   isRepoLocal,
+  NEUTRAL_PLACEHOLDER,
+  neutralizeLeakedToolCalls,
   nonTransparentProducers,
   normalizeCommand,
   normalizeFilePath,
@@ -789,6 +792,20 @@ check("comment-gate multi-line-comment rejection is noise", isNoiseError("commen
 check("TLS handshake timeout is infrastructure noise", isNoiseError("Get \"https://api.github.com/search\": net/http: TLS handshake timeout"))
 check("check your internet connection hint is infrastructure noise", isNoiseError("npm error check your internet connection or https://githubstatus.com"))
 check("could not resolve host is infrastructure noise", isNoiseError("ssh: Could not resolve hostname gh-proxy.internal: Name or service not known"))
+
+// --- leaked tool-call serialization detection ---
+const leakBlock = '<|DSL|calls>\n<|DSL|invoke name="compress">\n<|DSL|parameter name="content" string="false">{}</|DSL|parameter>\n</|DSL|invoke>\n</|DSL|calls>'
+const leakSingle = '<|DSL|calls><|DSL|invoke name="read"><|DSL|parameter name="filePath" string="false">a.ts</|DSL|parameter></|DSL|invoke></|DSL|calls>'
+check("detectLeakedToolCall: a full multiline block at the tail is detected", detectLeakedToolCall(leakBlock) !== null)
+check("detectLeakedToolCall: a single-line block is detected", detectLeakedToolCall(leakSingle) !== null)
+check("detectLeakedToolCall: a bare open marker is not a block", detectLeakedToolCall("<|DSL|calls>") === null)
+check("detectLeakedToolCall: a fenced block is not a leak", detectLeakedToolCall("```\n" + leakBlock) === null)
+check("detectLeakedToolCall: trailing prose after the block is not a leak", detectLeakedToolCall(leakBlock + "\nlet me explain") === null)
+const leakSpan = detectLeakedToolCall("prefix\n" + leakBlock)
+check("detectLeakedToolCall: the span covers the block", leakSpan !== null && leakSpan.start === "prefix\n".length && leakSpan.end === "prefix\n".length + leakBlock.length)
+const neutralized = neutralizeLeakedToolCalls("before " + leakBlock + " after")
+check("neutralizeLeakedToolCalls: replaces the block with the placeholder", neutralized.includes(NEUTRAL_PLACEHOLDER) && neutralized.startsWith("before ") && neutralized.endsWith(" after"))
+check("neutralizeLeakedToolCalls: no raw markers remain", !neutralized.includes("<|DSL|") && !neutralized.includes("</|DSL|"))
 
 await rm(tmp, { recursive: true, force: true })
 

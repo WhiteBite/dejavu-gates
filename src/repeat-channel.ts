@@ -1,6 +1,7 @@
-import { detectRepeatSeries, detectRepeatWindows, detectShapeLoops, looksLikeFailure, parameterizeError, REPEAT_MARKER, sanitizeForStore } from "./patterns"
+import { detectLeakedToolCall, detectRepeatSeries, detectRepeatWindows, detectShapeLoops, looksLikeFailure, neutralizeLeakedToolCalls, parameterizeError, REPEAT_MARKER, sanitizeForStore } from "./patterns"
 import { REPEAT_STOP_AFTER } from "./repeat"
-import type { EnforceContext } from "./context"
+import { envFlag } from "./store"
+import { LEAK_RECOVERY_SESSIONS_CAP, type EnforceContext } from "./context"
 
 // --- Tunables ---------------------------------------------------------------
 
@@ -21,6 +22,12 @@ export const TEMPLATE_REPEAT_NOTE = "repetition-note-v2"
 export const TEMPLATE_REPEAT_WINDOWED_NOTE = "repetition-windowed-note-v2"
 export const TEMPLATE_SHAPE_NOTE = "shape-loop-note-v2"
 export const TEMPLATE_LOOP_BREAK = "repeat-stop-inject-v2"
+
+/** leaked tool-call recovery: opt-in (DEJAVU_LEAK_RECOVERY) — neutralize a leaked serialization and inject a recovery turn */
+export const LEAK_RECOVERY = envFlag("DEJAVU_LEAK_RECOVERY", false)
+const LEAK_INJECT_MAX = 3
+export const TEMPLATE_LEAK_RECOVERY = "leak-recovery-inject-v1"
+export const LEAK_INJECT_TEXT = "[dejavu leak recovery - automated message, not the user] Your previous turn emitted a tool call as plain text (a leaked serialization) instead of a structured tool call, so it never ran. Re-issue the intended call now as a proper tool call with the same arguments. Do not repeat the serialized text."
 
 /** idempotency marks — a result already carrying the note is never noted twice on re-passed history */
 const NOTE_REPETITION_MARK = "[dejavu] REPETITION"
@@ -50,6 +57,8 @@ export interface RepeatChannelPart {
   tool?: string
   /** part id from the host payload — the stable identity of one call (audit logs) */
   id?: string
+  /** assistant text content (leak recovery reads/rewrites it in place) */
+  text?: string
   /** host-marked synthetic parts (dejavu injections) never count as user instructions */
   synthetic?: boolean
   state?: RepeatChannelState
@@ -87,6 +96,52 @@ function rawResultText(state: RepeatChannelState): string {
   const text = partResultText(state)
   const cut = text.indexOf("\n\n[dejavu]")
   return cut === -1 ? text : text.slice(0, cut)
+}
+
+async function recoverLeakedToolCall(messages: RepeatChannelMessage[], ctx: EnforceContext, injected: LoopBreakInjection[]): Promise<void> {
+  if (!LEAK_RECOVERY) return
+  const ephemeral = ctx.ephemeral
+  const sessionID = messages[messages.length - 1]?.info.sessionID ?? messages[0]?.info.sessionID
+  if (sessionID === undefined) return
+  let lastAssistantIndex = -1
+  for (let i = messages.length - 1; i >= 0; i--) {
+    const info = messages[i]?.info
+    if (info?.role === "assistant" && info.synthetic !== true) {
+      lastAssistantIndex = i
+      break
+    }
+  }
+  let lastLeakTool = "unknown"
+  let lastHadLeak = false
+  for (let i = 0; i < messages.length; i++) {
+    const msg = messages[i]
+    if (msg === undefined || msg.info.role !== "assistant" || msg.info.synthetic === true) continue
+    for (const part of msg.parts) {
+      if (part.type !== "text" || part.synthetic === true || typeof part.text !== "string") continue
+      if (detectLeakedToolCall(part.text) === null) continue
+      const original = part.text
+      part.text = neutralizeLeakedToolCalls(original)
+      if (i === lastAssistantIndex) {
+        lastHadLeak = true
+        lastLeakTool = /<\|DSL\|invoke\s+name="([^"]+)"/i.exec(original)?.[1] ?? "unknown"
+      }
+    }
+  }
+  if (!lastHadLeak) return
+  const count = ephemeral.leakRecoveryInjected.get(sessionID) ?? 0
+  if (count < LEAK_INJECT_MAX) {
+    injected.push({ sessionID, text: LEAK_INJECT_TEXT, logKey: "leaked-tool-call", tool: lastLeakTool, count: 1 })
+    ephemeral.leakRecoveryInjected.set(sessionID, count + 1)
+    while (ephemeral.leakRecoveryInjected.size > LEAK_RECOVERY_SESSIONS_CAP) {
+      const oldest = ephemeral.leakRecoveryInjected.keys().next()
+      if (oldest.done) break
+      ephemeral.leakRecoveryInjected.delete(oldest.value)
+    }
+  }
+  if (!ephemeral.leakRecoveryLogged.has(sessionID)) {
+    ephemeral.leakRecoveryLogged.add(sessionID)
+    await ctx.stores.logAll({ type: "leak-recovery", key: "leaked-tool-call", tool: sanitizeForStore(lastLeakTool).slice(0, 80), session: sessionID, project: ctx.projectDir, reaction: "inject", reason: "leaked-dsl", warned: 0, template: TEMPLATE_LEAK_RECOVERY })
+  }
 }
 
 /**
@@ -278,5 +333,6 @@ export async function applyRepeatChannel(messages: RepeatChannelMessage[], ctx: 
       }
     }
   }
+  await recoverLeakedToolCall(messages, ctx, injected)
   return { injected, mutated, noted }
 }

@@ -2,6 +2,7 @@
  * Characterization test for the dual-export entrypoint.
  * Run: bun test/v2-host.ts
  */
+import { spawnSync } from "node:child_process"
 import { mkdtemp, readFile, rm } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
@@ -246,6 +247,48 @@ try {
   const v2SyntheticUser = { role: "user", content: [{ type: "text", text: "automated" }], metadata: { synthetic: true } }
   const v2SyntheticBoundary: object[] = [v2User(), ...v2BashRound("y1", "a", "ok"), ...v2BashRound("y2", "b", "ok"), ...v2BashRound("y3", "c", "ok"), v2SyntheticUser, ...v2BashRound("y4", "d", "ok")]
   check("generate: a synthetic metadata message does not close the window (V1 parity)", (await invokeHook("generate", generateEvent(v2SyntheticBoundary, "r109v2d"))) === null && v2ResultText(v2SyntheticBoundary, 9).includes("SHAPE LOOP"))
+
+  // --- leaked tool-call recovery over the V2 generate hook (opt-in; module-load flag) ---
+  const r110Leak = '<|DSL|calls>\n<|DSL|invoke name="compress">\n<|DSL|parameter name="content" string="false">{}</|DSL|parameter>\n</|DSL|invoke>\n</|DSL|calls>'
+  const r110Dir = join(tmp2, "leak-project")
+  const r110Off: object[] = [
+    { role: "user", content: [{ type: "text", text: "go" }] },
+    { role: "assistant", content: [{ type: "text", text: r110Leak }] },
+  ]
+  check("generate: flag off leaves the leaked text part untouched", (await invokeHook("generate", generateEvent(r110Off, "r110off"))) === null && (r110Off[1] as { content: Array<{ text?: string }> }).content[0]?.text === r110Leak)
+  check("generate: flag off injects nothing", !r110Off.some((m) => (m as { role?: string }).role === "user" && JSON.stringify(m).includes("leak recovery")))
+
+  const r110Probe = `
+import { v2Setup } from ${JSON.stringify(new URL("../src/opencode-v2.ts", import.meta.url).href)}
+const regs = []
+const stub = {
+  location: { directory: process.env.R110_PROJECT },
+  tool: { hook: async (name, cb) => { regs.push({ name, cb }); return { dispose: async () => {} } } },
+  session: { hook: async (name, cb) => { regs.push({ name, cb }); return { dispose: async () => {} } } },
+  event: { subscribe: (input) => (async function* () { await new Promise((r) => input.signal.addEventListener("abort", r, { once: true })) })() },
+}
+const cleanup = await v2Setup(stub)
+const gen = regs.find((r) => r.name === "generate").cb
+const leak = ${JSON.stringify(r110Leak)}
+const messages = [
+  { role: "user", content: [{ type: "text", text: "go" }] },
+  { role: "assistant", content: [{ type: "text", text: leak }] },
+]
+await gen({ sessionID: "r110v2", model: { providerID: "p", modelID: "m" }, system: [], messages, options: {}, tools: {}, agent: "build" })
+cleanup()
+console.log(JSON.stringify({
+  text: messages[1].content[0].text,
+  injected: messages.filter((m) => m.role === "user" && m.metadata && m.metadata.synthetic === true).map((m) => m.content[0].text),
+}))
+`
+  const r110Run = spawnSync(process.execPath, ["-e", r110Probe], {
+    env: { ...process.env, DEJAVU_LEAK_RECOVERY: "1", DEJAVU_HOME: join(tmp2, "leak-home"), R110_PROJECT: r110Dir },
+    encoding: "utf8",
+  })
+  const r110Line = (r110Run.stdout ?? "").trim().split("\n").filter((l) => l.startsWith("{")).pop()
+  const r110 = JSON.parse(r110Line ?? "{}") as { text?: string; injected?: string[] }
+  check("generate: the leaked text part is neutralized in event.messages", typeof r110.text === "string" && r110.text.includes("[dejavu] (leaked tool-call serialization removed") && !r110.text.includes("<|DSL|"))
+  check("generate: a synthetic recovery turn is appended", (r110.injected?.length ?? 0) === 1 && (r110.injected?.[0] ?? "").includes("Re-issue the intended call now"))
 
   check("v2Setup returns a function", typeof cleanup === "function")
   let cleanupThrew: unknown = null

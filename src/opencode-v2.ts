@@ -51,6 +51,7 @@ interface V2ContentPart {
   id?: string
   name?: string
   input?: unknown
+  text?: string
   result?: { type: string; value: unknown }
 }
 
@@ -141,8 +142,19 @@ function toRepeatChannelMessages(messages: unknown, sessionID: string): RepeatCh
     if (msg.role === "tool") continue
     const parts: RepeatChannelPart[] = []
     for (const part of msg.content) {
-      if (part.type !== "tool-call") continue
-      parts.push(toolPartView(part, typeof part.id === "string" ? resultsById.get(part.id) : undefined))
+      if (part.type === "tool-call") {
+        parts.push(toolPartView(part, typeof part.id === "string" ? resultsById.get(part.id) : undefined))
+      } else if (part.type === "text") {
+        parts.push({
+          type: "text",
+          get text(): string | undefined {
+            return typeof part.text === "string" ? part.text : undefined
+          },
+          set text(value: string | undefined) {
+            if (typeof value === "string") part.text = value
+          },
+        })
+      }
     }
     structural.push({ info: { role: msg.role, sessionID, synthetic: msg.metadata?.synthetic }, parts })
   }

@@ -14,6 +14,7 @@ Dependency-free core: `patterns.ts` (pure functions — call identity, normaliza
 | Free-form error collapsing | patterns.ts | `parameterizeError` (event channel) vs `normalizeCommand` (bash) |
 | Near-duplicate merge | patterns.ts | `fuzzySimilar` = `levenshteinCapped` (early-exit) ≤ 0.3 + flag-subset rule + strict-flag-addition rescue on an absolute budget |
 | Failure text scan | patterns.ts | `detectFailure` + `FAILURE_SIGNATURES` |
+| Leaked tool-call serialization | patterns.ts | `detectLeakedToolCall` (last full block, fence-guarded, tail-anchored) + `neutralizeLeakedToolCalls` + `NEUTRAL_PLACEHOLDER` |
 | Noise filtering | patterns.ts | `isNoiseError` + `NOISE_ERRORS` (aborted/cancelled ≠ failed) |
 | Diagnostic/intended-exit logic | patterns.ts | `DIAGNOSTIC_VERBS`, `isIntendedNonzero`, `canBlock`, `canRemind`, `isUnixViewerSignature` |
 | Over-generic shape guard | patterns.ts | `hasResidualIdentity` — parameterized-away substance ⇒ watching only |
@@ -32,7 +33,7 @@ Dependency-free core: `patterns.ts` (pure functions — call identity, normaliza
 | Teaching texts | messages.ts | `remindMessage`/`remindNote`/`blockMessage` — verbatim wording, tier-truthful |
 | Proactive guards | guards.ts | long-running/wait-loop/suppressed-spawn/inherited-spawn/orphan-job/snowball + bypass warnings |
 | Repeat-series block | repeat.ts | `repeatSeriesDecision` — override kind FALLS THROUGH to gate processing |
-| Repeat/loop-break transform channel | repeat-channel.ts | `applyRepeatChannel` — marker sanitization, REPETITION/windowed/shape notes, loop-break injection over structural messages; hosts wire it (V1 transform / V2 generate) |
+| Repeat/loop-break transform channel | repeat-channel.ts | `applyRepeatChannel` — marker sanitization, REPETITION/windowed/shape notes, loop-break injection, opt-in leaked tool-call recovery (`recoverLeakedToolCall`, `DEJAVU_LEAK_RECOVERY`) over structural messages; hosts wire it (V1 transform / V2 generate) |
 | Harness payload mapping | adapters/*.ts | per-harness `mapInbound`/`mapOutbound`; `adapters/shared.ts` — `internalTool`/`internalArgs`/`str`/`rec`/`extractOutput`/`errorSignalled`/`genericToolOutput`/`allowDecision`/`denyDecision` |
 | Hook-handler CLI | cli.ts | argv/stdin parse → adapter → engine → decision JSON; fail-open; registry `ADAPTERS`; `session-start` phase → SessionStart gate digest (claude-only, read-only) |
 | OpenCode V2 host glue | opencode-v2.ts | `v2Setup` — registers execute.before/after, event.subscribe (session.deleted), compaction, and generate (repeat-channel parity) on the V2 plugin Context; deny-by-throw; reuses enforceBefore/enforceAfter/recordEventFailure/cleanupSession |
