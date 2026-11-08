@@ -140,6 +140,11 @@ async function recoverLeakedToolCall(messages: RepeatChannelMessage[], ctx: Enfo
   }
   if (!ephemeral.leakRecoveryLogged.has(sessionID)) {
     ephemeral.leakRecoveryLogged.add(sessionID)
+    while (ephemeral.leakRecoveryLogged.size > LEAK_RECOVERY_SESSIONS_CAP) {
+      const oldest = ephemeral.leakRecoveryLogged.keys().next()
+      if (oldest.done) break
+      ephemeral.leakRecoveryLogged.delete(oldest.value)
+    }
     await ctx.stores.logAll({ type: "leak-recovery", key: "leaked-tool-call", tool: sanitizeForStore(lastLeakTool).slice(0, 80), session: sessionID, project: ctx.projectDir, reaction: "inject", reason: "leaked-dsl", warned: 0, template: TEMPLATE_LEAK_RECOVERY })
   }
 }

@@ -10,6 +10,7 @@ import {
   enforceBefore,
   markTurnActed,
   recordEventFailure,
+  settleLoopInjection,
   type EnforceContext,
   type RepeatChannelMessage,
 } from "./src/enforce"
@@ -142,13 +143,15 @@ export const Dejavu: Plugin = async ({ directory, client }) => {
           const delta = (props as { delta?: unknown }).delta
           const text = typeof delta === "string" && delta !== "" ? appendReasoningDelta(ctx, sessionID, messageID, delta) : typeof p.text === "string" && p.text !== "" ? p.text : null
           if (text !== null) {
-            const action = await checkLoopRecovery(ctx, { sessionID, messageID, text })
+            const action = checkLoopRecovery(ctx, { sessionID, messageID, text })
             if (action !== null) {
               void (async () => {
                 try {
                   await client.session.abort({ path: { id: action.sessionID } })
                   await client.session.prompt({ path: { id: action.sessionID }, body: { parts: [{ type: "text", text: action.text }] } })
+                  await settleLoopInjection(ctx, action, true)
                 } catch (error) {
+                  await settleLoopInjection(ctx, action, false)
                   logHookError("loop-recovery", error)
                 }
               })()

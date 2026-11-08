@@ -70,6 +70,8 @@ export interface EphemeralState {
   leakRecoveryLogged: Set<string>
   /** leak recovery: sessionID → injected count (per-session cap) */
   leakRecoveryInjected: Map<string, number>
+  /** loop recovery: ${sessionID} → abort+prompt in flight (quota settles on outcome) */
+  stuckRecoveryInFlight: Set<string>
   /** loop recovery: sessionID → injection count (cap LOOP_RECOVERY_MAX) */
   stuckRecoveryInjected: Map<string, number>
   /** loop recovery: session IDs that already logged a recovery injection */
@@ -115,6 +117,7 @@ export function createEphemeralState(): EphemeralState {
     recentRecords: new Map(),
     leakRecoveryLogged: new Set(),
     leakRecoveryInjected: new Map(),
+    stuckRecoveryInFlight: new Set(),
     stuckRecoveryInjected: new Map(),
     stuckRecoveryLogged: new Set(),
     stuckRecoveryLastAt: new Map(),

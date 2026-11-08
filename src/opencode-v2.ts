@@ -9,6 +9,7 @@ import {
   enforceBefore,
   markTurnActed,
   recordEventFailure,
+  settleLoopInjection,
   type EnforceContext,
   type RepeatChannelMessage,
   type RepeatChannelPart,
@@ -286,13 +287,15 @@ export async function v2Setup(ctx: Plugin.Context): Promise<() => void> {
         if (evt.type === "session.reasoning.delta") {
           const data = evt.data
           const text = appendReasoningDelta(enforceCtx, data.sessionID, data.assistantMessageID, data.delta)
-          const action = await checkLoopRecovery(enforceCtx, { sessionID: data.sessionID, messageID: data.assistantMessageID, text })
+          const action = checkLoopRecovery(enforceCtx, { sessionID: data.sessionID, messageID: data.assistantMessageID, text })
           if (action !== null) {
             void (async () => {
               try {
                 await ctx.session.interrupt({ sessionID: action.sessionID })
                 await ctx.session.prompt({ sessionID: action.sessionID, text: action.text })
+                await settleLoopInjection(enforceCtx, action, true)
               } catch (error) {
+                await settleLoopInjection(enforceCtx, action, false)
                 onHookError("loop-recovery", error)
               }
             })()

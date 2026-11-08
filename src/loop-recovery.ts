@@ -66,12 +66,13 @@ function stuckTotal(ctx: EnforceContext, key: string, text: string): number {
   return total
 }
 
-export async function checkLoopRecovery(
+export function checkLoopRecovery(
   ctx: EnforceContext,
   input: { sessionID: string; messageID: string; text: string },
-): Promise<LoopRecoveryAction | null> {
+): LoopRecoveryAction | null {
   if (!LOOP_RECOVERY) return null
   const eph = ctx.ephemeral
+  if (eph.stuckRecoveryInFlight.has(input.sessionID)) return null
   const count = eph.stuckRecoveryInjected.get(input.sessionID) ?? 0
   if (count >= LOOP_RECOVERY_MAX) return null
   if (Date.now() - (eph.stuckRecoveryLastAt.get(input.sessionID) ?? 0) < LOOP_RECOVERY_COOLDOWN_MS) return null
@@ -93,25 +94,8 @@ export async function checkLoopRecovery(
     return null
   }
   eph.stuckReasoningPending.delete(key)
-  eph.stuckRecoveryInjected.set(input.sessionID, count + 1)
-  evictMap(eph.stuckRecoveryInjected, LOOP_RECOVERY_SESSIONS_CAP)
-  eph.stuckRecoveryLastAt.set(input.sessionID, Date.now())
-  evictMap(eph.stuckRecoveryLastAt, LOOP_RECOVERY_SESSIONS_CAP)
-  if (!eph.stuckRecoveryLogged.has(input.sessionID)) {
-    eph.stuckRecoveryLogged.add(input.sessionID)
-    evictSet(eph.stuckRecoveryLogged, LOOP_RECOVERY_SESSIONS_CAP)
-    await ctx.stores.logAll({
-      type: "loop-recovery",
-      key: sanitizeForStore(verdict.kind).slice(0, 80),
-      tool: undefined,
-      session: sanitizeForStore(input.sessionID).slice(0, 80),
-      project: ctx.projectDir,
-      reaction: "inject",
-      reason: sanitizeForStore(verdict.signal).slice(0, 80),
-      warned: count,
-      template: TEMPLATE_LOOP_RECOVERY,
-    })
-  }
+  eph.stuckRecoveryInFlight.add(input.sessionID)
+  evictSet(eph.stuckRecoveryInFlight, LOOP_RECOVERY_SESSIONS_CAP)
   return {
     sessionID: input.sessionID,
     kind: verdict.kind,
@@ -121,7 +105,39 @@ export async function checkLoopRecovery(
   }
 }
 
+/** quota, cooldown and log settle here — a failed abort+prompt burns nothing and retries */
+export async function settleLoopInjection(
+  ctx: EnforceContext,
+  input: { sessionID: string; kind: StuckKind; signal: string },
+  ok: boolean,
+): Promise<void> {
+  if (!LOOP_RECOVERY) return
+  const eph = ctx.ephemeral
+  eph.stuckRecoveryInFlight.delete(input.sessionID)
+  if (!ok) return
+  const count = (eph.stuckRecoveryInjected.get(input.sessionID) ?? 0) + 1
+  eph.stuckRecoveryInjected.set(input.sessionID, count)
+  evictMap(eph.stuckRecoveryInjected, LOOP_RECOVERY_SESSIONS_CAP)
+  eph.stuckRecoveryLastAt.set(input.sessionID, Date.now())
+  evictMap(eph.stuckRecoveryLastAt, LOOP_RECOVERY_SESSIONS_CAP)
+  if (eph.stuckRecoveryLogged.has(input.sessionID)) return
+  eph.stuckRecoveryLogged.add(input.sessionID)
+  evictSet(eph.stuckRecoveryLogged, LOOP_RECOVERY_SESSIONS_CAP)
+  await ctx.stores.logAll({
+    type: "loop-recovery",
+    key: sanitizeForStore(input.kind).slice(0, 80),
+    tool: undefined,
+    session: sanitizeForStore(input.sessionID).slice(0, 80),
+    project: ctx.projectDir,
+    reaction: "inject",
+    reason: sanitizeForStore(input.signal).slice(0, 80),
+    warned: count - 1,
+    template: TEMPLATE_LOOP_RECOVERY,
+  })
+}
+
 export function clearLoopRecoverySession(ctx: EnforceContext, sessionID: string): void {
+  ctx.ephemeral.stuckRecoveryInFlight.delete(sessionID)
   ctx.ephemeral.stuckRecoveryInjected.delete(sessionID)
   ctx.ephemeral.stuckRecoveryLogged.delete(sessionID)
   ctx.ephemeral.stuckRecoveryLastAt.delete(sessionID)

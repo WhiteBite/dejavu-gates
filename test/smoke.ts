@@ -3499,10 +3499,16 @@ const r111Probe = `
 import { Dejavu } from ${JSON.stringify(new URL("../index.ts", import.meta.url).href)}
 const aborts = []
 const prompts = []
+const attempts = []
+let lr4Failed = false
 const client = {
   app: { log: async () => ({}) },
   session: {
-    abort: async (input) => { aborts.push(input); return {} },
+    abort: async (input) => {
+      attempts.push(input.path.id)
+      if (input.path.id === "lr4" && !lr4Failed) { lr4Failed = true; throw new Error("session busy") }
+      aborts.push(input); return {}
+    },
     prompt: async (input) => { prompts.push(input); return {} },
   },
 }
@@ -3535,9 +3541,13 @@ fake += 31000
 await confirm("lr3", "m4")
 fake += 31000
 await confirm("lr3", "m5")
+fake += 31000
+await confirm("lr4", "m4a")
+await confirm("lr4", "m4b")
 await new Promise((r) => setTimeout(r, 30))
 Date.now = realNow
 console.log(JSON.stringify({
+  attempts: attempts.length,
   aborts: aborts.length,
   prompts: prompts.length,
   abortSessions: aborts.map((a) => a.path.id),
@@ -3549,12 +3559,13 @@ const r111Run = spawnSync(process.execPath, ["-e", r111Probe], {
   encoding: "utf8",
 })
 const r111Line = (r111Run.stdout ?? "").trim().split("\n").filter((l) => l.startsWith("{")).pop()
-const r111 = JSON.parse(r111Line ?? "{}") as { aborts?: number; prompts?: number; abortSessions?: string[]; promptTexts?: string[] }
+const r111 = JSON.parse(r111Line ?? "{}") as { attempts?: number; aborts?: number; prompts?: number; abortSessions?: string[]; promptTexts?: string[] }
 check("loop recovery: a confirmed stuck reasoning part aborts and injects", (r111.abortSessions ?? []).filter((s) => s === "lr1").length === 1 && (r111.prompts ?? 0) === (r111.aborts ?? 0))
 check("loop recovery: a single unconfirmed spike does not fire", !(r111.abortSessions ?? []).includes("lr9"))
 check("loop recovery: the injected turn is the spam correction", (r111.promptTexts ?? []).every((t) => t.includes("repetition loop")))
 check("loop recovery: the acted turn is suppressed", !(r111.abortSessions ?? []).includes("lr2"))
-check("loop recovery: the per-session cap stops at 2", (r111.abortSessions ?? []).filter((s) => s === "lr3").length === 2 && (r111.aborts ?? 0) === 3)
+check("loop recovery: the per-session cap stops at 2", (r111.abortSessions ?? []).filter((s) => s === "lr3").length === 2)
+check("loop recovery: a failed abort burns no quota and the retry lands", (r111.attempts ?? 0) - (r111.aborts ?? 0) === 1 && (r111.abortSessions ?? []).filter((s) => s === "lr4").length === 1 && (r111.prompts ?? 0) === 4)
 const r111Log = await readFile(join(r111Dir, ".opencode", "dejavu", "log.jsonl"), "utf8").catch(() => "")
 check("loop recovery: a loop-recovery log event is written", r111Log.includes('"type":"loop-recovery"'))
 

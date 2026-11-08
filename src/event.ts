@@ -71,6 +71,8 @@ export async function cleanupSession(sessionId: string, ctx: EnforceContext): Pr
   ctx.ephemeral.repeatSeries.delete(sessionId)
   ctx.ephemeral.repeatWindowLogged.delete(sessionId)
   ctx.ephemeral.bashChain.delete(sessionId)
+  ctx.ephemeral.leakRecoveryLogged.delete(sessionId)
+  ctx.ephemeral.leakRecoveryInjected.delete(sessionId)
   for (const key of ctx.ephemeral.loopBreakInjected) {
     if (key.startsWith(`${sessionId}:`)) ctx.ephemeral.loopBreakInjected.delete(key)
   }

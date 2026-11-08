@@ -50,6 +50,7 @@ export {
   LOOP_RECOVERY_OSC_TEXT,
   LOOP_RECOVERY_SPAM_TEXT,
   markTurnActed,
+  settleLoopInjection,
   STUCK_CHECK_GROWTH,
   TEMPLATE_LOOP_RECOVERY,
   type LoopRecoveryAction,

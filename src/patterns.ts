@@ -2037,6 +2037,11 @@ export function suggestCorrection(signature: string, snippet: string, platform: 
 // --- Leaked tool-call serialization (payload hygiene) -----------------------
 
 const LEAK_BLOCK = /<\|DSL\|calls>[\s\S]*?<\/\|DSL\|calls>/gi
+const LEAK_OPENER = /<\|DSL\|calls>/gi
+const LEAK_INVOKE = /<\|DSL\|invoke/i
+/** adjacency of the real DSL: the invoke tag follows the opener immediately; prose between them is a mention */
+const LEAK_OPENER_LEN = 12
+const LEAK_INVOKE_GAP = 4
 const FENCE_LINE = /(?:^|\n)[ \t]*(?:```|~~~)/g
 
 export const NEUTRAL_PLACEHOLDER = "[dejavu] (leaked tool-call serialization removed - re-issue the intended call as a proper tool call)"
@@ -2046,20 +2051,59 @@ function insideFence(text: string, index: number): boolean {
   return fences !== null && fences.length % 2 === 1
 }
 
-/** Last full block only, fence-guarded and tail-anchored — a leak is the model's output, not an inline mention. */
+/** an emitting leak starts at a raw position — a preceding backtick marks an inline code mention */
+function inlineMention(text: string, start: number): boolean {
+  return text.charCodeAt(start - 1) === 96
+}
+
+function truncatedLeakSpan(text: string): { start: number; end: number } | null {
+  let lastOpen = -1
+  let m: RegExpExecArray | null
+  const ore = new RegExp(LEAK_OPENER.source, "gi")
+  while ((m = ore.exec(text)) !== null) lastOpen = m.index
+  if (lastOpen === -1) return null
+  if (text.toLowerCase().indexOf("</|dsl|calls>", lastOpen) !== -1) return null
+  const invokeAt = text.slice(lastOpen + LEAK_OPENER_LEN).search(LEAK_INVOKE)
+  if (invokeAt === -1 || invokeAt > LEAK_INVOKE_GAP - 1) return null
+  if (insideFence(text, lastOpen)) return null
+  if (inlineMention(text, lastOpen)) return null
+  return { start: lastOpen, end: text.length }
+}
+
+/** Last tail-anchored block, fence/quotation-guarded — a stream cut inside the payload counts too */
 export function detectLeakedToolCall(text: string): { start: number; end: number } | null {
   let last: RegExpExecArray | null = null
   let m: RegExpExecArray | null
   const re = new RegExp(LEAK_BLOCK.source, "gi")
   while ((m = re.exec(text)) !== null) last = m
-  if (last === null) return null
-  if (insideFence(text, last.index)) return null
-  if (text.slice(last.index + last[0].length).trim() !== "") return null
-  return { start: last.index, end: last.index + last[0].length }
+  if (
+    last !== null &&
+    !insideFence(text, last.index) &&
+    !inlineMention(text, last.index) &&
+    text.slice(last.index + last[0].length).trim() === ""
+  ) {
+    return { start: last.index, end: last.index + last[0].length }
+  }
+  return truncatedLeakSpan(text)
 }
 
+/** Scrubs every guard-passing block — fenced examples and inline mentions stay intact */
 export function neutralizeLeakedToolCalls(text: string): string {
-  return text.replace(new RegExp(LEAK_BLOCK.source, "gi"), NEUTRAL_PLACEHOLDER)
+  let out = ""
+  let cursor = 0
+  const re = new RegExp(LEAK_BLOCK.source, "gi")
+  let m: RegExpExecArray | null
+  while ((m = re.exec(text)) !== null) {
+    if (insideFence(text, m.index) || inlineMention(text, m.index)) continue
+    out += text.slice(cursor, m.index) + NEUTRAL_PLACEHOLDER
+    cursor = m.index + m[0].length
+  }
+  const truncated = truncatedLeakSpan(text)
+  if (truncated !== null && truncated.start >= cursor) {
+    out += text.slice(cursor, truncated.start) + NEUTRAL_PLACEHOLDER
+    cursor = text.length
+  }
+  return cursor === 0 ? text : out + text.slice(cursor)
 }
 
 /** only the tail is scanned — bounds work per streaming call */
