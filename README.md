@@ -248,10 +248,12 @@ Project stores keep themselves out of `git status`: init writes a self-ignoring 
 
 ### Environment overrides
 
-`DEJAVU_HOME` moves both store dirs; `DEJAVU_DEBUG=1` prints hook-CLI diagnostics to stderr. The enforcement tunables below can be overridden per process without editing source — each is read once at startup and falls back to its default when the value is not an integer within bounds:
+`DEJAVU_HOME` moves both store dirs; `DEJAVU_DEBUG=1` prints hook-CLI diagnostics to stderr. The opt-in recovery flags enable at `1`/`true`/`yes` (default off); the enforcement tunables below can be overridden per process without editing source — each is read once at startup and falls back to its default when the value is not an integer within bounds:
 
 | Variable | Default | Bounds | Effect |
 |---|---|---|---|
+| `DEJAVU_LEAK_RECOVERY` | off | flag | opt in to leaked tool-call recovery in the repeat channel (OpenCode hosts) |
+| `DEJAVU_LOOP_RECOVERY` | off | flag | opt in to stuck-reasoning loop recovery: abort + corrective user turn (OpenCode hosts) |
 | `DEJAVU_TTL_DAYS` | 60 | 1–3650 | days without recurrence before a gate expires |
 | `DEJAVU_NOISE_TTL_DAYS` | 7 | 1–365 | TTL for one-off patterns (`watching`, count ≤ 1) |
 | `DEJAVU_PROMOTE_COUNT` | 3 | 1–100 | failures before a bash pattern becomes a gate |
