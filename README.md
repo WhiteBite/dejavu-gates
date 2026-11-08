@@ -20,6 +20,8 @@
   <img src="https://github.com/WhiteBite/dejavu-gates/actions/workflows/ci.yml/badge.svg" alt="CI">
 </p>
 
+![dejavu-gates demo: an agent stops repeating a failing call after the gate fires](assets/dejavu-gates.png)
+
 Cross-session **memory prosthesis with teeth** for AI coding agents. Agents repeat the same mistakes because they forget between sessions — and markdown rules don't fix that. dejavu mechanically detects recurring tool-call failures (bash, read, edit, write, glob, grep) and promotes them into enforced gates: a reminder on the next attempt, a hard block on same-session repeat offense. One engine, many hosts: OpenCode (plugin), Claude Code, Codex CLI, Gemini CLI, Cursor, Copilot CLI, Crush, Devin CLI, Kiro (hook-handler CLI), Cline (in-package plugin). TypeScript + Bun, ships as source, no build step.
 
 ## Quickstart

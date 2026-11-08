@@ -1,0 +1,59 @@
+{
+  "theme": "opencode",
+  "windowTitle": "seed the local database",
+  "arrowCaption": "dejavu-gates plugin",
+  "statusLeft": "esc interrupt",
+  "statusRight": "ctrl+t variants  tab agents  ctrl+p commands",
+
+  "before": {
+    "caption": "without dejavu",
+    "sessionTitle": "# seed the local database",
+    "usage": "18,240  14%  ($0.07)",
+    "blocks": [
+      { "type": "user", "text": "seed the local database" },
+      { "type": "prose", "text": "I'll run the seed script." },
+      { "type": "tool", "kind": "call", "text": "npm run seed" },
+      { "type": "tool", "kind": "call", "text": "npm run seed" },
+      { "type": "tool", "kind": "call", "text": "npm run seed" },
+      { "type": "tool", "kind": "call", "text": "npm run seed" },
+      { "type": "diff", "lines": [
+        { "type": "del", "text": "ECONNREFUSED 127.0.0.1:5432" },
+        { "type": "del", "text": "same call, same error, 4 times" },
+        { "type": "del", "text": "0 progress - 4 wasted loops" }
+      ] },
+      { "type": "status", "text": "no gate - the loop never breaks" }
+    ],
+    "agentName": "Build",
+    "agentModel": "· claude-opus-4-5",
+    "inputAgent": "Build",
+    "inputModel": "Claude Opus 4.5",
+    "inputProvider": "OpenCode Zen"
+  },
+
+  "after": {
+    "caption": "with dejavu",
+    "sessionTitle": "# seed the local database",
+    "usage": "9,120  7%  ($0.03)",
+    "blocks": [
+      { "type": "user", "text": "seed the local database" },
+      { "type": "prose", "text": "I'll run the seed script." },
+      { "type": "tool", "kind": "call", "text": "npm run seed" },
+      { "type": "tool", "kind": "call", "text": "npm run seed" },
+      { "type": "tool", "kind": "call", "text": "npm run seed" },
+      { "type": "status", "text": "[dejavu] REMINDER - call aborted. CORRECTION: start the database first (docker compose up -d db). EVIDENCE: 3 failures across 2 sessions." },
+      { "type": "tool", "kind": "call", "text": "docker compose up -d db" },
+      { "type": "tool", "kind": "call", "text": "npm run seed" },
+      { "type": "diff", "lines": [
+        { "type": "add", "text": "gate fired on the 3rd recurrence" },
+        { "type": "add", "text": "approach switched: start db, then seed" },
+        { "type": "add", "text": "seeded 1,204 rows" }
+      ] },
+      { "type": "done", "text": "done in 3.1s" }
+    ],
+    "agentName": "Build",
+    "agentModel": "· claude-opus-4-5",
+    "inputAgent": "Build",
+    "inputModel": "Claude Opus 4.5",
+    "inputProvider": "OpenCode Zen"
+  }
+}
