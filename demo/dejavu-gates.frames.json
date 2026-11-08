@@ -18,6 +18,10 @@
     "after": {
       "surface": "terminal",
       "blocks": []
+    },
+    "hud": {
+      "text": "counting: failure 1/3 - 1 session",
+      "tone": "learn"
     }
   },
   {
@@ -44,6 +48,10 @@
     "after": {
       "surface": "terminal",
       "blocks": []
+    },
+    "hud": {
+      "text": "counting: failure 1/3 - 1 session",
+      "tone": "learn"
     }
   },
   {
@@ -70,6 +78,10 @@
     "after": {
       "surface": "terminal",
       "blocks": []
+    },
+    "hud": {
+      "text": "counting: failure 1/3 - 1 session",
+      "tone": "learn"
     }
   },
   {
@@ -96,6 +108,10 @@
     "after": {
       "surface": "terminal",
       "blocks": []
+    },
+    "hud": {
+      "text": "counting: failure 1/3 - 1 session",
+      "tone": "learn"
     }
   },
   {
@@ -122,6 +138,10 @@
     "after": {
       "surface": "terminal",
       "blocks": []
+    },
+    "hud": {
+      "text": "counting: failure 1/3 - 1 session",
+      "tone": "learn"
     }
   },
   {
@@ -148,6 +168,10 @@
     "after": {
       "surface": "terminal",
       "blocks": []
+    },
+    "hud": {
+      "text": "counting: failure 1/3 - 1 session",
+      "tone": "learn"
     }
   },
   {
@@ -174,6 +198,10 @@
     "after": {
       "surface": "terminal",
       "blocks": []
+    },
+    "hud": {
+      "text": "counting: failure 1/3 - 1 session",
+      "tone": "learn"
     }
   },
   {
@@ -200,6 +228,10 @@
     "after": {
       "surface": "terminal",
       "blocks": []
+    },
+    "hud": {
+      "text": "counting: failure 1/3 - 1 session",
+      "tone": "learn"
     }
   },
   {
@@ -226,6 +258,10 @@
     "after": {
       "surface": "terminal",
       "blocks": []
+    },
+    "hud": {
+      "text": "counting: failure 1/3 - 1 session",
+      "tone": "learn"
     }
   },
   {
@@ -252,6 +288,10 @@
     "after": {
       "surface": "terminal",
       "blocks": []
+    },
+    "hud": {
+      "text": "counting: failure 1/3 - 1 session",
+      "tone": "learn"
     }
   },
   {
@@ -287,6 +327,10 @@
     "after": {
       "surface": "terminal",
       "blocks": []
+    },
+    "hud": {
+      "text": "counting: failure 1/3 - 1 session",
+      "tone": "learn"
     }
   },
   {
@@ -322,6 +366,10 @@
     "after": {
       "surface": "terminal",
       "blocks": []
+    },
+    "hud": {
+      "text": "counting: failure 1/3 - 1 session",
+      "tone": "learn"
     }
   },
   {
@@ -362,6 +410,10 @@
     "after": {
       "surface": "terminal",
       "blocks": []
+    },
+    "hud": {
+      "text": "counting: failure 1/3 - 1 session",
+      "tone": "learn"
     }
   },
   {
@@ -402,6 +454,10 @@
     "after": {
       "surface": "terminal",
       "blocks": []
+    },
+    "hud": {
+      "text": "counting: failure 1/3 - 1 session",
+      "tone": "learn"
     }
   },
   {
@@ -442,6 +498,10 @@
     "after": {
       "surface": "terminal",
       "blocks": []
+    },
+    "hud": {
+      "text": "counting: failure 1/3 - 1 session",
+      "tone": "learn"
     }
   },
   {
@@ -476,6 +536,106 @@
           "type": "status",
           "text": "[dejavu] failure 1/3 - session 1",
           "hl": true
+        },
+        {
+          "type": "divider",
+          "text": "session 2"
+        }
+      ]
+    },
+    "after": {
+      "surface": "terminal",
+      "blocks": []
+    },
+    "hud": {
+      "text": "counting: failure 1/3 - 1 session",
+      "tone": "learn"
+    }
+  },
+  {
+    "theme": "opencode",
+    "windowTitle": "deploy to staging",
+    "takeaway": "A second session repeats the call - the count survives",
+    "delay": 1,
+    "before": {
+      "surface": "single",
+      "caption": "session 2",
+      "sessionTitle": "# deploy to staging",
+      "blocks": [
+        {
+          "type": "user",
+          "text": "deploy to staging"
+        },
+        {
+          "type": "tool",
+          "kind": "call",
+          "text": "deploy --to dist --env stg"
+        },
+        {
+          "type": "diff",
+          "lines": [
+            {
+              "type": "del",
+              "text": "Error: unknown flag --env"
+            }
+          ]
+        },
+        {
+          "type": "status",
+          "text": "[dejavu] failure 1/3 - session 1",
+          "hl": true
+        },
+        {
+          "type": "divider",
+          "text": "session 2"
+        }
+      ]
+    },
+    "after": {
+      "surface": "terminal",
+      "blocks": []
+    },
+    "hud": {
+      "text": "counting: failure 2/3 - 2 sessions",
+      "tone": "learn"
+    }
+  },
+  {
+    "theme": "opencode",
+    "windowTitle": "deploy to staging",
+    "takeaway": "A second session repeats the call - the count survives",
+    "delay": 0.07,
+    "before": {
+      "surface": "single",
+      "caption": "session 2",
+      "sessionTitle": "# deploy to staging",
+      "blocks": [
+        {
+          "type": "user",
+          "text": "deploy to staging"
+        },
+        {
+          "type": "tool",
+          "kind": "call",
+          "text": "deploy --to dist --env stg"
+        },
+        {
+          "type": "diff",
+          "lines": [
+            {
+              "type": "del",
+              "text": "Error: unknown flag --env"
+            }
+          ]
+        },
+        {
+          "type": "status",
+          "text": "[dejavu] failure 1/3 - session 1",
+          "hl": true
+        },
+        {
+          "type": "divider",
+          "text": "session 2"
         },
         {
           "type": "status",
@@ -487,6 +647,10 @@
     "after": {
       "surface": "terminal",
       "blocks": []
+    },
+    "hud": {
+      "text": "counting: failure 2/3 - 2 sessions",
+      "tone": "learn"
     }
   },
   {
@@ -523,6 +687,10 @@
           "hl": true
         },
         {
+          "type": "divider",
+          "text": "session 2"
+        },
+        {
           "type": "status",
           "text": "[dejavu] failure 2/3 - 2 sessions",
           "hl": true
@@ -532,6 +700,10 @@
     "after": {
       "surface": "terminal",
       "blocks": []
+    },
+    "hud": {
+      "text": "counting: failure 2/3 - 2 sessions",
+      "tone": "learn"
     }
   },
   {
@@ -568,6 +740,10 @@
           "hl": true
         },
         {
+          "type": "divider",
+          "text": "session 2"
+        },
+        {
           "type": "status",
           "text": "[dejavu] failure 2/3 - 2 sessions",
           "hl": true
@@ -577,6 +753,10 @@
     "after": {
       "surface": "terminal",
       "blocks": []
+    },
+    "hud": {
+      "text": "counting: failure 2/3 - 2 sessions",
+      "tone": "learn"
     }
   },
   {
@@ -611,6 +791,10 @@
           "type": "status",
           "text": "[dejavu] failure 1/3 - session 1",
           "hl": true
+        },
+        {
+          "type": "divider",
+          "text": "session 2"
         },
         {
           "type": "status",
@@ -627,6 +811,10 @@
     "after": {
       "surface": "terminal",
       "blocks": []
+    },
+    "hud": {
+      "text": "counting: failure 2/3 - 2 sessions",
+      "tone": "learn"
     }
   },
   {
@@ -663,6 +851,10 @@
           "hl": true
         },
         {
+          "type": "divider",
+          "text": "session 2"
+        },
+        {
           "type": "status",
           "text": "[dejavu] failure 2/3 - 2 sessions",
           "hl": true
@@ -677,6 +869,10 @@
     "after": {
       "surface": "terminal",
       "blocks": []
+    },
+    "hud": {
+      "text": "counting: failure 2/3 - 2 sessions",
+      "tone": "learn"
     }
   },
   {
@@ -713,6 +909,10 @@
           "hl": true
         },
         {
+          "type": "divider",
+          "text": "session 2"
+        },
+        {
           "type": "status",
           "text": "[dejavu] failure 2/3 - 2 sessions",
           "hl": true
@@ -727,6 +927,10 @@
     "after": {
       "surface": "terminal",
       "blocks": []
+    },
+    "hud": {
+      "text": "counting: failure 3/3 - 2 sessions - PROMOTED",
+      "tone": "learn"
     }
   },
   {
@@ -761,6 +965,10 @@
           "type": "status",
           "text": "[dejavu] failure 1/3 - session 1",
           "hl": true
+        },
+        {
+          "type": "divider",
+          "text": "session 2"
         },
         {
           "type": "status",
@@ -782,6 +990,10 @@
     "after": {
       "surface": "terminal",
       "blocks": []
+    },
+    "hud": {
+      "text": "counting: failure 3/3 - 2 sessions - PROMOTED",
+      "tone": "learn"
     }
   },
   {
@@ -818,6 +1030,10 @@
           "hl": true
         },
         {
+          "type": "divider",
+          "text": "session 2"
+        },
+        {
           "type": "status",
           "text": "[dejavu] failure 2/3 - 2 sessions",
           "hl": true
@@ -837,6 +1053,10 @@
     "after": {
       "surface": "terminal",
       "blocks": []
+    },
+    "hud": {
+      "text": "counting: failure 3/3 - 2 sessions - PROMOTED",
+      "tone": "learn"
     }
   },
   {
@@ -873,6 +1093,10 @@
           "hl": true
         },
         {
+          "type": "divider",
+          "text": "session 2"
+        },
+        {
           "type": "status",
           "text": "[dejavu] failure 2/3 - 2 sessions",
           "hl": true
@@ -892,6 +1116,10 @@
     "after": {
       "surface": "terminal",
       "blocks": []
+    },
+    "hud": {
+      "text": "gate blocking - intercepts repeats",
+      "tone": "block"
     }
   },
   {
@@ -928,6 +1156,10 @@
           "hl": true
         },
         {
+          "type": "divider",
+          "text": "session 2"
+        },
+        {
           "type": "status",
           "text": "[dejavu] failure 2/3 - 2 sessions",
           "hl": true
@@ -941,6 +1173,144 @@
           "type": "status",
           "text": "[dejavu] gate promoted - blocking",
           "hl": true
+        },
+        {
+          "type": "divider",
+          "text": "session 3"
+        }
+      ]
+    },
+    "after": {
+      "surface": "terminal",
+      "blocks": []
+    },
+    "hud": {
+      "text": "gate blocking - intercepts repeats",
+      "tone": "block"
+    }
+  },
+  {
+    "theme": "opencode",
+    "windowTitle": "deploy to staging",
+    "takeaway": "The gate teaches: CORRECTION and EVIDENCE, not just no",
+    "delay": 1,
+    "before": {
+      "surface": "single",
+      "caption": "session 3",
+      "sessionTitle": "# deploy to staging",
+      "blocks": [
+        {
+          "type": "user",
+          "text": "deploy to staging"
+        },
+        {
+          "type": "tool",
+          "kind": "call",
+          "text": "deploy --to dist --env stg"
+        },
+        {
+          "type": "diff",
+          "lines": [
+            {
+              "type": "del",
+              "text": "Error: unknown flag --env"
+            }
+          ]
+        },
+        {
+          "type": "status",
+          "text": "[dejavu] failure 1/3 - session 1",
+          "hl": true
+        },
+        {
+          "type": "divider",
+          "text": "session 2"
+        },
+        {
+          "type": "status",
+          "text": "[dejavu] failure 2/3 - 2 sessions",
+          "hl": true
+        },
+        {
+          "type": "status",
+          "text": "[dejavu] failure 3/3 - 2 sessions",
+          "hl": true
+        },
+        {
+          "type": "status",
+          "text": "[dejavu] gate promoted - blocking",
+          "hl": true
+        },
+        {
+          "type": "divider",
+          "text": "session 3"
+        }
+      ]
+    },
+    "after": {
+      "surface": "terminal",
+      "blocks": []
+    },
+    "hud": {
+      "text": "gate blocking - intercepts repeats",
+      "tone": "block"
+    }
+  },
+  {
+    "theme": "opencode",
+    "windowTitle": "deploy to staging",
+    "takeaway": "The gate teaches: CORRECTION and EVIDENCE, not just no",
+    "delay": 0.07,
+    "before": {
+      "surface": "single",
+      "caption": "session 3",
+      "sessionTitle": "# deploy to staging",
+      "blocks": [
+        {
+          "type": "user",
+          "text": "deploy to staging"
+        },
+        {
+          "type": "tool",
+          "kind": "call",
+          "text": "deploy --to dist --env stg"
+        },
+        {
+          "type": "diff",
+          "lines": [
+            {
+              "type": "del",
+              "text": "Error: unknown flag --env"
+            }
+          ]
+        },
+        {
+          "type": "status",
+          "text": "[dejavu] failure 1/3 - session 1",
+          "hl": true
+        },
+        {
+          "type": "divider",
+          "text": "session 2"
+        },
+        {
+          "type": "status",
+          "text": "[dejavu] failure 2/3 - 2 sessions",
+          "hl": true
+        },
+        {
+          "type": "status",
+          "text": "[dejavu] failure 3/3 - 2 sessions",
+          "hl": true
+        },
+        {
+          "type": "status",
+          "text": "[dejavu] gate promoted - blocking",
+          "hl": true
+        },
+        {
+          "type": "divider",
+          "text": "session 3"
         },
         {
           "type": "tool",
@@ -952,6 +1322,10 @@
     "after": {
       "surface": "terminal",
       "blocks": []
+    },
+    "hud": {
+      "text": "gate blocking - intercepts repeats",
+      "tone": "block"
     }
   },
   {
@@ -988,6 +1362,10 @@
           "hl": true
         },
         {
+          "type": "divider",
+          "text": "session 2"
+        },
+        {
           "type": "status",
           "text": "[dejavu] failure 2/3 - 2 sessions",
           "hl": true
@@ -1001,6 +1379,10 @@
           "type": "status",
           "text": "[dejavu] gate promoted - blocking",
           "hl": true
+        },
+        {
+          "type": "divider",
+          "text": "session 3"
         },
         {
           "type": "tool",
@@ -1012,6 +1394,10 @@
     "after": {
       "surface": "terminal",
       "blocks": []
+    },
+    "hud": {
+      "text": "gate blocking - intercepts repeats",
+      "tone": "block"
     }
   },
   {
@@ -1024,10 +1410,6 @@
       "caption": "session 3",
       "sessionTitle": "# deploy to staging",
       "blocks": [
-        {
-          "type": "user",
-          "text": "deploy to staging"
-        },
         {
           "type": "tool",
           "kind": "call",
@@ -1048,6 +1430,10 @@
           "hl": true
         },
         {
+          "type": "divider",
+          "text": "session 2"
+        },
+        {
           "type": "status",
           "text": "[dejavu] failure 2/3 - 2 sessions",
           "hl": true
@@ -1061,6 +1447,10 @@
           "type": "status",
           "text": "[dejavu] gate promoted - blocking",
           "hl": true
+        },
+        {
+          "type": "divider",
+          "text": "session 3"
         },
         {
           "type": "tool",
@@ -1077,6 +1467,10 @@
     "after": {
       "surface": "terminal",
       "blocks": []
+    },
+    "hud": {
+      "text": "gate blocking - intercepts repeats",
+      "tone": "block"
     }
   },
   {
@@ -1089,10 +1483,6 @@
       "caption": "session 3",
       "sessionTitle": "# deploy to staging",
       "blocks": [
-        {
-          "type": "user",
-          "text": "deploy to staging"
-        },
         {
           "type": "tool",
           "kind": "call",
@@ -1113,6 +1503,10 @@
           "hl": true
         },
         {
+          "type": "divider",
+          "text": "session 2"
+        },
+        {
           "type": "status",
           "text": "[dejavu] failure 2/3 - 2 sessions",
           "hl": true
@@ -1126,6 +1520,10 @@
           "type": "status",
           "text": "[dejavu] gate promoted - blocking",
           "hl": true
+        },
+        {
+          "type": "divider",
+          "text": "session 3"
         },
         {
           "type": "tool",
@@ -1142,6 +1540,10 @@
     "after": {
       "surface": "terminal",
       "blocks": []
+    },
+    "hud": {
+      "text": "gate blocking - intercepts repeats",
+      "tone": "block"
     }
   },
   {
@@ -1154,15 +1556,6 @@
       "caption": "session 3",
       "sessionTitle": "# deploy to staging",
       "blocks": [
-        {
-          "type": "user",
-          "text": "deploy to staging"
-        },
-        {
-          "type": "tool",
-          "kind": "call",
-          "text": "deploy --to dist --env stg"
-        },
         {
           "type": "diff",
           "lines": [
@@ -1178,6 +1571,10 @@
           "hl": true
         },
         {
+          "type": "divider",
+          "text": "session 2"
+        },
+        {
           "type": "status",
           "text": "[dejavu] failure 2/3 - 2 sessions",
           "hl": true
@@ -1193,6 +1590,10 @@
           "hl": true
         },
         {
+          "type": "divider",
+          "text": "session 3"
+        },
+        {
           "type": "tool",
           "kind": "call",
           "text": "deploy --to dist --env stg"
@@ -1203,78 +1604,12 @@
           "hl": true
         },
         {
-          "type": "status",
-          "text": "CORRECTION: use --environment,",
-          "hl": true
-        }
-      ]
-    },
-    "after": {
-      "surface": "terminal",
-      "blocks": []
-    }
-  },
-  {
-    "theme": "opencode",
-    "windowTitle": "deploy to staging",
-    "takeaway": "The gate teaches: CORRECTION and EVIDENCE, not just no",
-    "delay": 0.07,
-    "before": {
-      "surface": "single",
-      "caption": "session 3",
-      "sessionTitle": "# deploy to staging",
-      "blocks": [
-        {
-          "type": "user",
-          "text": "deploy to staging"
-        },
-        {
-          "type": "tool",
-          "kind": "call",
-          "text": "deploy --to dist --env stg"
-        },
-        {
-          "type": "diff",
+          "type": "gate",
+          "title": "DEJAVU GATE - call aborted",
           "lines": [
-            {
-              "type": "del",
-              "text": "Error: unknown flag --env"
-            }
-          ]
-        },
-        {
-          "type": "status",
-          "text": "[dejavu] failure 1/3 - session 1",
-          "hl": true
-        },
-        {
-          "type": "status",
-          "text": "[dejavu] failure 2/3 - 2 sessions",
-          "hl": true
-        },
-        {
-          "type": "status",
-          "text": "[dejavu] failure 3/3 - 2 sessions",
-          "hl": true
-        },
-        {
-          "type": "status",
-          "text": "[dejavu] gate promoted - blocking",
-          "hl": true
-        },
-        {
-          "type": "tool",
-          "kind": "call",
-          "text": "deploy --to dist --env stg"
-        },
-        {
-          "type": "status",
-          "text": "[dejavu] REMINDER - call aborted",
-          "hl": true
-        },
-        {
-          "type": "status",
-          "text": "CORRECTION: use --environment, not --env",
+            "CORRECTION: use --environment, not --env",
+            "EVIDENCE: 3 failures across 2 sessions"
+          ],
           "hl": true
         }
       ]
@@ -1282,154 +1617,10 @@
     "after": {
       "surface": "terminal",
       "blocks": []
-    }
-  },
-  {
-    "theme": "opencode",
-    "windowTitle": "deploy to staging",
-    "takeaway": "The gate teaches: CORRECTION and EVIDENCE, not just no",
-    "delay": 0.07,
-    "before": {
-      "surface": "single",
-      "caption": "session 3",
-      "sessionTitle": "# deploy to staging",
-      "blocks": [
-        {
-          "type": "user",
-          "text": "deploy to staging"
-        },
-        {
-          "type": "tool",
-          "kind": "call",
-          "text": "deploy --to dist --env stg"
-        },
-        {
-          "type": "diff",
-          "lines": [
-            {
-              "type": "del",
-              "text": "Error: unknown flag --env"
-            }
-          ]
-        },
-        {
-          "type": "status",
-          "text": "[dejavu] failure 1/3 - session 1",
-          "hl": true
-        },
-        {
-          "type": "status",
-          "text": "[dejavu] failure 2/3 - 2 sessions",
-          "hl": true
-        },
-        {
-          "type": "status",
-          "text": "[dejavu] failure 3/3 - 2 sessions",
-          "hl": true
-        },
-        {
-          "type": "status",
-          "text": "[dejavu] gate promoted - blocking",
-          "hl": true
-        },
-        {
-          "type": "tool",
-          "kind": "call",
-          "text": "deploy --to dist --env stg"
-        },
-        {
-          "type": "status",
-          "text": "[dejavu] REMINDER - call aborted",
-          "hl": true
-        },
-        {
-          "type": "status",
-          "text": "CORRECTION: use --environment, not --env",
-          "hl": true
-        },
-        {
-          "type": "status",
-          "text": "EVIDENCE: 3 failures"
-        }
-      ]
     },
-    "after": {
-      "surface": "terminal",
-      "blocks": []
-    }
-  },
-  {
-    "theme": "opencode",
-    "windowTitle": "deploy to staging",
-    "takeaway": "The gate teaches: CORRECTION and EVIDENCE, not just no",
-    "delay": 0.07,
-    "before": {
-      "surface": "single",
-      "caption": "session 3",
-      "sessionTitle": "# deploy to staging",
-      "blocks": [
-        {
-          "type": "user",
-          "text": "deploy to staging"
-        },
-        {
-          "type": "tool",
-          "kind": "call",
-          "text": "deploy --to dist --env stg"
-        },
-        {
-          "type": "diff",
-          "lines": [
-            {
-              "type": "del",
-              "text": "Error: unknown flag --env"
-            }
-          ]
-        },
-        {
-          "type": "status",
-          "text": "[dejavu] failure 1/3 - session 1",
-          "hl": true
-        },
-        {
-          "type": "status",
-          "text": "[dejavu] failure 2/3 - 2 sessions",
-          "hl": true
-        },
-        {
-          "type": "status",
-          "text": "[dejavu] failure 3/3 - 2 sessions",
-          "hl": true
-        },
-        {
-          "type": "status",
-          "text": "[dejavu] gate promoted - blocking",
-          "hl": true
-        },
-        {
-          "type": "tool",
-          "kind": "call",
-          "text": "deploy --to dist --env stg"
-        },
-        {
-          "type": "status",
-          "text": "[dejavu] REMINDER - call aborted",
-          "hl": true
-        },
-        {
-          "type": "status",
-          "text": "CORRECTION: use --environment, not --env",
-          "hl": true
-        },
-        {
-          "type": "status",
-          "text": "EVIDENCE: 3 failures across 2 sessions"
-        }
-      ]
-    },
-    "after": {
-      "surface": "terminal",
-      "blocks": []
+    "hud": {
+      "text": "intercepted - teaching the fix",
+      "tone": "block"
     }
   },
   {
@@ -1443,15 +1634,6 @@
       "sessionTitle": "# deploy to staging",
       "blocks": [
         {
-          "type": "user",
-          "text": "deploy to staging"
-        },
-        {
-          "type": "tool",
-          "kind": "call",
-          "text": "deploy --to dist --env stg"
-        },
-        {
           "type": "diff",
           "lines": [
             {
@@ -1464,6 +1646,10 @@
           "type": "status",
           "text": "[dejavu] failure 1/3 - session 1",
           "hl": true
+        },
+        {
+          "type": "divider",
+          "text": "session 2"
         },
         {
           "type": "status",
@@ -1481,6 +1667,10 @@
           "hl": true
         },
         {
+          "type": "divider",
+          "text": "session 3"
+        },
+        {
           "type": "tool",
           "kind": "call",
           "text": "deploy --to dist --env stg"
@@ -1491,19 +1681,23 @@
           "hl": true
         },
         {
-          "type": "status",
-          "text": "CORRECTION: use --environment, not --env",
+          "type": "gate",
+          "title": "DEJAVU GATE - call aborted",
+          "lines": [
+            "CORRECTION: use --environment, not --env",
+            "EVIDENCE: 3 failures across 2 sessions"
+          ],
           "hl": true
-        },
-        {
-          "type": "status",
-          "text": "EVIDENCE: 3 failures across 2 sessions"
         }
       ]
     },
     "after": {
       "surface": "terminal",
       "blocks": []
+    },
+    "hud": {
+      "text": "intercepted - teaching the fix",
+      "tone": "block"
     }
   },
   {
@@ -1517,27 +1711,13 @@
       "sessionTitle": "# deploy to staging",
       "blocks": [
         {
-          "type": "user",
-          "text": "deploy to staging"
-        },
-        {
-          "type": "tool",
-          "kind": "call",
-          "text": "deploy --to dist --env stg"
-        },
-        {
-          "type": "diff",
-          "lines": [
-            {
-              "type": "del",
-              "text": "Error: unknown flag --env"
-            }
-          ]
-        },
-        {
           "type": "status",
           "text": "[dejavu] failure 1/3 - session 1",
           "hl": true
+        },
+        {
+          "type": "divider",
+          "text": "session 2"
         },
         {
           "type": "status",
@@ -1555,6 +1735,10 @@
           "hl": true
         },
         {
+          "type": "divider",
+          "text": "session 3"
+        },
+        {
           "type": "tool",
           "kind": "call",
           "text": "deploy --to dist --env stg"
@@ -1565,13 +1749,13 @@
           "hl": true
         },
         {
-          "type": "status",
-          "text": "CORRECTION: use --environment, not --env",
+          "type": "gate",
+          "title": "DEJAVU GATE - call aborted",
+          "lines": [
+            "CORRECTION: use --environment, not --env",
+            "EVIDENCE: 3 failures across 2 sessions"
+          ],
           "hl": true
-        },
-        {
-          "type": "status",
-          "text": "EVIDENCE: 3 failures across 2 sessions"
         },
         {
           "type": "status",
@@ -1583,6 +1767,10 @@
     "after": {
       "surface": "terminal",
       "blocks": []
+    },
+    "hud": {
+      "text": "intercepted - teaching the fix",
+      "tone": "block"
     }
   },
   {
@@ -1596,27 +1784,13 @@
       "sessionTitle": "# deploy to staging",
       "blocks": [
         {
-          "type": "user",
-          "text": "deploy to staging"
-        },
-        {
-          "type": "tool",
-          "kind": "call",
-          "text": "deploy --to dist --env stg"
-        },
-        {
-          "type": "diff",
-          "lines": [
-            {
-              "type": "del",
-              "text": "Error: unknown flag --env"
-            }
-          ]
-        },
-        {
           "type": "status",
           "text": "[dejavu] failure 1/3 - session 1",
           "hl": true
+        },
+        {
+          "type": "divider",
+          "text": "session 2"
         },
         {
           "type": "status",
@@ -1634,6 +1808,10 @@
           "hl": true
         },
         {
+          "type": "divider",
+          "text": "session 3"
+        },
+        {
           "type": "tool",
           "kind": "call",
           "text": "deploy --to dist --env stg"
@@ -1644,13 +1822,13 @@
           "hl": true
         },
         {
-          "type": "status",
-          "text": "CORRECTION: use --environment, not --env",
+          "type": "gate",
+          "title": "DEJAVU GATE - call aborted",
+          "lines": [
+            "CORRECTION: use --environment, not --env",
+            "EVIDENCE: 3 failures across 2 sessions"
+          ],
           "hl": true
-        },
-        {
-          "type": "status",
-          "text": "EVIDENCE: 3 failures across 2 sessions"
         },
         {
           "type": "status",
@@ -1662,6 +1840,87 @@
     "after": {
       "surface": "terminal",
       "blocks": []
+    },
+    "hud": {
+      "text": "intercepted - teaching the fix",
+      "tone": "block"
+    }
+  },
+  {
+    "theme": "opencode",
+    "windowTitle": "deploy to staging",
+    "takeaway": "Ignore the reminder and the repeat offense blocks",
+    "delay": 0.07,
+    "before": {
+      "surface": "single",
+      "caption": "blocked",
+      "sessionTitle": "# deploy to staging",
+      "blocks": [
+        {
+          "type": "divider",
+          "text": "session 2"
+        },
+        {
+          "type": "status",
+          "text": "[dejavu] failure 2/3 - 2 sessions",
+          "hl": true
+        },
+        {
+          "type": "status",
+          "text": "[dejavu] failure 3/3 - 2 sessions",
+          "hl": true
+        },
+        {
+          "type": "status",
+          "text": "[dejavu] gate promoted - blocking",
+          "hl": true
+        },
+        {
+          "type": "divider",
+          "text": "session 3"
+        },
+        {
+          "type": "tool",
+          "kind": "call",
+          "text": "deploy --to dist --env stg"
+        },
+        {
+          "type": "status",
+          "text": "[dejavu] REMINDER - call aborted",
+          "hl": true
+        },
+        {
+          "type": "gate",
+          "title": "DEJAVU GATE - call aborted",
+          "lines": [
+            "CORRECTION: use --environment, not --env",
+            "EVIDENCE: 3 failures across 2 sessions"
+          ],
+          "hl": true
+        },
+        {
+          "type": "status",
+          "text": "[dejavu] BLOCKED - repeat offense",
+          "hl": true
+        },
+        {
+          "type": "gate",
+          "title": "DEJAVU GATE - repeat offense blocked",
+          "lines": [
+            "the reminder was ignored once",
+            "same-session retry refused"
+          ],
+          "hl": true
+        }
+      ]
+    },
+    "after": {
+      "surface": "terminal",
+      "blocks": []
+    },
+    "hud": {
+      "text": "intercepted - teaching the fix",
+      "tone": "block"
     }
   },
   {
@@ -1675,27 +1934,8 @@
       "sessionTitle": "# deploy to staging",
       "blocks": [
         {
-          "type": "user",
-          "text": "deploy to staging"
-        },
-        {
-          "type": "tool",
-          "kind": "call",
-          "text": "deploy --to dist --env stg"
-        },
-        {
-          "type": "diff",
-          "lines": [
-            {
-              "type": "del",
-              "text": "Error: unknown flag --env"
-            }
-          ]
-        },
-        {
-          "type": "status",
-          "text": "[dejavu] failure 1/3 - session 1",
-          "hl": true
+          "type": "divider",
+          "text": "session 2"
         },
         {
           "type": "status",
@@ -1713,6 +1953,10 @@
           "hl": true
         },
         {
+          "type": "divider",
+          "text": "session 3"
+        },
+        {
           "type": "tool",
           "kind": "call",
           "text": "deploy --to dist --env stg"
@@ -1723,17 +1967,26 @@
           "hl": true
         },
         {
-          "type": "status",
-          "text": "CORRECTION: use --environment, not --env",
+          "type": "gate",
+          "title": "DEJAVU GATE - call aborted",
+          "lines": [
+            "CORRECTION: use --environment, not --env",
+            "EVIDENCE: 3 failures across 2 sessions"
+          ],
           "hl": true
         },
         {
           "type": "status",
-          "text": "EVIDENCE: 3 failures across 2 sessions"
+          "text": "[dejavu] BLOCKED - repeat offense",
+          "hl": true
         },
         {
-          "type": "status",
-          "text": "[dejavu] BLOCKED - repeat offense",
+          "type": "gate",
+          "title": "DEJAVU GATE - repeat offense blocked",
+          "lines": [
+            "the reminder was ignored once",
+            "same-session retry refused"
+          ],
           "hl": true
         }
       ]
@@ -1741,6 +1994,10 @@
     "after": {
       "surface": "terminal",
       "blocks": []
+    },
+    "hud": {
+      "text": "intercepted - teaching the fix",
+      "tone": "block"
     }
   },
   {
@@ -1754,25 +2011,6 @@
       "sessionTitle": "# deploy to staging",
       "blocks": [
         {
-          "type": "tool",
-          "kind": "call",
-          "text": "deploy --to dist --env stg"
-        },
-        {
-          "type": "diff",
-          "lines": [
-            {
-              "type": "del",
-              "text": "Error: unknown flag --env"
-            }
-          ]
-        },
-        {
-          "type": "status",
-          "text": "[dejavu] failure 1/3 - session 1",
-          "hl": true
-        },
-        {
           "type": "status",
           "text": "[dejavu] failure 2/3 - 2 sessions",
           "hl": true
@@ -1788,6 +2026,10 @@
           "hl": true
         },
         {
+          "type": "divider",
+          "text": "session 3"
+        },
+        {
           "type": "tool",
           "kind": "call",
           "text": "deploy --to dist --env stg"
@@ -1798,17 +2040,26 @@
           "hl": true
         },
         {
-          "type": "status",
-          "text": "CORRECTION: use --environment, not --env",
+          "type": "gate",
+          "title": "DEJAVU GATE - call aborted",
+          "lines": [
+            "CORRECTION: use --environment, not --env",
+            "EVIDENCE: 3 failures across 2 sessions"
+          ],
           "hl": true
         },
         {
           "type": "status",
-          "text": "EVIDENCE: 3 failures across 2 sessions"
+          "text": "[dejavu] BLOCKED - repeat offense",
+          "hl": true
         },
         {
-          "type": "status",
-          "text": "[dejavu] BLOCKED - repeat offense",
+          "type": "gate",
+          "title": "DEJAVU GATE - repeat offense blocked",
+          "lines": [
+            "the reminder was ignored once",
+            "same-session retry refused"
+          ],
           "hl": true
         },
         {
@@ -1820,6 +2071,10 @@
     "after": {
       "surface": "terminal",
       "blocks": []
+    },
+    "hud": {
+      "text": "intercepted - teaching the fix",
+      "tone": "block"
     }
   },
   {
@@ -1832,25 +2087,6 @@
       "caption": "session 3",
       "sessionTitle": "# deploy to staging",
       "blocks": [
-        {
-          "type": "tool",
-          "kind": "call",
-          "text": "deploy --to dist --env stg"
-        },
-        {
-          "type": "diff",
-          "lines": [
-            {
-              "type": "del",
-              "text": "Error: unknown flag --env"
-            }
-          ]
-        },
-        {
-          "type": "status",
-          "text": "[dejavu] failure 1/3 - session 1",
-          "hl": true
-        },
         {
           "type": "status",
           "text": "[dejavu] failure 2/3 - 2 sessions",
@@ -1867,6 +2103,10 @@
           "hl": true
         },
         {
+          "type": "divider",
+          "text": "session 3"
+        },
+        {
           "type": "tool",
           "kind": "call",
           "text": "deploy --to dist --env stg"
@@ -1877,17 +2117,26 @@
           "hl": true
         },
         {
-          "type": "status",
-          "text": "CORRECTION: use --environment, not --env",
+          "type": "gate",
+          "title": "DEJAVU GATE - call aborted",
+          "lines": [
+            "CORRECTION: use --environment, not --env",
+            "EVIDENCE: 3 failures across 2 sessions"
+          ],
           "hl": true
         },
         {
           "type": "status",
-          "text": "EVIDENCE: 3 failures across 2 sessions"
+          "text": "[dejavu] BLOCKED - repeat offense",
+          "hl": true
         },
         {
-          "type": "status",
-          "text": "[dejavu] BLOCKED - repeat offense",
+          "type": "gate",
+          "title": "DEJAVU GATE - repeat offense blocked",
+          "lines": [
+            "the reminder was ignored once",
+            "same-session retry refused"
+          ],
           "hl": true
         },
         {
@@ -1899,6 +2148,10 @@
     "after": {
       "surface": "terminal",
       "blocks": []
+    },
+    "hud": {
+      "text": "intercepted - teaching the fix",
+      "tone": "block"
     }
   },
   {
@@ -1911,25 +2164,6 @@
       "caption": "session 3",
       "sessionTitle": "# deploy to staging",
       "blocks": [
-        {
-          "type": "tool",
-          "kind": "call",
-          "text": "deploy --to dist --env stg"
-        },
-        {
-          "type": "diff",
-          "lines": [
-            {
-              "type": "del",
-              "text": "Error: unknown flag --env"
-            }
-          ]
-        },
-        {
-          "type": "status",
-          "text": "[dejavu] failure 1/3 - session 1",
-          "hl": true
-        },
         {
           "type": "status",
           "text": "[dejavu] failure 2/3 - 2 sessions",
@@ -1946,6 +2180,10 @@
           "hl": true
         },
         {
+          "type": "divider",
+          "text": "session 3"
+        },
+        {
           "type": "tool",
           "kind": "call",
           "text": "deploy --to dist --env stg"
@@ -1956,17 +2194,26 @@
           "hl": true
         },
         {
-          "type": "status",
-          "text": "CORRECTION: use --environment, not --env",
+          "type": "gate",
+          "title": "DEJAVU GATE - call aborted",
+          "lines": [
+            "CORRECTION: use --environment, not --env",
+            "EVIDENCE: 3 failures across 2 sessions"
+          ],
           "hl": true
         },
         {
           "type": "status",
-          "text": "EVIDENCE: 3 failures across 2 sessions"
+          "text": "[dejavu] BLOCKED - repeat offense",
+          "hl": true
         },
         {
-          "type": "status",
-          "text": "[dejavu] BLOCKED - repeat offense",
+          "type": "gate",
+          "title": "DEJAVU GATE - repeat offense blocked",
+          "lines": [
+            "the reminder was ignored once",
+            "same-session retry refused"
+          ],
           "hl": true
         },
         {
@@ -1978,6 +2225,10 @@
     "after": {
       "surface": "terminal",
       "blocks": []
+    },
+    "hud": {
+      "text": "intercepted - teaching the fix",
+      "tone": "block"
     }
   },
   {
@@ -1990,25 +2241,6 @@
       "caption": "session 3",
       "sessionTitle": "# deploy to staging",
       "blocks": [
-        {
-          "type": "tool",
-          "kind": "call",
-          "text": "deploy --to dist --env stg"
-        },
-        {
-          "type": "diff",
-          "lines": [
-            {
-              "type": "del",
-              "text": "Error: unknown flag --env"
-            }
-          ]
-        },
-        {
-          "type": "status",
-          "text": "[dejavu] failure 1/3 - session 1",
-          "hl": true
-        },
         {
           "type": "status",
           "text": "[dejavu] failure 2/3 - 2 sessions",
@@ -2025,6 +2257,10 @@
           "hl": true
         },
         {
+          "type": "divider",
+          "text": "session 3"
+        },
+        {
           "type": "tool",
           "kind": "call",
           "text": "deploy --to dist --env stg"
@@ -2035,17 +2271,26 @@
           "hl": true
         },
         {
-          "type": "status",
-          "text": "CORRECTION: use --environment, not --env",
+          "type": "gate",
+          "title": "DEJAVU GATE - call aborted",
+          "lines": [
+            "CORRECTION: use --environment, not --env",
+            "EVIDENCE: 3 failures across 2 sessions"
+          ],
           "hl": true
         },
         {
           "type": "status",
-          "text": "EVIDENCE: 3 failures across 2 sessions"
+          "text": "[dejavu] BLOCKED - repeat offense",
+          "hl": true
         },
         {
-          "type": "status",
-          "text": "[dejavu] BLOCKED - repeat offense",
+          "type": "gate",
+          "title": "DEJAVU GATE - repeat offense blocked",
+          "lines": [
+            "the reminder was ignored once",
+            "same-session retry refused"
+          ],
           "hl": true
         },
         {
@@ -2057,6 +2302,10 @@
     "after": {
       "surface": "terminal",
       "blocks": []
+    },
+    "hud": {
+      "text": "intercepted - teaching the fix",
+      "tone": "block"
     }
   },
   {
@@ -2069,25 +2318,6 @@
       "caption": "session 3",
       "sessionTitle": "# deploy to staging",
       "blocks": [
-        {
-          "type": "tool",
-          "kind": "call",
-          "text": "deploy --to dist --env stg"
-        },
-        {
-          "type": "diff",
-          "lines": [
-            {
-              "type": "del",
-              "text": "Error: unknown flag --env"
-            }
-          ]
-        },
-        {
-          "type": "status",
-          "text": "[dejavu] failure 1/3 - session 1",
-          "hl": true
-        },
         {
           "type": "status",
           "text": "[dejavu] failure 2/3 - 2 sessions",
@@ -2104,6 +2334,10 @@
           "hl": true
         },
         {
+          "type": "divider",
+          "text": "session 3"
+        },
+        {
           "type": "tool",
           "kind": "call",
           "text": "deploy --to dist --env stg"
@@ -2114,17 +2348,26 @@
           "hl": true
         },
         {
-          "type": "status",
-          "text": "CORRECTION: use --environment, not --env",
+          "type": "gate",
+          "title": "DEJAVU GATE - call aborted",
+          "lines": [
+            "CORRECTION: use --environment, not --env",
+            "EVIDENCE: 3 failures across 2 sessions"
+          ],
           "hl": true
         },
         {
           "type": "status",
-          "text": "EVIDENCE: 3 failures across 2 sessions"
+          "text": "[dejavu] BLOCKED - repeat offense",
+          "hl": true
         },
         {
-          "type": "status",
-          "text": "[dejavu] BLOCKED - repeat offense",
+          "type": "gate",
+          "title": "DEJAVU GATE - repeat offense blocked",
+          "lines": [
+            "the reminder was ignored once",
+            "same-session retry refused"
+          ],
           "hl": true
         },
         {
@@ -2136,6 +2379,10 @@
     "after": {
       "surface": "terminal",
       "blocks": []
+    },
+    "hud": {
+      "text": "intercepted - teaching the fix",
+      "tone": "block"
     }
   },
   {
@@ -2148,25 +2395,6 @@
       "caption": "session 3",
       "sessionTitle": "# deploy to staging",
       "blocks": [
-        {
-          "type": "tool",
-          "kind": "call",
-          "text": "deploy --to dist --env stg"
-        },
-        {
-          "type": "diff",
-          "lines": [
-            {
-              "type": "del",
-              "text": "Error: unknown flag --env"
-            }
-          ]
-        },
-        {
-          "type": "status",
-          "text": "[dejavu] failure 1/3 - session 1",
-          "hl": true
-        },
         {
           "type": "status",
           "text": "[dejavu] failure 2/3 - 2 sessions",
@@ -2183,6 +2411,10 @@
           "hl": true
         },
         {
+          "type": "divider",
+          "text": "session 3"
+        },
+        {
           "type": "tool",
           "kind": "call",
           "text": "deploy --to dist --env stg"
@@ -2193,17 +2425,26 @@
           "hl": true
         },
         {
-          "type": "status",
-          "text": "CORRECTION: use --environment, not --env",
+          "type": "gate",
+          "title": "DEJAVU GATE - call aborted",
+          "lines": [
+            "CORRECTION: use --environment, not --env",
+            "EVIDENCE: 3 failures across 2 sessions"
+          ],
           "hl": true
         },
         {
           "type": "status",
-          "text": "EVIDENCE: 3 failures across 2 sessions"
+          "text": "[dejavu] BLOCKED - repeat offense",
+          "hl": true
         },
         {
-          "type": "status",
-          "text": "[dejavu] BLOCKED - repeat offense",
+          "type": "gate",
+          "title": "DEJAVU GATE - repeat offense blocked",
+          "lines": [
+            "the reminder was ignored once",
+            "same-session retry refused"
+          ],
           "hl": true
         },
         {
@@ -2215,6 +2456,10 @@
     "after": {
       "surface": "terminal",
       "blocks": []
+    },
+    "hud": {
+      "text": "intercepted - teaching the fix",
+      "tone": "block"
     }
   },
   {
@@ -2227,25 +2472,6 @@
       "caption": "session 3",
       "sessionTitle": "# deploy to staging",
       "blocks": [
-        {
-          "type": "tool",
-          "kind": "call",
-          "text": "deploy --to dist --env stg"
-        },
-        {
-          "type": "diff",
-          "lines": [
-            {
-              "type": "del",
-              "text": "Error: unknown flag --env"
-            }
-          ]
-        },
-        {
-          "type": "status",
-          "text": "[dejavu] failure 1/3 - session 1",
-          "hl": true
-        },
         {
           "type": "status",
           "text": "[dejavu] failure 2/3 - 2 sessions",
@@ -2262,6 +2488,10 @@
           "hl": true
         },
         {
+          "type": "divider",
+          "text": "session 3"
+        },
+        {
           "type": "tool",
           "kind": "call",
           "text": "deploy --to dist --env stg"
@@ -2272,17 +2502,26 @@
           "hl": true
         },
         {
-          "type": "status",
-          "text": "CORRECTION: use --environment, not --env",
+          "type": "gate",
+          "title": "DEJAVU GATE - call aborted",
+          "lines": [
+            "CORRECTION: use --environment, not --env",
+            "EVIDENCE: 3 failures across 2 sessions"
+          ],
           "hl": true
         },
         {
           "type": "status",
-          "text": "EVIDENCE: 3 failures across 2 sessions"
+          "text": "[dejavu] BLOCKED - repeat offense",
+          "hl": true
         },
         {
-          "type": "status",
-          "text": "[dejavu] BLOCKED - repeat offense",
+          "type": "gate",
+          "title": "DEJAVU GATE - repeat offense blocked",
+          "lines": [
+            "the reminder was ignored once",
+            "same-session retry refused"
+          ],
           "hl": true
         },
         {
@@ -2294,6 +2533,10 @@
     "after": {
       "surface": "terminal",
       "blocks": []
+    },
+    "hud": {
+      "text": "intercepted - teaching the fix",
+      "tone": "block"
     }
   },
   {
@@ -2306,25 +2549,6 @@
       "caption": "session 3",
       "sessionTitle": "# deploy to staging",
       "blocks": [
-        {
-          "type": "tool",
-          "kind": "call",
-          "text": "deploy --to dist --env stg"
-        },
-        {
-          "type": "diff",
-          "lines": [
-            {
-              "type": "del",
-              "text": "Error: unknown flag --env"
-            }
-          ]
-        },
-        {
-          "type": "status",
-          "text": "[dejavu] failure 1/3 - session 1",
-          "hl": true
-        },
         {
           "type": "status",
           "text": "[dejavu] failure 2/3 - 2 sessions",
@@ -2341,6 +2565,10 @@
           "hl": true
         },
         {
+          "type": "divider",
+          "text": "session 3"
+        },
+        {
           "type": "tool",
           "kind": "call",
           "text": "deploy --to dist --env stg"
@@ -2351,17 +2579,26 @@
           "hl": true
         },
         {
-          "type": "status",
-          "text": "CORRECTION: use --environment, not --env",
+          "type": "gate",
+          "title": "DEJAVU GATE - call aborted",
+          "lines": [
+            "CORRECTION: use --environment, not --env",
+            "EVIDENCE: 3 failures across 2 sessions"
+          ],
           "hl": true
         },
         {
           "type": "status",
-          "text": "EVIDENCE: 3 failures across 2 sessions"
+          "text": "[dejavu] BLOCKED - repeat offense",
+          "hl": true
         },
         {
-          "type": "status",
-          "text": "[dejavu] BLOCKED - repeat offense",
+          "type": "gate",
+          "title": "DEJAVU GATE - repeat offense blocked",
+          "lines": [
+            "the reminder was ignored once",
+            "same-session retry refused"
+          ],
           "hl": true
         },
         {
@@ -2373,6 +2610,10 @@
     "after": {
       "surface": "terminal",
       "blocks": []
+    },
+    "hud": {
+      "text": "intercepted - teaching the fix",
+      "tone": "block"
     }
   },
   {
@@ -2385,25 +2626,6 @@
       "caption": "session 3",
       "sessionTitle": "# deploy to staging",
       "blocks": [
-        {
-          "type": "tool",
-          "kind": "call",
-          "text": "deploy --to dist --env stg"
-        },
-        {
-          "type": "diff",
-          "lines": [
-            {
-              "type": "del",
-              "text": "Error: unknown flag --env"
-            }
-          ]
-        },
-        {
-          "type": "status",
-          "text": "[dejavu] failure 1/3 - session 1",
-          "hl": true
-        },
         {
           "type": "status",
           "text": "[dejavu] failure 2/3 - 2 sessions",
@@ -2420,6 +2642,10 @@
           "hl": true
         },
         {
+          "type": "divider",
+          "text": "session 3"
+        },
+        {
           "type": "tool",
           "kind": "call",
           "text": "deploy --to dist --env stg"
@@ -2430,17 +2656,26 @@
           "hl": true
         },
         {
-          "type": "status",
-          "text": "CORRECTION: use --environment, not --env",
+          "type": "gate",
+          "title": "DEJAVU GATE - call aborted",
+          "lines": [
+            "CORRECTION: use --environment, not --env",
+            "EVIDENCE: 3 failures across 2 sessions"
+          ],
           "hl": true
         },
         {
           "type": "status",
-          "text": "EVIDENCE: 3 failures across 2 sessions"
+          "text": "[dejavu] BLOCKED - repeat offense",
+          "hl": true
         },
         {
-          "type": "status",
-          "text": "[dejavu] BLOCKED - repeat offense",
+          "type": "gate",
+          "title": "DEJAVU GATE - repeat offense blocked",
+          "lines": [
+            "the reminder was ignored once",
+            "same-session retry refused"
+          ],
           "hl": true
         },
         {
@@ -2452,6 +2687,10 @@
     "after": {
       "surface": "terminal",
       "blocks": []
+    },
+    "hud": {
+      "text": "intercepted - teaching the fix",
+      "tone": "block"
     }
   },
   {
@@ -2464,25 +2703,6 @@
       "caption": "session 3",
       "sessionTitle": "# deploy to staging",
       "blocks": [
-        {
-          "type": "tool",
-          "kind": "call",
-          "text": "deploy --to dist --env stg"
-        },
-        {
-          "type": "diff",
-          "lines": [
-            {
-              "type": "del",
-              "text": "Error: unknown flag --env"
-            }
-          ]
-        },
-        {
-          "type": "status",
-          "text": "[dejavu] failure 1/3 - session 1",
-          "hl": true
-        },
         {
           "type": "status",
           "text": "[dejavu] failure 2/3 - 2 sessions",
@@ -2499,6 +2719,10 @@
           "hl": true
         },
         {
+          "type": "divider",
+          "text": "session 3"
+        },
+        {
           "type": "tool",
           "kind": "call",
           "text": "deploy --to dist --env stg"
@@ -2509,17 +2733,26 @@
           "hl": true
         },
         {
-          "type": "status",
-          "text": "CORRECTION: use --environment, not --env",
+          "type": "gate",
+          "title": "DEJAVU GATE - call aborted",
+          "lines": [
+            "CORRECTION: use --environment, not --env",
+            "EVIDENCE: 3 failures across 2 sessions"
+          ],
           "hl": true
         },
         {
           "type": "status",
-          "text": "EVIDENCE: 3 failures across 2 sessions"
+          "text": "[dejavu] BLOCKED - repeat offense",
+          "hl": true
         },
         {
-          "type": "status",
-          "text": "[dejavu] BLOCKED - repeat offense",
+          "type": "gate",
+          "title": "DEJAVU GATE - repeat offense blocked",
+          "lines": [
+            "the reminder was ignored once",
+            "same-session retry refused"
+          ],
           "hl": true
         },
         {
@@ -2531,6 +2764,10 @@
     "after": {
       "surface": "terminal",
       "blocks": []
+    },
+    "hud": {
+      "text": "intercepted - teaching the fix",
+      "tone": "block"
     }
   },
   {
@@ -2543,25 +2780,6 @@
       "caption": "session 3",
       "sessionTitle": "# deploy to staging",
       "blocks": [
-        {
-          "type": "tool",
-          "kind": "call",
-          "text": "deploy --to dist --env stg"
-        },
-        {
-          "type": "diff",
-          "lines": [
-            {
-              "type": "del",
-              "text": "Error: unknown flag --env"
-            }
-          ]
-        },
-        {
-          "type": "status",
-          "text": "[dejavu] failure 1/3 - session 1",
-          "hl": true
-        },
         {
           "type": "status",
           "text": "[dejavu] failure 2/3 - 2 sessions",
@@ -2578,6 +2796,10 @@
           "hl": true
         },
         {
+          "type": "divider",
+          "text": "session 3"
+        },
+        {
           "type": "tool",
           "kind": "call",
           "text": "deploy --to dist --env stg"
@@ -2588,17 +2810,26 @@
           "hl": true
         },
         {
-          "type": "status",
-          "text": "CORRECTION: use --environment, not --env",
+          "type": "gate",
+          "title": "DEJAVU GATE - call aborted",
+          "lines": [
+            "CORRECTION: use --environment, not --env",
+            "EVIDENCE: 3 failures across 2 sessions"
+          ],
           "hl": true
         },
         {
           "type": "status",
-          "text": "EVIDENCE: 3 failures across 2 sessions"
+          "text": "[dejavu] BLOCKED - repeat offense",
+          "hl": true
         },
         {
-          "type": "status",
-          "text": "[dejavu] BLOCKED - repeat offense",
+          "type": "gate",
+          "title": "DEJAVU GATE - repeat offense blocked",
+          "lines": [
+            "the reminder was ignored once",
+            "same-session retry refused"
+          ],
           "hl": true
         },
         {
@@ -2610,6 +2841,10 @@
     "after": {
       "surface": "terminal",
       "blocks": []
+    },
+    "hud": {
+      "text": "intercepted - teaching the fix",
+      "tone": "block"
     }
   },
   {
@@ -2622,25 +2857,6 @@
       "caption": "session 3",
       "sessionTitle": "# deploy to staging",
       "blocks": [
-        {
-          "type": "tool",
-          "kind": "call",
-          "text": "deploy --to dist --env stg"
-        },
-        {
-          "type": "diff",
-          "lines": [
-            {
-              "type": "del",
-              "text": "Error: unknown flag --env"
-            }
-          ]
-        },
-        {
-          "type": "status",
-          "text": "[dejavu] failure 1/3 - session 1",
-          "hl": true
-        },
         {
           "type": "status",
           "text": "[dejavu] failure 2/3 - 2 sessions",
@@ -2657,6 +2873,10 @@
           "hl": true
         },
         {
+          "type": "divider",
+          "text": "session 3"
+        },
+        {
           "type": "tool",
           "kind": "call",
           "text": "deploy --to dist --env stg"
@@ -2667,17 +2887,26 @@
           "hl": true
         },
         {
-          "type": "status",
-          "text": "CORRECTION: use --environment, not --env",
+          "type": "gate",
+          "title": "DEJAVU GATE - call aborted",
+          "lines": [
+            "CORRECTION: use --environment, not --env",
+            "EVIDENCE: 3 failures across 2 sessions"
+          ],
           "hl": true
         },
         {
           "type": "status",
-          "text": "EVIDENCE: 3 failures across 2 sessions"
+          "text": "[dejavu] BLOCKED - repeat offense",
+          "hl": true
         },
         {
-          "type": "status",
-          "text": "[dejavu] BLOCKED - repeat offense",
+          "type": "gate",
+          "title": "DEJAVU GATE - repeat offense blocked",
+          "lines": [
+            "the reminder was ignored once",
+            "same-session retry refused"
+          ],
           "hl": true
         },
         {
@@ -2689,6 +2918,10 @@
     "after": {
       "surface": "terminal",
       "blocks": []
+    },
+    "hud": {
+      "text": "intercepted - teaching the fix",
+      "tone": "block"
     }
   },
   {
@@ -2701,25 +2934,6 @@
       "caption": "session 3",
       "sessionTitle": "# deploy to staging",
       "blocks": [
-        {
-          "type": "tool",
-          "kind": "call",
-          "text": "deploy --to dist --env stg"
-        },
-        {
-          "type": "diff",
-          "lines": [
-            {
-              "type": "del",
-              "text": "Error: unknown flag --env"
-            }
-          ]
-        },
-        {
-          "type": "status",
-          "text": "[dejavu] failure 1/3 - session 1",
-          "hl": true
-        },
         {
           "type": "status",
           "text": "[dejavu] failure 2/3 - 2 sessions",
@@ -2736,6 +2950,10 @@
           "hl": true
         },
         {
+          "type": "divider",
+          "text": "session 3"
+        },
+        {
           "type": "tool",
           "kind": "call",
           "text": "deploy --to dist --env stg"
@@ -2746,17 +2964,26 @@
           "hl": true
         },
         {
-          "type": "status",
-          "text": "CORRECTION: use --environment, not --env",
+          "type": "gate",
+          "title": "DEJAVU GATE - call aborted",
+          "lines": [
+            "CORRECTION: use --environment, not --env",
+            "EVIDENCE: 3 failures across 2 sessions"
+          ],
           "hl": true
         },
         {
           "type": "status",
-          "text": "EVIDENCE: 3 failures across 2 sessions"
+          "text": "[dejavu] BLOCKED - repeat offense",
+          "hl": true
         },
         {
-          "type": "status",
-          "text": "[dejavu] BLOCKED - repeat offense",
+          "type": "gate",
+          "title": "DEJAVU GATE - repeat offense blocked",
+          "lines": [
+            "the reminder was ignored once",
+            "same-session retry refused"
+          ],
           "hl": true
         },
         {
@@ -2768,6 +2995,10 @@
     "after": {
       "surface": "terminal",
       "blocks": []
+    },
+    "hud": {
+      "text": "intercepted - teaching the fix",
+      "tone": "block"
     }
   },
   {
@@ -2780,25 +3011,6 @@
       "caption": "session 3",
       "sessionTitle": "# deploy to staging",
       "blocks": [
-        {
-          "type": "tool",
-          "kind": "call",
-          "text": "deploy --to dist --env stg"
-        },
-        {
-          "type": "diff",
-          "lines": [
-            {
-              "type": "del",
-              "text": "Error: unknown flag --env"
-            }
-          ]
-        },
-        {
-          "type": "status",
-          "text": "[dejavu] failure 1/3 - session 1",
-          "hl": true
-        },
         {
           "type": "status",
           "text": "[dejavu] failure 2/3 - 2 sessions",
@@ -2815,6 +3027,10 @@
           "hl": true
         },
         {
+          "type": "divider",
+          "text": "session 3"
+        },
+        {
           "type": "tool",
           "kind": "call",
           "text": "deploy --to dist --env stg"
@@ -2825,17 +3041,26 @@
           "hl": true
         },
         {
-          "type": "status",
-          "text": "CORRECTION: use --environment, not --env",
+          "type": "gate",
+          "title": "DEJAVU GATE - call aborted",
+          "lines": [
+            "CORRECTION: use --environment, not --env",
+            "EVIDENCE: 3 failures across 2 sessions"
+          ],
           "hl": true
         },
         {
           "type": "status",
-          "text": "EVIDENCE: 3 failures across 2 sessions"
+          "text": "[dejavu] BLOCKED - repeat offense",
+          "hl": true
         },
         {
-          "type": "status",
-          "text": "[dejavu] BLOCKED - repeat offense",
+          "type": "gate",
+          "title": "DEJAVU GATE - repeat offense blocked",
+          "lines": [
+            "the reminder was ignored once",
+            "same-session retry refused"
+          ],
           "hl": true
         },
         {
@@ -2847,6 +3072,10 @@
     "after": {
       "surface": "terminal",
       "blocks": []
+    },
+    "hud": {
+      "text": "intercepted - teaching the fix",
+      "tone": "block"
     }
   },
   {
@@ -2859,25 +3088,6 @@
       "caption": "session 3",
       "sessionTitle": "# deploy to staging",
       "blocks": [
-        {
-          "type": "tool",
-          "kind": "call",
-          "text": "deploy --to dist --env stg"
-        },
-        {
-          "type": "diff",
-          "lines": [
-            {
-              "type": "del",
-              "text": "Error: unknown flag --env"
-            }
-          ]
-        },
-        {
-          "type": "status",
-          "text": "[dejavu] failure 1/3 - session 1",
-          "hl": true
-        },
         {
           "type": "status",
           "text": "[dejavu] failure 2/3 - 2 sessions",
@@ -2894,6 +3104,10 @@
           "hl": true
         },
         {
+          "type": "divider",
+          "text": "session 3"
+        },
+        {
           "type": "tool",
           "kind": "call",
           "text": "deploy --to dist --env stg"
@@ -2904,17 +3118,26 @@
           "hl": true
         },
         {
-          "type": "status",
-          "text": "CORRECTION: use --environment, not --env",
+          "type": "gate",
+          "title": "DEJAVU GATE - call aborted",
+          "lines": [
+            "CORRECTION: use --environment, not --env",
+            "EVIDENCE: 3 failures across 2 sessions"
+          ],
           "hl": true
         },
         {
           "type": "status",
-          "text": "EVIDENCE: 3 failures across 2 sessions"
+          "text": "[dejavu] BLOCKED - repeat offense",
+          "hl": true
         },
         {
-          "type": "status",
-          "text": "[dejavu] BLOCKED - repeat offense",
+          "type": "gate",
+          "title": "DEJAVU GATE - repeat offense blocked",
+          "lines": [
+            "the reminder was ignored once",
+            "same-session retry refused"
+          ],
           "hl": true
         },
         {
@@ -2926,6 +3149,10 @@
     "after": {
       "surface": "terminal",
       "blocks": []
+    },
+    "hud": {
+      "text": "intercepted - teaching the fix",
+      "tone": "block"
     }
   },
   {
@@ -2938,25 +3165,6 @@
       "caption": "session 3",
       "sessionTitle": "# deploy to staging",
       "blocks": [
-        {
-          "type": "tool",
-          "kind": "call",
-          "text": "deploy --to dist --env stg"
-        },
-        {
-          "type": "diff",
-          "lines": [
-            {
-              "type": "del",
-              "text": "Error: unknown flag --env"
-            }
-          ]
-        },
-        {
-          "type": "status",
-          "text": "[dejavu] failure 1/3 - session 1",
-          "hl": true
-        },
         {
           "type": "status",
           "text": "[dejavu] failure 2/3 - 2 sessions",
@@ -2973,6 +3181,10 @@
           "hl": true
         },
         {
+          "type": "divider",
+          "text": "session 3"
+        },
+        {
           "type": "tool",
           "kind": "call",
           "text": "deploy --to dist --env stg"
@@ -2983,17 +3195,26 @@
           "hl": true
         },
         {
-          "type": "status",
-          "text": "CORRECTION: use --environment, not --env",
+          "type": "gate",
+          "title": "DEJAVU GATE - call aborted",
+          "lines": [
+            "CORRECTION: use --environment, not --env",
+            "EVIDENCE: 3 failures across 2 sessions"
+          ],
           "hl": true
         },
         {
           "type": "status",
-          "text": "EVIDENCE: 3 failures across 2 sessions"
+          "text": "[dejavu] BLOCKED - repeat offense",
+          "hl": true
         },
         {
-          "type": "status",
-          "text": "[dejavu] BLOCKED - repeat offense",
+          "type": "gate",
+          "title": "DEJAVU GATE - repeat offense blocked",
+          "lines": [
+            "the reminder was ignored once",
+            "same-session retry refused"
+          ],
           "hl": true
         },
         {
@@ -3005,6 +3226,10 @@
     "after": {
       "surface": "terminal",
       "blocks": []
+    },
+    "hud": {
+      "text": "intercepted - teaching the fix",
+      "tone": "block"
     }
   },
   {
@@ -3017,25 +3242,6 @@
       "caption": "session 3",
       "sessionTitle": "# deploy to staging",
       "blocks": [
-        {
-          "type": "tool",
-          "kind": "call",
-          "text": "deploy --to dist --env stg"
-        },
-        {
-          "type": "diff",
-          "lines": [
-            {
-              "type": "del",
-              "text": "Error: unknown flag --env"
-            }
-          ]
-        },
-        {
-          "type": "status",
-          "text": "[dejavu] failure 1/3 - session 1",
-          "hl": true
-        },
         {
           "type": "status",
           "text": "[dejavu] failure 2/3 - 2 sessions",
@@ -3052,6 +3258,10 @@
           "hl": true
         },
         {
+          "type": "divider",
+          "text": "session 3"
+        },
+        {
           "type": "tool",
           "kind": "call",
           "text": "deploy --to dist --env stg"
@@ -3062,17 +3272,26 @@
           "hl": true
         },
         {
-          "type": "status",
-          "text": "CORRECTION: use --environment, not --env",
+          "type": "gate",
+          "title": "DEJAVU GATE - call aborted",
+          "lines": [
+            "CORRECTION: use --environment, not --env",
+            "EVIDENCE: 3 failures across 2 sessions"
+          ],
           "hl": true
         },
         {
           "type": "status",
-          "text": "EVIDENCE: 3 failures across 2 sessions"
+          "text": "[dejavu] BLOCKED - repeat offense",
+          "hl": true
         },
         {
-          "type": "status",
-          "text": "[dejavu] BLOCKED - repeat offense",
+          "type": "gate",
+          "title": "DEJAVU GATE - repeat offense blocked",
+          "lines": [
+            "the reminder was ignored once",
+            "same-session retry refused"
+          ],
           "hl": true
         },
         {
@@ -3084,6 +3303,10 @@
     "after": {
       "surface": "terminal",
       "blocks": []
+    },
+    "hud": {
+      "text": "intercepted - teaching the fix",
+      "tone": "block"
     }
   },
   {
@@ -3097,25 +3320,6 @@
       "sessionTitle": "# deploy to staging",
       "blocks": [
         {
-          "type": "diff",
-          "lines": [
-            {
-              "type": "del",
-              "text": "Error: unknown flag --env"
-            }
-          ]
-        },
-        {
-          "type": "status",
-          "text": "[dejavu] failure 1/3 - session 1",
-          "hl": true
-        },
-        {
-          "type": "status",
-          "text": "[dejavu] failure 2/3 - 2 sessions",
-          "hl": true
-        },
-        {
           "type": "status",
           "text": "[dejavu] failure 3/3 - 2 sessions",
           "hl": true
@@ -3124,6 +3328,10 @@
           "type": "status",
           "text": "[dejavu] gate promoted - blocking",
           "hl": true
+        },
+        {
+          "type": "divider",
+          "text": "session 3"
         },
         {
           "type": "tool",
@@ -3136,17 +3344,26 @@
           "hl": true
         },
         {
-          "type": "status",
-          "text": "CORRECTION: use --environment, not --env",
+          "type": "gate",
+          "title": "DEJAVU GATE - call aborted",
+          "lines": [
+            "CORRECTION: use --environment, not --env",
+            "EVIDENCE: 3 failures across 2 sessions"
+          ],
           "hl": true
         },
         {
           "type": "status",
-          "text": "EVIDENCE: 3 failures across 2 sessions"
+          "text": "[dejavu] BLOCKED - repeat offense",
+          "hl": true
         },
         {
-          "type": "status",
-          "text": "[dejavu] BLOCKED - repeat offense",
+          "type": "gate",
+          "title": "DEJAVU GATE - repeat offense blocked",
+          "lines": [
+            "the reminder was ignored once",
+            "same-session retry refused"
+          ],
           "hl": true
         },
         {
@@ -3163,6 +3380,10 @@
     "after": {
       "surface": "terminal",
       "blocks": []
+    },
+    "hud": {
+      "text": "intercepted - teaching the fix",
+      "tone": "block"
     }
   },
   {
@@ -3176,25 +3397,6 @@
       "sessionTitle": "# deploy to staging",
       "blocks": [
         {
-          "type": "diff",
-          "lines": [
-            {
-              "type": "del",
-              "text": "Error: unknown flag --env"
-            }
-          ]
-        },
-        {
-          "type": "status",
-          "text": "[dejavu] failure 1/3 - session 1",
-          "hl": true
-        },
-        {
-          "type": "status",
-          "text": "[dejavu] failure 2/3 - 2 sessions",
-          "hl": true
-        },
-        {
           "type": "status",
           "text": "[dejavu] failure 3/3 - 2 sessions",
           "hl": true
@@ -3203,6 +3405,10 @@
           "type": "status",
           "text": "[dejavu] gate promoted - blocking",
           "hl": true
+        },
+        {
+          "type": "divider",
+          "text": "session 3"
         },
         {
           "type": "tool",
@@ -3215,17 +3421,26 @@
           "hl": true
         },
         {
-          "type": "status",
-          "text": "CORRECTION: use --environment, not --env",
+          "type": "gate",
+          "title": "DEJAVU GATE - call aborted",
+          "lines": [
+            "CORRECTION: use --environment, not --env",
+            "EVIDENCE: 3 failures across 2 sessions"
+          ],
           "hl": true
         },
         {
           "type": "status",
-          "text": "EVIDENCE: 3 failures across 2 sessions"
+          "text": "[dejavu] BLOCKED - repeat offense",
+          "hl": true
         },
         {
-          "type": "status",
-          "text": "[dejavu] BLOCKED - repeat offense",
+          "type": "gate",
+          "title": "DEJAVU GATE - repeat offense blocked",
+          "lines": [
+            "the reminder was ignored once",
+            "same-session retry refused"
+          ],
           "hl": true
         },
         {
@@ -3242,6 +3457,10 @@
     "after": {
       "surface": "terminal",
       "blocks": []
+    },
+    "hud": {
+      "text": "intercepted - teaching the fix",
+      "tone": "block"
     }
   },
   {
@@ -3255,25 +3474,6 @@
       "sessionTitle": "# deploy to staging",
       "blocks": [
         {
-          "type": "diff",
-          "lines": [
-            {
-              "type": "del",
-              "text": "Error: unknown flag --env"
-            }
-          ]
-        },
-        {
-          "type": "status",
-          "text": "[dejavu] failure 1/3 - session 1",
-          "hl": true
-        },
-        {
-          "type": "status",
-          "text": "[dejavu] failure 2/3 - 2 sessions",
-          "hl": true
-        },
-        {
           "type": "status",
           "text": "[dejavu] failure 3/3 - 2 sessions",
           "hl": true
@@ -3282,6 +3482,10 @@
           "type": "status",
           "text": "[dejavu] gate promoted - blocking",
           "hl": true
+        },
+        {
+          "type": "divider",
+          "text": "session 3"
         },
         {
           "type": "tool",
@@ -3294,17 +3498,26 @@
           "hl": true
         },
         {
-          "type": "status",
-          "text": "CORRECTION: use --environment, not --env",
+          "type": "gate",
+          "title": "DEJAVU GATE - call aborted",
+          "lines": [
+            "CORRECTION: use --environment, not --env",
+            "EVIDENCE: 3 failures across 2 sessions"
+          ],
           "hl": true
         },
         {
           "type": "status",
-          "text": "EVIDENCE: 3 failures across 2 sessions"
+          "text": "[dejavu] BLOCKED - repeat offense",
+          "hl": true
         },
         {
-          "type": "status",
-          "text": "[dejavu] BLOCKED - repeat offense",
+          "type": "gate",
+          "title": "DEJAVU GATE - repeat offense blocked",
+          "lines": [
+            "the reminder was ignored once",
+            "same-session retry refused"
+          ],
           "hl": true
         },
         {
@@ -3321,6 +3534,10 @@
     "after": {
       "surface": "terminal",
       "blocks": []
+    },
+    "hud": {
+      "text": "intercepted - teaching the fix",
+      "tone": "block"
     }
   },
   {
@@ -3334,25 +3551,6 @@
       "sessionTitle": "# deploy to staging",
       "blocks": [
         {
-          "type": "diff",
-          "lines": [
-            {
-              "type": "del",
-              "text": "Error: unknown flag --env"
-            }
-          ]
-        },
-        {
-          "type": "status",
-          "text": "[dejavu] failure 1/3 - session 1",
-          "hl": true
-        },
-        {
-          "type": "status",
-          "text": "[dejavu] failure 2/3 - 2 sessions",
-          "hl": true
-        },
-        {
           "type": "status",
           "text": "[dejavu] failure 3/3 - 2 sessions",
           "hl": true
@@ -3361,6 +3559,10 @@
           "type": "status",
           "text": "[dejavu] gate promoted - blocking",
           "hl": true
+        },
+        {
+          "type": "divider",
+          "text": "session 3"
         },
         {
           "type": "tool",
@@ -3373,17 +3575,26 @@
           "hl": true
         },
         {
-          "type": "status",
-          "text": "CORRECTION: use --environment, not --env",
+          "type": "gate",
+          "title": "DEJAVU GATE - call aborted",
+          "lines": [
+            "CORRECTION: use --environment, not --env",
+            "EVIDENCE: 3 failures across 2 sessions"
+          ],
           "hl": true
         },
         {
           "type": "status",
-          "text": "EVIDENCE: 3 failures across 2 sessions"
+          "text": "[dejavu] BLOCKED - repeat offense",
+          "hl": true
         },
         {
-          "type": "status",
-          "text": "[dejavu] BLOCKED - repeat offense",
+          "type": "gate",
+          "title": "DEJAVU GATE - repeat offense blocked",
+          "lines": [
+            "the reminder was ignored once",
+            "same-session retry refused"
+          ],
           "hl": true
         },
         {
@@ -3400,6 +3611,10 @@
     "after": {
       "surface": "terminal",
       "blocks": []
+    },
+    "hud": {
+      "text": "intercepted - teaching the fix",
+      "tone": "block"
     }
   },
   {
@@ -3413,25 +3628,6 @@
       "sessionTitle": "# deploy to staging",
       "blocks": [
         {
-          "type": "diff",
-          "lines": [
-            {
-              "type": "del",
-              "text": "Error: unknown flag --env"
-            }
-          ]
-        },
-        {
-          "type": "status",
-          "text": "[dejavu] failure 1/3 - session 1",
-          "hl": true
-        },
-        {
-          "type": "status",
-          "text": "[dejavu] failure 2/3 - 2 sessions",
-          "hl": true
-        },
-        {
           "type": "status",
           "text": "[dejavu] failure 3/3 - 2 sessions",
           "hl": true
@@ -3440,6 +3636,10 @@
           "type": "status",
           "text": "[dejavu] gate promoted - blocking",
           "hl": true
+        },
+        {
+          "type": "divider",
+          "text": "session 3"
         },
         {
           "type": "tool",
@@ -3452,17 +3652,26 @@
           "hl": true
         },
         {
-          "type": "status",
-          "text": "CORRECTION: use --environment, not --env",
+          "type": "gate",
+          "title": "DEJAVU GATE - call aborted",
+          "lines": [
+            "CORRECTION: use --environment, not --env",
+            "EVIDENCE: 3 failures across 2 sessions"
+          ],
           "hl": true
         },
         {
           "type": "status",
-          "text": "EVIDENCE: 3 failures across 2 sessions"
+          "text": "[dejavu] BLOCKED - repeat offense",
+          "hl": true
         },
         {
-          "type": "status",
-          "text": "[dejavu] BLOCKED - repeat offense",
+          "type": "gate",
+          "title": "DEJAVU GATE - repeat offense blocked",
+          "lines": [
+            "the reminder was ignored once",
+            "same-session retry refused"
+          ],
           "hl": true
         },
         {
@@ -3479,6 +3688,10 @@
     "after": {
       "surface": "terminal",
       "blocks": []
+    },
+    "hud": {
+      "text": "intercepted - teaching the fix",
+      "tone": "block"
     }
   },
   {
@@ -3492,25 +3705,6 @@
       "sessionTitle": "# deploy to staging",
       "blocks": [
         {
-          "type": "diff",
-          "lines": [
-            {
-              "type": "del",
-              "text": "Error: unknown flag --env"
-            }
-          ]
-        },
-        {
-          "type": "status",
-          "text": "[dejavu] failure 1/3 - session 1",
-          "hl": true
-        },
-        {
-          "type": "status",
-          "text": "[dejavu] failure 2/3 - 2 sessions",
-          "hl": true
-        },
-        {
           "type": "status",
           "text": "[dejavu] failure 3/3 - 2 sessions",
           "hl": true
@@ -3519,6 +3713,10 @@
           "type": "status",
           "text": "[dejavu] gate promoted - blocking",
           "hl": true
+        },
+        {
+          "type": "divider",
+          "text": "session 3"
         },
         {
           "type": "tool",
@@ -3531,17 +3729,26 @@
           "hl": true
         },
         {
-          "type": "status",
-          "text": "CORRECTION: use --environment, not --env",
+          "type": "gate",
+          "title": "DEJAVU GATE - call aborted",
+          "lines": [
+            "CORRECTION: use --environment, not --env",
+            "EVIDENCE: 3 failures across 2 sessions"
+          ],
           "hl": true
         },
         {
           "type": "status",
-          "text": "EVIDENCE: 3 failures across 2 sessions"
+          "text": "[dejavu] BLOCKED - repeat offense",
+          "hl": true
         },
         {
-          "type": "status",
-          "text": "[dejavu] BLOCKED - repeat offense",
+          "type": "gate",
+          "title": "DEJAVU GATE - repeat offense blocked",
+          "lines": [
+            "the reminder was ignored once",
+            "same-session retry refused"
+          ],
           "hl": true
         },
         {
@@ -3558,6 +3765,10 @@
     "after": {
       "surface": "terminal",
       "blocks": []
+    },
+    "hud": {
+      "text": "intercepted - teaching the fix",
+      "tone": "block"
     }
   },
   {
@@ -3571,25 +3782,6 @@
       "sessionTitle": "# deploy to staging",
       "blocks": [
         {
-          "type": "diff",
-          "lines": [
-            {
-              "type": "del",
-              "text": "Error: unknown flag --env"
-            }
-          ]
-        },
-        {
-          "type": "status",
-          "text": "[dejavu] failure 1/3 - session 1",
-          "hl": true
-        },
-        {
-          "type": "status",
-          "text": "[dejavu] failure 2/3 - 2 sessions",
-          "hl": true
-        },
-        {
           "type": "status",
           "text": "[dejavu] failure 3/3 - 2 sessions",
           "hl": true
@@ -3598,6 +3790,10 @@
           "type": "status",
           "text": "[dejavu] gate promoted - blocking",
           "hl": true
+        },
+        {
+          "type": "divider",
+          "text": "session 3"
         },
         {
           "type": "tool",
@@ -3610,17 +3806,26 @@
           "hl": true
         },
         {
-          "type": "status",
-          "text": "CORRECTION: use --environment, not --env",
+          "type": "gate",
+          "title": "DEJAVU GATE - call aborted",
+          "lines": [
+            "CORRECTION: use --environment, not --env",
+            "EVIDENCE: 3 failures across 2 sessions"
+          ],
           "hl": true
         },
         {
           "type": "status",
-          "text": "EVIDENCE: 3 failures across 2 sessions"
+          "text": "[dejavu] BLOCKED - repeat offense",
+          "hl": true
         },
         {
-          "type": "status",
-          "text": "[dejavu] BLOCKED - repeat offense",
+          "type": "gate",
+          "title": "DEJAVU GATE - repeat offense blocked",
+          "lines": [
+            "the reminder was ignored once",
+            "same-session retry refused"
+          ],
           "hl": true
         },
         {
@@ -3637,6 +3842,10 @@
     "after": {
       "surface": "terminal",
       "blocks": []
+    },
+    "hud": {
+      "text": "intercepted - teaching the fix",
+      "tone": "block"
     }
   },
   {
@@ -3650,25 +3859,6 @@
       "sessionTitle": "# deploy to staging",
       "blocks": [
         {
-          "type": "diff",
-          "lines": [
-            {
-              "type": "del",
-              "text": "Error: unknown flag --env"
-            }
-          ]
-        },
-        {
-          "type": "status",
-          "text": "[dejavu] failure 1/3 - session 1",
-          "hl": true
-        },
-        {
-          "type": "status",
-          "text": "[dejavu] failure 2/3 - 2 sessions",
-          "hl": true
-        },
-        {
           "type": "status",
           "text": "[dejavu] failure 3/3 - 2 sessions",
           "hl": true
@@ -3677,6 +3867,10 @@
           "type": "status",
           "text": "[dejavu] gate promoted - blocking",
           "hl": true
+        },
+        {
+          "type": "divider",
+          "text": "session 3"
         },
         {
           "type": "tool",
@@ -3689,17 +3883,26 @@
           "hl": true
         },
         {
-          "type": "status",
-          "text": "CORRECTION: use --environment, not --env",
+          "type": "gate",
+          "title": "DEJAVU GATE - call aborted",
+          "lines": [
+            "CORRECTION: use --environment, not --env",
+            "EVIDENCE: 3 failures across 2 sessions"
+          ],
           "hl": true
         },
         {
           "type": "status",
-          "text": "EVIDENCE: 3 failures across 2 sessions"
+          "text": "[dejavu] BLOCKED - repeat offense",
+          "hl": true
         },
         {
-          "type": "status",
-          "text": "[dejavu] BLOCKED - repeat offense",
+          "type": "gate",
+          "title": "DEJAVU GATE - repeat offense blocked",
+          "lines": [
+            "the reminder was ignored once",
+            "same-session retry refused"
+          ],
           "hl": true
         },
         {
@@ -3716,6 +3919,10 @@
     "after": {
       "surface": "terminal",
       "blocks": []
+    },
+    "hud": {
+      "text": "intercepted - teaching the fix",
+      "tone": "block"
     }
   },
   {
@@ -3729,25 +3936,6 @@
       "sessionTitle": "# deploy to staging",
       "blocks": [
         {
-          "type": "diff",
-          "lines": [
-            {
-              "type": "del",
-              "text": "Error: unknown flag --env"
-            }
-          ]
-        },
-        {
-          "type": "status",
-          "text": "[dejavu] failure 1/3 - session 1",
-          "hl": true
-        },
-        {
-          "type": "status",
-          "text": "[dejavu] failure 2/3 - 2 sessions",
-          "hl": true
-        },
-        {
           "type": "status",
           "text": "[dejavu] failure 3/3 - 2 sessions",
           "hl": true
@@ -3756,6 +3944,10 @@
           "type": "status",
           "text": "[dejavu] gate promoted - blocking",
           "hl": true
+        },
+        {
+          "type": "divider",
+          "text": "session 3"
         },
         {
           "type": "tool",
@@ -3768,17 +3960,26 @@
           "hl": true
         },
         {
-          "type": "status",
-          "text": "CORRECTION: use --environment, not --env",
+          "type": "gate",
+          "title": "DEJAVU GATE - call aborted",
+          "lines": [
+            "CORRECTION: use --environment, not --env",
+            "EVIDENCE: 3 failures across 2 sessions"
+          ],
           "hl": true
         },
         {
           "type": "status",
-          "text": "EVIDENCE: 3 failures across 2 sessions"
+          "text": "[dejavu] BLOCKED - repeat offense",
+          "hl": true
         },
         {
-          "type": "status",
-          "text": "[dejavu] BLOCKED - repeat offense",
+          "type": "gate",
+          "title": "DEJAVU GATE - repeat offense blocked",
+          "lines": [
+            "the reminder was ignored once",
+            "same-session retry refused"
+          ],
           "hl": true
         },
         {
@@ -3795,6 +3996,10 @@
     "after": {
       "surface": "terminal",
       "blocks": []
+    },
+    "hud": {
+      "text": "intercepted - teaching the fix",
+      "tone": "block"
     }
   },
   {
@@ -3808,25 +4013,6 @@
       "sessionTitle": "# deploy to staging",
       "blocks": [
         {
-          "type": "diff",
-          "lines": [
-            {
-              "type": "del",
-              "text": "Error: unknown flag --env"
-            }
-          ]
-        },
-        {
-          "type": "status",
-          "text": "[dejavu] failure 1/3 - session 1",
-          "hl": true
-        },
-        {
-          "type": "status",
-          "text": "[dejavu] failure 2/3 - 2 sessions",
-          "hl": true
-        },
-        {
           "type": "status",
           "text": "[dejavu] failure 3/3 - 2 sessions",
           "hl": true
@@ -3835,6 +4021,10 @@
           "type": "status",
           "text": "[dejavu] gate promoted - blocking",
           "hl": true
+        },
+        {
+          "type": "divider",
+          "text": "session 3"
         },
         {
           "type": "tool",
@@ -3847,17 +4037,26 @@
           "hl": true
         },
         {
-          "type": "status",
-          "text": "CORRECTION: use --environment, not --env",
+          "type": "gate",
+          "title": "DEJAVU GATE - call aborted",
+          "lines": [
+            "CORRECTION: use --environment, not --env",
+            "EVIDENCE: 3 failures across 2 sessions"
+          ],
           "hl": true
         },
         {
           "type": "status",
-          "text": "EVIDENCE: 3 failures across 2 sessions"
+          "text": "[dejavu] BLOCKED - repeat offense",
+          "hl": true
         },
         {
-          "type": "status",
-          "text": "[dejavu] BLOCKED - repeat offense",
+          "type": "gate",
+          "title": "DEJAVU GATE - repeat offense blocked",
+          "lines": [
+            "the reminder was ignored once",
+            "same-session retry refused"
+          ],
           "hl": true
         },
         {
@@ -3874,6 +4073,10 @@
     "after": {
       "surface": "terminal",
       "blocks": []
+    },
+    "hud": {
+      "text": "intercepted - teaching the fix",
+      "tone": "block"
     }
   },
   {
@@ -3887,25 +4090,6 @@
       "sessionTitle": "# deploy to staging",
       "blocks": [
         {
-          "type": "diff",
-          "lines": [
-            {
-              "type": "del",
-              "text": "Error: unknown flag --env"
-            }
-          ]
-        },
-        {
-          "type": "status",
-          "text": "[dejavu] failure 1/3 - session 1",
-          "hl": true
-        },
-        {
-          "type": "status",
-          "text": "[dejavu] failure 2/3 - 2 sessions",
-          "hl": true
-        },
-        {
           "type": "status",
           "text": "[dejavu] failure 3/3 - 2 sessions",
           "hl": true
@@ -3914,6 +4098,10 @@
           "type": "status",
           "text": "[dejavu] gate promoted - blocking",
           "hl": true
+        },
+        {
+          "type": "divider",
+          "text": "session 3"
         },
         {
           "type": "tool",
@@ -3926,17 +4114,26 @@
           "hl": true
         },
         {
-          "type": "status",
-          "text": "CORRECTION: use --environment, not --env",
+          "type": "gate",
+          "title": "DEJAVU GATE - call aborted",
+          "lines": [
+            "CORRECTION: use --environment, not --env",
+            "EVIDENCE: 3 failures across 2 sessions"
+          ],
           "hl": true
         },
         {
           "type": "status",
-          "text": "EVIDENCE: 3 failures across 2 sessions"
+          "text": "[dejavu] BLOCKED - repeat offense",
+          "hl": true
         },
         {
-          "type": "status",
-          "text": "[dejavu] BLOCKED - repeat offense",
+          "type": "gate",
+          "title": "DEJAVU GATE - repeat offense blocked",
+          "lines": [
+            "the reminder was ignored once",
+            "same-session retry refused"
+          ],
           "hl": true
         },
         {
@@ -3953,6 +4150,10 @@
     "after": {
       "surface": "terminal",
       "blocks": []
+    },
+    "hud": {
+      "text": "intercepted - teaching the fix",
+      "tone": "block"
     }
   },
   {
@@ -3966,25 +4167,6 @@
       "sessionTitle": "# deploy to staging",
       "blocks": [
         {
-          "type": "diff",
-          "lines": [
-            {
-              "type": "del",
-              "text": "Error: unknown flag --env"
-            }
-          ]
-        },
-        {
-          "type": "status",
-          "text": "[dejavu] failure 1/3 - session 1",
-          "hl": true
-        },
-        {
-          "type": "status",
-          "text": "[dejavu] failure 2/3 - 2 sessions",
-          "hl": true
-        },
-        {
           "type": "status",
           "text": "[dejavu] failure 3/3 - 2 sessions",
           "hl": true
@@ -3993,6 +4175,10 @@
           "type": "status",
           "text": "[dejavu] gate promoted - blocking",
           "hl": true
+        },
+        {
+          "type": "divider",
+          "text": "session 3"
         },
         {
           "type": "tool",
@@ -4005,17 +4191,26 @@
           "hl": true
         },
         {
-          "type": "status",
-          "text": "CORRECTION: use --environment, not --env",
+          "type": "gate",
+          "title": "DEJAVU GATE - call aborted",
+          "lines": [
+            "CORRECTION: use --environment, not --env",
+            "EVIDENCE: 3 failures across 2 sessions"
+          ],
           "hl": true
         },
         {
           "type": "status",
-          "text": "EVIDENCE: 3 failures across 2 sessions"
+          "text": "[dejavu] BLOCKED - repeat offense",
+          "hl": true
         },
         {
-          "type": "status",
-          "text": "[dejavu] BLOCKED - repeat offense",
+          "type": "gate",
+          "title": "DEJAVU GATE - repeat offense blocked",
+          "lines": [
+            "the reminder was ignored once",
+            "same-session retry refused"
+          ],
           "hl": true
         },
         {
@@ -4032,6 +4227,10 @@
     "after": {
       "surface": "terminal",
       "blocks": []
+    },
+    "hud": {
+      "text": "intercepted - teaching the fix",
+      "tone": "block"
     }
   },
   {
@@ -4046,23 +4245,12 @@
       "blocks": [
         {
           "type": "status",
-          "text": "[dejavu] failure 1/3 - session 1",
-          "hl": true
-        },
-        {
-          "type": "status",
-          "text": "[dejavu] failure 2/3 - 2 sessions",
-          "hl": true
-        },
-        {
-          "type": "status",
-          "text": "[dejavu] failure 3/3 - 2 sessions",
-          "hl": true
-        },
-        {
-          "type": "status",
           "text": "[dejavu] gate promoted - blocking",
           "hl": true
+        },
+        {
+          "type": "divider",
+          "text": "session 3"
         },
         {
           "type": "tool",
@@ -4075,17 +4263,26 @@
           "hl": true
         },
         {
-          "type": "status",
-          "text": "CORRECTION: use --environment, not --env",
+          "type": "gate",
+          "title": "DEJAVU GATE - call aborted",
+          "lines": [
+            "CORRECTION: use --environment, not --env",
+            "EVIDENCE: 3 failures across 2 sessions"
+          ],
           "hl": true
         },
         {
           "type": "status",
-          "text": "EVIDENCE: 3 failures across 2 sessions"
+          "text": "[dejavu] BLOCKED - repeat offense",
+          "hl": true
         },
         {
-          "type": "status",
-          "text": "[dejavu] BLOCKED - repeat offense",
+          "type": "gate",
+          "title": "DEJAVU GATE - repeat offense blocked",
+          "lines": [
+            "the reminder was ignored once",
+            "same-session retry refused"
+          ],
           "hl": true
         },
         {
@@ -4106,6 +4303,10 @@
     "after": {
       "surface": "terminal",
       "blocks": []
+    },
+    "hud": {
+      "text": "intercepted - teaching the fix",
+      "tone": "block"
     }
   },
   {
@@ -4120,23 +4321,12 @@
       "blocks": [
         {
           "type": "status",
-          "text": "[dejavu] failure 1/3 - session 1",
-          "hl": true
-        },
-        {
-          "type": "status",
-          "text": "[dejavu] failure 2/3 - 2 sessions",
-          "hl": true
-        },
-        {
-          "type": "status",
-          "text": "[dejavu] failure 3/3 - 2 sessions",
-          "hl": true
-        },
-        {
-          "type": "status",
           "text": "[dejavu] gate promoted - blocking",
           "hl": true
+        },
+        {
+          "type": "divider",
+          "text": "session 3"
         },
         {
           "type": "tool",
@@ -4149,17 +4339,26 @@
           "hl": true
         },
         {
-          "type": "status",
-          "text": "CORRECTION: use --environment, not --env",
+          "type": "gate",
+          "title": "DEJAVU GATE - call aborted",
+          "lines": [
+            "CORRECTION: use --environment, not --env",
+            "EVIDENCE: 3 failures across 2 sessions"
+          ],
           "hl": true
         },
         {
           "type": "status",
-          "text": "EVIDENCE: 3 failures across 2 sessions"
+          "text": "[dejavu] BLOCKED - repeat offense",
+          "hl": true
         },
         {
-          "type": "status",
-          "text": "[dejavu] BLOCKED - repeat offense",
+          "type": "gate",
+          "title": "DEJAVU GATE - repeat offense blocked",
+          "lines": [
+            "the reminder was ignored once",
+            "same-session retry refused"
+          ],
           "hl": true
         },
         {
@@ -4180,6 +4379,10 @@
     "after": {
       "surface": "terminal",
       "blocks": []
+    },
+    "hud": {
+      "text": "intercepted - teaching the fix",
+      "tone": "block"
     }
   },
   {
@@ -4194,23 +4397,12 @@
       "blocks": [
         {
           "type": "status",
-          "text": "[dejavu] failure 1/3 - session 1",
-          "hl": true
-        },
-        {
-          "type": "status",
-          "text": "[dejavu] failure 2/3 - 2 sessions",
-          "hl": true
-        },
-        {
-          "type": "status",
-          "text": "[dejavu] failure 3/3 - 2 sessions",
-          "hl": true
-        },
-        {
-          "type": "status",
           "text": "[dejavu] gate promoted - blocking",
           "hl": true
+        },
+        {
+          "type": "divider",
+          "text": "session 3"
         },
         {
           "type": "tool",
@@ -4223,17 +4415,26 @@
           "hl": true
         },
         {
-          "type": "status",
-          "text": "CORRECTION: use --environment, not --env",
+          "type": "gate",
+          "title": "DEJAVU GATE - call aborted",
+          "lines": [
+            "CORRECTION: use --environment, not --env",
+            "EVIDENCE: 3 failures across 2 sessions"
+          ],
           "hl": true
         },
         {
           "type": "status",
-          "text": "EVIDENCE: 3 failures across 2 sessions"
+          "text": "[dejavu] BLOCKED - repeat offense",
+          "hl": true
         },
         {
-          "type": "status",
-          "text": "[dejavu] BLOCKED - repeat offense",
+          "type": "gate",
+          "title": "DEJAVU GATE - repeat offense blocked",
+          "lines": [
+            "the reminder was ignored once",
+            "same-session retry refused"
+          ],
           "hl": true
         },
         {
@@ -4254,6 +4455,10 @@
     "after": {
       "surface": "terminal",
       "blocks": []
+    },
+    "hud": {
+      "text": "healing: success 1/3",
+      "tone": "heal"
     }
   },
   {
@@ -4267,19 +4472,8 @@
       "sessionTitle": "# deploy to staging",
       "blocks": [
         {
-          "type": "status",
-          "text": "[dejavu] failure 2/3 - 2 sessions",
-          "hl": true
-        },
-        {
-          "type": "status",
-          "text": "[dejavu] failure 3/3 - 2 sessions",
-          "hl": true
-        },
-        {
-          "type": "status",
-          "text": "[dejavu] gate promoted - blocking",
-          "hl": true
+          "type": "divider",
+          "text": "session 3"
         },
         {
           "type": "tool",
@@ -4292,17 +4486,26 @@
           "hl": true
         },
         {
-          "type": "status",
-          "text": "CORRECTION: use --environment, not --env",
+          "type": "gate",
+          "title": "DEJAVU GATE - call aborted",
+          "lines": [
+            "CORRECTION: use --environment, not --env",
+            "EVIDENCE: 3 failures across 2 sessions"
+          ],
           "hl": true
         },
         {
           "type": "status",
-          "text": "EVIDENCE: 3 failures across 2 sessions"
+          "text": "[dejavu] BLOCKED - repeat offense",
+          "hl": true
         },
         {
-          "type": "status",
-          "text": "[dejavu] BLOCKED - repeat offense",
+          "type": "gate",
+          "title": "DEJAVU GATE - repeat offense blocked",
+          "lines": [
+            "the reminder was ignored once",
+            "same-session retry refused"
+          ],
           "hl": true
         },
         {
@@ -4327,6 +4530,10 @@
     "after": {
       "surface": "terminal",
       "blocks": []
+    },
+    "hud": {
+      "text": "healing: success 1/3",
+      "tone": "heal"
     }
   },
   {
@@ -4340,19 +4547,8 @@
       "sessionTitle": "# deploy to staging",
       "blocks": [
         {
-          "type": "status",
-          "text": "[dejavu] failure 2/3 - 2 sessions",
-          "hl": true
-        },
-        {
-          "type": "status",
-          "text": "[dejavu] failure 3/3 - 2 sessions",
-          "hl": true
-        },
-        {
-          "type": "status",
-          "text": "[dejavu] gate promoted - blocking",
-          "hl": true
+          "type": "divider",
+          "text": "session 3"
         },
         {
           "type": "tool",
@@ -4365,17 +4561,26 @@
           "hl": true
         },
         {
-          "type": "status",
-          "text": "CORRECTION: use --environment, not --env",
+          "type": "gate",
+          "title": "DEJAVU GATE - call aborted",
+          "lines": [
+            "CORRECTION: use --environment, not --env",
+            "EVIDENCE: 3 failures across 2 sessions"
+          ],
           "hl": true
         },
         {
           "type": "status",
-          "text": "EVIDENCE: 3 failures across 2 sessions"
+          "text": "[dejavu] BLOCKED - repeat offense",
+          "hl": true
         },
         {
-          "type": "status",
-          "text": "[dejavu] BLOCKED - repeat offense",
+          "type": "gate",
+          "title": "DEJAVU GATE - repeat offense blocked",
+          "lines": [
+            "the reminder was ignored once",
+            "same-session retry refused"
+          ],
           "hl": true
         },
         {
@@ -4400,6 +4605,10 @@
     "after": {
       "surface": "terminal",
       "blocks": []
+    },
+    "hud": {
+      "text": "healing: success 1/3",
+      "tone": "heal"
     }
   },
   {
@@ -4413,19 +4622,8 @@
       "sessionTitle": "# deploy to staging",
       "blocks": [
         {
-          "type": "status",
-          "text": "[dejavu] failure 2/3 - 2 sessions",
-          "hl": true
-        },
-        {
-          "type": "status",
-          "text": "[dejavu] failure 3/3 - 2 sessions",
-          "hl": true
-        },
-        {
-          "type": "status",
-          "text": "[dejavu] gate promoted - blocking",
-          "hl": true
+          "type": "divider",
+          "text": "session 3"
         },
         {
           "type": "tool",
@@ -4438,17 +4636,26 @@
           "hl": true
         },
         {
-          "type": "status",
-          "text": "CORRECTION: use --environment, not --env",
+          "type": "gate",
+          "title": "DEJAVU GATE - call aborted",
+          "lines": [
+            "CORRECTION: use --environment, not --env",
+            "EVIDENCE: 3 failures across 2 sessions"
+          ],
           "hl": true
         },
         {
           "type": "status",
-          "text": "EVIDENCE: 3 failures across 2 sessions"
+          "text": "[dejavu] BLOCKED - repeat offense",
+          "hl": true
         },
         {
-          "type": "status",
-          "text": "[dejavu] BLOCKED - repeat offense",
+          "type": "gate",
+          "title": "DEJAVU GATE - repeat offense blocked",
+          "lines": [
+            "the reminder was ignored once",
+            "same-session retry refused"
+          ],
           "hl": true
         },
         {
@@ -4473,6 +4680,10 @@
     "after": {
       "surface": "terminal",
       "blocks": []
+    },
+    "hud": {
+      "text": "healing: success 1/3",
+      "tone": "heal"
     }
   },
   {
@@ -4486,16 +4697,6 @@
       "sessionTitle": "# deploy to staging",
       "blocks": [
         {
-          "type": "status",
-          "text": "[dejavu] failure 3/3 - 2 sessions",
-          "hl": true
-        },
-        {
-          "type": "status",
-          "text": "[dejavu] gate promoted - blocking",
-          "hl": true
-        },
-        {
           "type": "tool",
           "kind": "call",
           "text": "deploy --to dist --env stg"
@@ -4506,17 +4707,26 @@
           "hl": true
         },
         {
-          "type": "status",
-          "text": "CORRECTION: use --environment, not --env",
+          "type": "gate",
+          "title": "DEJAVU GATE - call aborted",
+          "lines": [
+            "CORRECTION: use --environment, not --env",
+            "EVIDENCE: 3 failures across 2 sessions"
+          ],
           "hl": true
         },
         {
           "type": "status",
-          "text": "EVIDENCE: 3 failures across 2 sessions"
+          "text": "[dejavu] BLOCKED - repeat offense",
+          "hl": true
         },
         {
-          "type": "status",
-          "text": "[dejavu] BLOCKED - repeat offense",
+          "type": "gate",
+          "title": "DEJAVU GATE - repeat offense blocked",
+          "lines": [
+            "the reminder was ignored once",
+            "same-session retry refused"
+          ],
           "hl": true
         },
         {
@@ -4545,6 +4755,10 @@
     "after": {
       "surface": "terminal",
       "blocks": []
+    },
+    "hud": {
+      "text": "healing: success 1/3",
+      "tone": "heal"
     }
   },
   {
@@ -4558,16 +4772,6 @@
       "sessionTitle": "# deploy to staging",
       "blocks": [
         {
-          "type": "status",
-          "text": "[dejavu] failure 3/3 - 2 sessions",
-          "hl": true
-        },
-        {
-          "type": "status",
-          "text": "[dejavu] gate promoted - blocking",
-          "hl": true
-        },
-        {
           "type": "tool",
           "kind": "call",
           "text": "deploy --to dist --env stg"
@@ -4578,17 +4782,26 @@
           "hl": true
         },
         {
-          "type": "status",
-          "text": "CORRECTION: use --environment, not --env",
+          "type": "gate",
+          "title": "DEJAVU GATE - call aborted",
+          "lines": [
+            "CORRECTION: use --environment, not --env",
+            "EVIDENCE: 3 failures across 2 sessions"
+          ],
           "hl": true
         },
         {
           "type": "status",
-          "text": "EVIDENCE: 3 failures across 2 sessions"
+          "text": "[dejavu] BLOCKED - repeat offense",
+          "hl": true
         },
         {
-          "type": "status",
-          "text": "[dejavu] BLOCKED - repeat offense",
+          "type": "gate",
+          "title": "DEJAVU GATE - repeat offense blocked",
+          "lines": [
+            "the reminder was ignored once",
+            "same-session retry refused"
+          ],
           "hl": true
         },
         {
@@ -4617,6 +4830,10 @@
     "after": {
       "surface": "terminal",
       "blocks": []
+    },
+    "hud": {
+      "text": "healing: success 1/3",
+      "tone": "heal"
     }
   },
   {
@@ -4630,16 +4847,6 @@
       "sessionTitle": "# deploy to staging",
       "blocks": [
         {
-          "type": "status",
-          "text": "[dejavu] failure 3/3 - 2 sessions",
-          "hl": true
-        },
-        {
-          "type": "status",
-          "text": "[dejavu] gate promoted - blocking",
-          "hl": true
-        },
-        {
           "type": "tool",
           "kind": "call",
           "text": "deploy --to dist --env stg"
@@ -4650,17 +4857,26 @@
           "hl": true
         },
         {
-          "type": "status",
-          "text": "CORRECTION: use --environment, not --env",
+          "type": "gate",
+          "title": "DEJAVU GATE - call aborted",
+          "lines": [
+            "CORRECTION: use --environment, not --env",
+            "EVIDENCE: 3 failures across 2 sessions"
+          ],
           "hl": true
         },
         {
           "type": "status",
-          "text": "EVIDENCE: 3 failures across 2 sessions"
+          "text": "[dejavu] BLOCKED - repeat offense",
+          "hl": true
         },
         {
-          "type": "status",
-          "text": "[dejavu] BLOCKED - repeat offense",
+          "type": "gate",
+          "title": "DEJAVU GATE - repeat offense blocked",
+          "lines": [
+            "the reminder was ignored once",
+            "same-session retry refused"
+          ],
           "hl": true
         },
         {
@@ -4689,6 +4905,10 @@
     "after": {
       "surface": "terminal",
       "blocks": []
+    },
+    "hud": {
+      "text": "healing: success 2/3",
+      "tone": "heal"
     }
   },
   {
@@ -4703,31 +4923,30 @@
       "blocks": [
         {
           "type": "status",
-          "text": "[dejavu] gate promoted - blocking",
-          "hl": true
-        },
-        {
-          "type": "tool",
-          "kind": "call",
-          "text": "deploy --to dist --env stg"
-        },
-        {
-          "type": "status",
           "text": "[dejavu] REMINDER - call aborted",
           "hl": true
         },
         {
-          "type": "status",
-          "text": "CORRECTION: use --environment, not --env",
+          "type": "gate",
+          "title": "DEJAVU GATE - call aborted",
+          "lines": [
+            "CORRECTION: use --environment, not --env",
+            "EVIDENCE: 3 failures across 2 sessions"
+          ],
           "hl": true
         },
         {
           "type": "status",
-          "text": "EVIDENCE: 3 failures across 2 sessions"
+          "text": "[dejavu] BLOCKED - repeat offense",
+          "hl": true
         },
         {
-          "type": "status",
-          "text": "[dejavu] BLOCKED - repeat offense",
+          "type": "gate",
+          "title": "DEJAVU GATE - repeat offense blocked",
+          "lines": [
+            "the reminder was ignored once",
+            "same-session retry refused"
+          ],
           "hl": true
         },
         {
@@ -4761,6 +4980,10 @@
     "after": {
       "surface": "terminal",
       "blocks": []
+    },
+    "hud": {
+      "text": "healing: success 2/3",
+      "tone": "heal"
     }
   },
   {
@@ -4775,31 +4998,30 @@
       "blocks": [
         {
           "type": "status",
-          "text": "[dejavu] gate promoted - blocking",
-          "hl": true
-        },
-        {
-          "type": "tool",
-          "kind": "call",
-          "text": "deploy --to dist --env stg"
-        },
-        {
-          "type": "status",
           "text": "[dejavu] REMINDER - call aborted",
           "hl": true
         },
         {
-          "type": "status",
-          "text": "CORRECTION: use --environment, not --env",
+          "type": "gate",
+          "title": "DEJAVU GATE - call aborted",
+          "lines": [
+            "CORRECTION: use --environment, not --env",
+            "EVIDENCE: 3 failures across 2 sessions"
+          ],
           "hl": true
         },
         {
           "type": "status",
-          "text": "EVIDENCE: 3 failures across 2 sessions"
+          "text": "[dejavu] BLOCKED - repeat offense",
+          "hl": true
         },
         {
-          "type": "status",
-          "text": "[dejavu] BLOCKED - repeat offense",
+          "type": "gate",
+          "title": "DEJAVU GATE - repeat offense blocked",
+          "lines": [
+            "the reminder was ignored once",
+            "same-session retry refused"
+          ],
           "hl": true
         },
         {
@@ -4833,6 +5055,85 @@
     "after": {
       "surface": "terminal",
       "blocks": []
+    },
+    "hud": {
+      "text": "healing: success 2/3",
+      "tone": "heal"
+    }
+  },
+  {
+    "theme": "opencode",
+    "windowTitle": "deploy to staging",
+    "takeaway": "Three successes - the gate heals back to watching",
+    "delay": 1,
+    "before": {
+      "surface": "single",
+      "caption": "healed",
+      "sessionTitle": "# deploy to staging",
+      "blocks": [
+        {
+          "type": "status",
+          "text": "[dejavu] REMINDER - call aborted",
+          "hl": true
+        },
+        {
+          "type": "gate",
+          "title": "DEJAVU GATE - call aborted",
+          "lines": [
+            "CORRECTION: use --environment, not --env",
+            "EVIDENCE: 3 failures across 2 sessions"
+          ],
+          "hl": true
+        },
+        {
+          "type": "status",
+          "text": "[dejavu] BLOCKED - repeat offense",
+          "hl": true
+        },
+        {
+          "type": "gate",
+          "title": "DEJAVU GATE - repeat offense blocked",
+          "lines": [
+            "the reminder was ignored once",
+            "same-session retry refused"
+          ],
+          "hl": true
+        },
+        {
+          "type": "prose",
+          "text": "Applying the correction: --environment, not --env"
+        },
+        {
+          "type": "tool",
+          "kind": "call",
+          "text": "deploy --to dist --environment stg"
+        },
+        {
+          "type": "done",
+          "text": "deployed to staging - exit 0"
+        },
+        {
+          "type": "status",
+          "text": "[dejavu] success 1/3 toward healing"
+        },
+        {
+          "type": "status",
+          "text": "[dejavu] success 2/3 toward healing"
+        },
+        {
+          "type": "status",
+          "text": "[dejavu] 3 successes - gate HEALS - watching",
+          "hl": true
+        }
+      ]
+    },
+    "after": {
+      "surface": "terminal",
+      "blocks": []
+    },
+    "hud": {
+      "text": "healing: success 3/3 - gate HEALS",
+      "tone": "heal"
     }
   },
   {
@@ -4847,31 +5148,30 @@
       "blocks": [
         {
           "type": "status",
-          "text": "[dejavu] gate promoted - blocking",
-          "hl": true
-        },
-        {
-          "type": "tool",
-          "kind": "call",
-          "text": "deploy --to dist --env stg"
-        },
-        {
-          "type": "status",
           "text": "[dejavu] REMINDER - call aborted",
           "hl": true
         },
         {
-          "type": "status",
-          "text": "CORRECTION: use --environment, not --env",
+          "type": "gate",
+          "title": "DEJAVU GATE - call aborted",
+          "lines": [
+            "CORRECTION: use --environment, not --env",
+            "EVIDENCE: 3 failures across 2 sessions"
+          ],
           "hl": true
         },
         {
           "type": "status",
-          "text": "EVIDENCE: 3 failures across 2 sessions"
+          "text": "[dejavu] BLOCKED - repeat offense",
+          "hl": true
         },
         {
-          "type": "status",
-          "text": "[dejavu] BLOCKED - repeat offense",
+          "type": "gate",
+          "title": "DEJAVU GATE - repeat offense blocked",
+          "lines": [
+            "the reminder was ignored once",
+            "same-session retry refused"
+          ],
           "hl": true
         },
         {
@@ -4905,6 +5205,10 @@
     "after": {
       "surface": "terminal",
       "blocks": []
+    },
+    "hud": {
+      "text": "watching - gate retired",
+      "tone": "heal"
     }
   }
 ]
