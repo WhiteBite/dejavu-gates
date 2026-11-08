@@ -92,6 +92,12 @@ export function mergeHooks(
   options: { shape: MergeShape; isMine: (command: unknown) => boolean },
 ): Record<string, unknown>;
 
+export function mergeMcpServers(
+  existing: Record<string, unknown>,
+  template: Record<string, unknown>,
+  options: { container: string; isMine: (name: string, server: unknown) => boolean },
+): Record<string, unknown>;
+
 export type MarkerBlockAction = 'created' | 'replaced' | 'appended' | 'unchanged' | 'skipped-foreign';
 export interface MarkerBlockResult {
   action: MarkerBlockAction;

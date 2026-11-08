@@ -1,5 +1,6 @@
 /** harness-kit public surface: registry facts + owner-scoped merge + ownership sidecar + atomic writes + templating. */
 export { mergeHooks } from './merge.mjs';
+export { mergeMcpServers } from './mcp.mjs';
 export { writeMarkerBlock, readMarkerBlock } from './marker.mjs';
 export { checkDrift, extractCliPath, collectCommands } from './drift.mjs';
 export { checkInstall, resolveHooksDir } from './doctor.mjs';

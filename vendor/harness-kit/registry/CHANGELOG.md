@@ -1,8 +1,22 @@
 # Registry changelog
 
-Format: keep-a-changelog. `registryVersion` follows semver:
+Format: keep-a-changelog. From package 0.10.0, `registryVersion` mirrors the package `version` (one version everywhere; `version:sync` sets it) and new entries are keyed by the package version. The semver contract below describes the historical registry-only versions (through 0.6.0):
 MAJOR removes/renames keys or changes their meaning (a structural break that breaks consumer code), MINOR adds harnesses, fields or additive blocks and also covers fact VALUE changes (a moved path or corrected container - consumer code does not change, the lockfile/`diff` surfaces it), PATCH is notes and typos.
 Keys are never deleted - they are deprecated in place (forward compatibility for vendored consumers).
+
+## 0.6.0
+
+- Add 2 experimental harness rows: `zcode` (ZCode - JSON config, 7 lifecycle hook events under `hooks.events`, skills roots, MCP under the nested `mcp.servers` key; hooks and MCP are print-only) and `deepseek` (DeepSeek Harness - Cordis YAML composition, no hook/MCP JSON file surface; skills roots only).
+- Orca (stablyai/orca) is deliberately NOT a row: it is an agent orchestrator, not a config-host harness; its `orca.yaml` declares worktree-lifecycle hooks (setup/archive), not agent-event hooks.
+
+## 0.5.0
+
+- Add 9 experimental harness rows (goose, hermes, openhands, continue, junie, oh-my-pi, pi, kimi-code, amp) with sourced config/hook/MCP facts; MCP write enabled (`merge`) only for oh-my-pi and pi (json + `${VAR}` interpolation).
+
+## 0.4.0
+
+- Enable owner-scoped MCP server-map merge (`mergeMcpServers`); flips the 6 JSON env-interpolated mcp rows (claude, gemini, cursor, windsurf, kiro, factory) from `print-only` to `write: "merge"`.
+- Non-JSON (codex toml, opencode jsonc) and literal-token/panel-managed rows (vscode, cline, roo, zed) stay `print-only`.
 
 ## 0.3.0
 

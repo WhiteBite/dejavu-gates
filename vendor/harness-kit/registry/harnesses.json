@@ -1,7 +1,7 @@
 {
   "$schema": "./harnesses.schema.json",
   "schemaVersion": 1,
-  "registryVersion": "0.3.0",
+  "registryVersion": "0.10.0",
   "conventions": {
     "ownership": {
       "sidecar": ".harness-kit/ownership.json",
@@ -48,7 +48,7 @@
         "typeField": "type",
         "typeValue": "http",
         "tokenEnvSyntax": "${VAR}",
-        "write": "print-only",
+        "write": "merge",
         "source": "remote-devbox-mcp/home/rdm/prompt.py",
         "note": "env var name must not look like a credential (ANTHROPIC_*/AWS_* are substituted empty); verify against /mcp"
       },
@@ -130,7 +130,7 @@
         "container": "mcpServers",
         "urlField": "httpUrl",
         "tokenEnvSyntax": "${VAR}",
-        "write": "print-only",
+        "write": "merge",
         "source": "remote-devbox-mcp/home/rdm/prompt.py",
         "note": "url field is `httpUrl` (not `url`); verify with /mcp"
       },
@@ -171,7 +171,7 @@
         "container": "mcpServers",
         "urlField": "url",
         "tokenEnvSyntax": "${env:VAR}",
-        "write": "print-only",
+        "write": "merge",
         "source": "remote-devbox-mcp/home/rdm/prompt.py",
         "note": "no type field; env syntax is `${env:VAR}`; verify in Cursor MCP panel"
       },
@@ -190,7 +190,7 @@
         "container": "mcpServers",
         "urlField": "url",
         "tokenEnvSyntax": "${env:VAR}",
-        "write": "print-only",
+        "write": "merge",
         "source": "remote-devbox-mcp/home/rdm/prompt.py",
         "note": "%APPDATA%\\devin\\mcp_config.json is a Windows variant of the same file"
       }
@@ -249,7 +249,7 @@
         "typeField": "type",
         "typeValue": "http",
         "tokenEnvSyntax": "${VAR}",
-        "write": "print-only",
+        "write": "merge",
         "source": "remote-devbox-mcp/home/rdm/prompt.py",
         "note": "Kiro requires https (except localhost)"
       },
@@ -360,10 +360,188 @@
         "typeField": "type",
         "typeValue": "http",
         "tokenEnvSyntax": "${VAR}",
-        "write": "print-only",
+        "write": "merge",
         "source": "remote-devbox-mcp/home/rdm/prompt.py",
         "note": "server object carries oauth:false; verify with `droid` MCP list"
       }
+    },
+    "goose": {
+      "name": "goose",
+      "status": "experimental",
+      "hooks": {
+        "config": { "project": ".agents/plugins/{tool}/hooks/hooks.json", "user": "~/.agents/plugins/{tool}/hooks/hooks.json" },
+        "write": "overwrite",
+        "shape": "nested-hooks",
+        "events": ["SessionStart", "SessionEnd", "Stop", "UserPromptSubmit", "PreToolUse", "PreToolUseResult", "PostToolUse", "PostToolUseFailure", "BeforeReadFile", "AfterFileEdit", "BeforeShellExecution", "AfterShellExecution"],
+        "entryFields": { "type": "command", "timeoutUnit": "seconds" },
+        "envOverrides": { "configDir": "GOOSE_PATH_ROOT" }
+      },
+      "skills": { "global": [".agents/skills"], "project": [".agents/skills"] },
+      "notes": "Hooks are a plugin-scoped JSON file (regex matcher, seconds). MCP lives in config.yaml (container `extensions`, url `uri`) - not representable here, verify before wiring. Backward-compat read paths .goose/skills and .claude/skills."
+    },
+    "hermes": {
+      "name": "Hermes Agent",
+      "status": "experimental",
+      "hooks": {
+        "config": { "project": ".hermes/config.yaml", "user": "~/.hermes/config.yaml" },
+        "write": "print-only",
+        "events": ["pre_tool_call", "post_tool_call", "pre_llm_call", "post_llm_call", "on_session_start", "on_session_end"],
+        "entryFields": { "timeoutUnit": "seconds" },
+        "envOverrides": { "configDir": "HERMES_HOME" }
+      },
+      "skills": { "global": ["~/.hermes/skills"] },
+      "notes": "Shell hooks live in config.yaml (YAML, not JSON): {matcher, command, timeout seconds, fail_closed}; project scope `.hermes/` is trust-gated (verify). MCP container `mcp_servers` (YAML)."
+    },
+    "openhands": {
+      "name": "OpenHands",
+      "status": "experimental",
+      "hooks": {
+        "config": { "project": ".openhands/hooks.json" },
+        "write": "merge",
+        "shape": "nested-hooks",
+        "events": ["PreToolUse", "PostToolUse", "UserPromptSubmit", "Stop", "SessionStart", "SessionEnd"],
+        "entryFields": { "type": "command", "timeoutUnit": "seconds" }
+      },
+      "skills": { "project": [".agents/skills"], "global": ["~/.agents/skills"] },
+      "notes": "Claude-Code-compatible hook entries {matcher, hooks:[{command,timeout,async,type}]}; also .openhands/setup.sh and AGENTS.md. MCP is user-scope only (no per-project file)."
+    },
+    "continue": {
+      "name": "Continue",
+      "status": "experimental",
+      "hooks": {
+        "config": { "project": ".continue/settings.json", "user": "~/.continue/settings.json" },
+        "write": "merge",
+        "shape": "nested-hooks",
+        "events": ["PreToolUse", "PostToolUse", "PostToolUseFailure", "PermissionRequest", "UserPromptSubmit", "SessionStart", "SessionEnd", "Stop", "Notification", "SubagentStart", "SubagentStop", "PreCompact"],
+        "entryFields": { "type": "command", "timeoutUnit": "seconds" },
+        "envOverrides": { "configDir": "CONTINUE_GLOBAL_DIR" }
+      },
+      "skills": { "project": [".continue/skills"], "global": ["~/.continue/skills"] },
+      "notes": "CLI only (IDE extension has no hooks); hook config precedence .claude/ < .continue/ < *.local.json. MCP in config.yaml (YAML) or .continue/mcpServers/*.json."
+    },
+    "junie": {
+      "name": "Junie",
+      "status": "experimental",
+      "hooks": {
+        "config": { "project": ".junie/config.json", "user": "~/.junie/config.json" },
+        "write": "merge",
+        "shape": "nested-hooks",
+        "events": ["SessionStart", "UserPromptSubmit", "PreToolUse", "PostToolUse", "Stop", "StopFailure", "SessionEnd", "PermissionRequest"],
+        "entryFields": { "type": "command", "timeoutUnit": "seconds" },
+        "envOverrides": { "configLocation": "JUNIE_CONFIG_LOCATION" }
+      },
+      "skills": { "project": [".junie/skills"], "global": ["~/.junie/skills"] },
+      "mcp": {
+        "status": "experimental",
+        "config": { "project": ".junie/mcp/mcp.json", "user": "~/.junie/mcp/mcp.json" },
+        "format": "json",
+        "container": "mcpServers",
+        "urlField": "url",
+        "write": "print-only",
+        "note": "type/transport inferred from command vs url; interpolation unknown"
+      },
+      "notes": "CLI. Project-local hooks are ignored for safety - load explicitly. MCP file .junie/mcp/mcp.json (print-only: interpolation unverified)."
+    },
+    "oh-my-pi": {
+      "name": "Oh My Pi",
+      "status": "experimental",
+      "hooks": null,
+      "mcp": {
+        "status": "experimental",
+        "config": { "project": ".omp/mcp.json", "user": "~/.omp/agent/mcp.json" },
+        "format": "json",
+        "container": "mcpServers",
+        "urlField": "url",
+        "typeField": "type",
+        "tokenEnvSyntax": "${VAR}",
+        "write": "merge"
+      },
+      "skills": { "project": [".omp/skills"], "global": ["~/.omp/agent/skills"] },
+      "envOverrides": { "configDir": "PI_CONFIG_DIR" },
+      "notes": "Pi fork. Hooks are TS/JS modules (.omp/hooks/pre|post), no JSON hook surface. MCP supports `${VAR}` and `${VAR:-default}`."
+    },
+    "pi": {
+      "name": "Pi",
+      "status": "experimental",
+      "hooks": null,
+      "mcp": {
+        "status": "experimental",
+        "config": { "project": ".pi/mcp.json", "user": "~/.pi/agent/mcp.json" },
+        "format": "json",
+        "container": "mcpServers",
+        "urlField": "url",
+        "typeField": "type",
+        "tokenEnvSyntax": "${VAR}",
+        "write": "merge"
+      },
+      "skills": { "project": [".pi/skills"], "global": ["~/.pi/agent/skills"] },
+      "envOverrides": { "configDir": "PI_CODING_AGENT_DIR" },
+      "notes": "Hooks only via TS extensions (pi.on), no JSON hook surface. MCP type is stdio|http|streamable-http (inferred from command/url)."
+    },
+    "kimi-code": {
+      "name": "Kimi Code",
+      "status": "experimental",
+      "hooks": null,
+      "mcp": {
+        "status": "experimental",
+        "config": { "project": ".kimi-code/mcp.json", "user": "~/.kimi-code/mcp.json" },
+        "format": "json",
+        "container": "mcpServers",
+        "urlField": "url",
+        "typeField": "transport",
+        "write": "print-only",
+        "note": "bearerTokenEnvVar holds the env-var NAME (no literal secret); no `${VAR}` interpolation"
+      },
+      "skills": { "project": [".kimi-code/skills"], "global": ["~/.kimi-code/skills"] },
+      "envOverrides": { "configDir": "KIMI_CODE_HOME" },
+      "notes": "Hooks are user-scope only in config.toml (TOML): {event, matcher, command, timeout seconds} - no project hook file. MCP also .kimi-code/mcp.json; transport `sse` explicit, stdio/http inferred."
+    },
+    "amp": {
+      "name": "Amp",
+      "status": "experimental",
+      "hooks": null,
+      "mcp": {
+        "status": "experimental",
+        "config": { "project": ".amp/settings.json", "user": "~/.config/amp/settings.json" },
+        "format": "jsonc",
+        "container": "amp.mcpServers",
+        "urlField": "url",
+        "tokenEnvSyntax": "${VAR}",
+        "write": "print-only"
+      },
+      "skills": { "global": ["~/.config/amp/skills"] },
+      "notes": "Closed-source (sourcegraph/amp repo is 404; docs at ampcode.com). No hook config - event-driven TS plugins. MCP lives under the literal top-level key `amp.mcpServers`; file may be .jsonc (kept print-only)."
+    },
+    "zcode": {
+      "name": "ZCode",
+      "status": "experimental",
+      "hooks": {
+        "config": { "project": ".zcode/config.json", "user": "~/.zcode/cli/config.json" },
+        "write": "print-only",
+        "shape": "nested-hooks",
+        "events": ["SessionStart", "UserPromptSubmit", "PreToolUse", "PermissionRequest", "PostToolUse", "PostToolUseFailure", "Stop"],
+        "entryFields": { "type": "process|command", "timeoutUnit": "milliseconds" }
+      },
+      "skills": { "global": ["~/.zcode/skills", "~/.agents/skills", "~/.claude/skills"], "project": [".zcode/skills", ".agents/skills", ".claude/skills"] },
+      "mcp": {
+        "status": "experimental",
+        "config": { "project": ".zcode/config.json", "user": "~/.zcode/cli/config.json" },
+        "format": "json",
+        "container": "mcp.servers",
+        "urlField": "url",
+        "typeField": "type",
+        "tokenEnvSyntax": null,
+        "write": "print-only",
+        "note": "JSON only (JSONC unsupported); container is the nested path `mcp.servers`; no env interpolation - remote tokens go in `headers` or via `oauth`; `.agents/mcp.json` key `mcpServers` is a fallback only (no merge)"
+      },
+      "notes": "Z.ai's GLM-5.3 harness (`zcode`). Hook events sit under `hooks.events.<Event>` matcher groups (extra `hooks.enabled`/`timeoutMs` envelope); `timeoutMs` is milliseconds, legacy `timeout` is seconds and loses to `timeoutMs`. Project hooks are ignored in current builds (repo contract says conditionally executed behind trust - verify). Instructions via AGENTS.md. Config is JSON only."
+    },
+    "deepseek": {
+      "name": "DeepSeek Harness",
+      "status": "experimental",
+      "hooks": null,
+      "skills": { "global": ["~/.dsh/skills", "~/.agents/skills"], "project": [".dsh/skills", ".agents/skills"] },
+      "notes": "Config is a Cordis plugin composition: ordered YAML patch layers (`$DSH_HOME/cordis.patch.yml`, profile `cordis.patch.yml`) over a JSON profile manifest - no hook/MCP JSON file surface. Hooks exist only as opt-in bridges that read Claude Code / Codex `hooks.json`. MCP servers are per-server `dsh-mcp-client` plugin rows in YAML. Skills: `<name>/SKILL.md` or flat `<name>.md`, nested `**/SKILL.md` unsupported. Instructions via AGENTS.md (+ CLAUDE.md)."
     },
     "git": {
       "name": "git (pre-commit enforcement surface)",
