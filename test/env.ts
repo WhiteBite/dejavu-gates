@@ -20,6 +20,7 @@ async function runProbe(): Promise<void> {
   const { createStores, GLOBAL_PROJECTS, PROMOTE_COUNT, PROMOTE_COUNT_PROBE, PROMOTE_SESSIONS, TTL_DAYS, NOISE_TTL_DAYS, HEAL_SUCCESSES, DEMOTE_RECURRENCES, DEMOTE_OVERRIDES } = await import("../src/store")
   const { TAUGHT_REMINDERS } = await import("../src/context")
   const { LEAK_RECOVERY } = await import("../src/repeat-channel")
+  const { LOOP_RECOVERY } = await import("../src/loop-recovery")
   const { callSignature, patternKey } = await import("../src/patterns")
 
   const probeTmp = await mkdtemp(join(tmpdir(), "dejavu-env-probe-"))
@@ -41,7 +42,7 @@ async function runProbe(): Promise<void> {
   const file = JSON.parse(await readFile(join(projectDir, ".opencode", "dejavu", "gates.json"), "utf8")) as { gates: Array<{ key: string; status: string; count: number }> }
   const gate = file.gates.find((g) => g.key === key)
   console.log(JSON.stringify({
-    resolved: { PROMOTE_COUNT, PROMOTE_COUNT_PROBE, PROMOTE_SESSIONS, TTL_DAYS, NOISE_TTL_DAYS, HEAL_SUCCESSES, DEMOTE_RECURRENCES, DEMOTE_OVERRIDES, TAUGHT_REMINDERS, LEAK_RECOVERY },
+    resolved: { PROMOTE_COUNT, PROMOTE_COUNT_PROBE, PROMOTE_SESSIONS, TTL_DAYS, NOISE_TTL_DAYS, HEAL_SUCCESSES, DEMOTE_RECURRENCES, DEMOTE_OVERRIDES, TAUGHT_REMINDERS, LEAK_RECOVERY, LOOP_RECOVERY },
     status: gate?.status ?? null,
     count: gate?.count ?? 0,
   }))
@@ -92,6 +93,13 @@ async function runChecks(): Promise<void> {
   check("DEJAVU_LEAK_RECOVERY=off disables", probe({ DEJAVU_LEAK_RECOVERY: "off" }).resolved.LEAK_RECOVERY === false)
   check("DEJAVU_LEAK_RECOVERY empty disables", probe({ DEJAVU_LEAK_RECOVERY: "" }).resolved.LEAK_RECOVERY === false)
   check("DEJAVU_LEAK_RECOVERY invalid falls back off", probe({ DEJAVU_LEAK_RECOVERY: "maybe" }).resolved.LEAK_RECOVERY === false)
+
+  check("DEJAVU_LOOP_RECOVERY defaults off", defaults.resolved.LOOP_RECOVERY === false)
+  check("DEJAVU_LOOP_RECOVERY=1 enables", probe({ DEJAVU_LOOP_RECOVERY: "1" }).resolved.LOOP_RECOVERY === true)
+  check("DEJAVU_LOOP_RECOVERY=true enables", probe({ DEJAVU_LOOP_RECOVERY: "true" }).resolved.LOOP_RECOVERY === true)
+  check("DEJAVU_LOOP_RECOVERY=YES enables (case-insensitive)", probe({ DEJAVU_LOOP_RECOVERY: "YES" }).resolved.LOOP_RECOVERY === true)
+  check("DEJAVU_LOOP_RECOVERY=0 disables", probe({ DEJAVU_LOOP_RECOVERY: "0" }).resolved.LOOP_RECOVERY === false)
+  check("DEJAVU_LOOP_RECOVERY invalid falls back off", probe({ DEJAVU_LOOP_RECOVERY: "maybe" }).resolved.LOOP_RECOVERY === false)
 
   report()
 }

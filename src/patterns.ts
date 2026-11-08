@@ -2062,6 +2062,115 @@ export function neutralizeLeakedToolCalls(text: string): string {
   return text.replace(new RegExp(LEAK_BLOCK.source, "gi"), NEUTRAL_PLACEHOLDER)
 }
 
+/** only the tail is scanned — bounds work per streaming call */
+const STUCK_WINDOW_CHARS = 3000
+const STUCK_MIN_TOKENS = 80
+const STUCK_MIN_SENTENCES = 12
+const STUCK_TOP_SHARE = 0.5
+const STUCK_DUP_SPAM = 0.8
+const STUCK_DUP_OSC = 0.5
+const STUCK_HEDGE_OSC = 0.12
+const STUCK_JACCARD = 0.75
+
+const STUCK_HEDGE_TOKENS = new Set([
+  "hmm",
+  "ok",
+  "okay",
+  "wait",
+  "actually",
+  "reconsider",
+  "but",
+  "however",
+  "maybe",
+  "perhaps",
+  "though",
+  "still",
+  "again",
+  "alternatively",
+])
+
+export interface StuckReasoningInput {
+  text: string
+  acted: boolean
+}
+
+export type StuckKind = "spam" | "oscillation"
+
+export interface StuckVerdict {
+  kind: StuckKind
+  signal: "token-dominance" | "line-duplication" | "hedge-density"
+  score: number
+  size: number
+}
+
+function stuckTokens(text: string): string[] {
+  return text.toLowerCase().match(/[a-z0-9]+/g) ?? []
+}
+
+function stuckNormalizeSentence(sentence: string): string {
+  return sentence.toLowerCase().replace(/[^a-z0-9]+/g, " ").replace(/\s+/g, " ").trim()
+}
+
+function stuckJaccard(a: string[], b: string[]): number {
+  const setA = new Set(a)
+  const setB = new Set(b)
+  let intersection = 0
+  for (const token of setA) if (setB.has(token)) intersection += 1
+  const union = setA.size + setB.size - intersection
+  return union === 0 ? 0 : intersection / union
+}
+
+/** Pure stuck-loop detector: lexical spam or a hedge-heavy deliberation loop; `acted` short-circuits a turn that already acted. */
+export function detectStuckReasoning(input: StuckReasoningInput): StuckVerdict | null {
+  if (input.acted) return null
+  const window = input.text.slice(-STUCK_WINDOW_CHARS)
+  const tokens = stuckTokens(window)
+  if (tokens.length < STUCK_MIN_TOKENS) return null
+  const sentences = window
+    .split(/(?<=[.!?])\s+|\n+/)
+    .map(stuckNormalizeSentence)
+    .filter((sentence) => sentence !== "")
+  if (sentences.length < STUCK_MIN_SENTENCES) return null
+
+  const freq = new Map<string, number>()
+  for (const token of tokens) freq.set(token, (freq.get(token) ?? 0) + 1)
+  let maxFreq = 0
+  for (const count of freq.values()) if (count > maxFreq) maxFreq = count
+  const topShare = maxFreq / tokens.length
+
+  const sentenceTokens = sentences.map((sentence) => sentence.split(" "))
+  let duplicated = 0
+  for (let i = 0; i < sentences.length; i++) {
+    const a = sentences[i] ?? ""
+    const aTokens = sentenceTokens[i] ?? []
+    let near = false
+    for (let j = 0; j < sentences.length; j++) {
+      if (i === j) continue
+      const b = sentences[j] ?? ""
+      if (a === b) {
+        near = true
+        break
+      }
+      const bTokens = sentenceTokens[j] ?? []
+      if (aTokens.length > 1 && bTokens.length > 1 && stuckJaccard(aTokens, bTokens) >= STUCK_JACCARD) {
+        near = true
+        break
+      }
+    }
+    if (near) duplicated += 1
+  }
+  const dupRatio = duplicated / sentences.length
+
+  let hedgeCount = 0
+  for (const token of tokens) if (STUCK_HEDGE_TOKENS.has(token)) hedgeCount += 1
+  const hedgeRatio = hedgeCount / tokens.length
+
+  if (topShare >= STUCK_TOP_SHARE) return { kind: "spam", signal: "token-dominance", score: topShare, size: tokens.length }
+  if (dupRatio >= STUCK_DUP_SPAM) return { kind: "spam", signal: "line-duplication", score: dupRatio, size: sentences.length }
+  if (dupRatio >= STUCK_DUP_OSC && hedgeRatio >= STUCK_HEDGE_OSC) return { kind: "oscillation", signal: "hedge-density", score: hedgeRatio, size: sentences.length }
+  return null
+}
+
 // --- Repeat channel (outgoing-payload series detection) -------------------------
 
 /** Marker keys the repeat channel injects into outgoing payloads (sanitize) and

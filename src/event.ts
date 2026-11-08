@@ -1,6 +1,7 @@
 import { callSignature, isNoiseError, parameterizeError, patternKey, sanitizeForStore } from "./patterns"
 import { GLOBAL_PROJECTS } from "./store"
 import { isCrossChannelDuplicate, partAlreadyHandled, scrubbedArgs, type EnforceContext } from "./context"
+import { clearLoopRecoverySession } from "./loop-recovery"
 import type { NormalizedEvent } from "./types"
 
 /**
@@ -76,4 +77,5 @@ export async function cleanupSession(sessionId: string, ctx: EnforceContext): Pr
   for (const key of ctx.ephemeral.shapeLoopLogged.keys()) {
     if (key.startsWith(`${sessionId}:`)) ctx.ephemeral.shapeLoopLogged.delete(key)
   }
+  clearLoopRecoverySession(ctx, sessionId)
 }

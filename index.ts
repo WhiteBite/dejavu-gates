@@ -1,11 +1,14 @@
 import type { Plugin } from "@opencode-ai/plugin"
 import type { TextPart, UserMessage } from "@opencode-ai/sdk"
 import {
+  appendReasoningDelta,
   applyRepeatChannel,
+  checkLoopRecovery,
   cleanupSession,
   createEphemeralState,
   enforceAfter,
   enforceBefore,
+  markTurnActed,
   recordEventFailure,
   type EnforceContext,
   type RepeatChannelMessage,
@@ -131,7 +134,33 @@ export const Dejavu: Plugin = async ({ directory, client }) => {
         if (typeof props !== "object" || props === null) return
         const part: unknown = (props as { part?: unknown }).part
         if (typeof part !== "object" || part === null) return
-        const p = part as { id?: unknown; type?: unknown; tool?: unknown; state?: unknown; sessionID?: unknown }
+        const p = part as { id?: unknown; type?: unknown; tool?: unknown; state?: unknown; sessionID?: unknown; messageID?: unknown; text?: unknown }
+        const sessionID = typeof p.sessionID === "string" ? p.sessionID : "unknown"
+        const messageID = typeof p.messageID === "string" ? p.messageID : ""
+        // loop recovery: reasoning parts carry the accumulated text; a delta-only build falls back to the buffer
+        if (p.type === "reasoning") {
+          const delta = (props as { delta?: unknown }).delta
+          const text = typeof p.text === "string" && p.text !== "" ? p.text : typeof delta === "string" ? appendReasoningDelta(ctx, messageID, delta) : null
+          if (text !== null) {
+            const action = await checkLoopRecovery(ctx, { sessionID, messageID, text })
+            if (action !== null) {
+              void (async () => {
+                try {
+                  await client.session.abort({ path: { id: action.sessionID } })
+                  await client.session.prompt({ path: { id: action.sessionID }, body: { parts: [{ type: "text", text: action.text }] } })
+                } catch (error) {
+                  logHookError("loop-recovery", error)
+                }
+              })()
+            }
+          }
+          return
+        }
+        if (p.type === "text" && typeof p.text === "string" && p.text !== "") {
+          markTurnActed(ctx, messageID)
+          return
+        }
+        if (p.type === "tool") markTurnActed(ctx, messageID)
         if (p.type !== "tool" || typeof p.id !== "string") return
         const state: unknown = p.state
         if (typeof state !== "object" || state === null) return

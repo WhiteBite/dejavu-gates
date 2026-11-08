@@ -1,10 +1,13 @@
 import type { Plugin } from "@opencode/plugin"
 import {
+  appendReasoningDelta,
   applyRepeatChannel,
+  checkLoopRecovery,
   cleanupSession,
   createEphemeralState,
   enforceAfter,
   enforceBefore,
+  markTurnActed,
   recordEventFailure,
   type EnforceContext,
   type RepeatChannelMessage,
@@ -275,9 +278,35 @@ export async function v2Setup(ctx: Plugin.Context): Promise<() => void> {
   const eventLoop = (async (): Promise<void> => {
     try {
       for await (const evt of ctx.event.subscribe({ signal: abort.signal })) {
-        if (evt.type !== "session.deleted") continue
-        const sid = evt.data.sessionID
-        if (typeof sid === "string") await cleanupSession(sid, enforceCtx)
+        if (evt.type === "session.deleted") {
+          const sid = evt.data.sessionID
+          if (typeof sid === "string") await cleanupSession(sid, enforceCtx)
+          continue
+        }
+        if (evt.type === "session.reasoning.delta") {
+          const data = evt.data
+          const text = appendReasoningDelta(enforceCtx, data.assistantMessageID, data.delta)
+          const action = await checkLoopRecovery(enforceCtx, { sessionID: data.sessionID, messageID: data.assistantMessageID, text })
+          if (action !== null) {
+            void (async () => {
+              try {
+                await ctx.session.interrupt({ sessionID: action.sessionID })
+                await ctx.session.prompt({ sessionID: action.sessionID, text: action.text })
+              } catch (error) {
+                onHookError("loop-recovery", error)
+              }
+            })()
+          }
+          continue
+        }
+        if (evt.type === "session.text.delta") {
+          markTurnActed(enforceCtx, evt.data.assistantMessageID)
+          continue
+        }
+        if (evt.type === "session.tool.called") {
+          markTurnActed(enforceCtx, evt.data.assistantMessageID)
+          continue
+        }
       }
     } catch (error) {
       if ((error as { name?: string }).name !== "AbortError") onHookError("event-loop", error)

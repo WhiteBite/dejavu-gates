@@ -290,6 +290,50 @@ console.log(JSON.stringify({
   check("generate: the leaked text part is neutralized in event.messages", typeof r110.text === "string" && r110.text.includes("[dejavu] (leaked tool-call serialization removed") && !r110.text.includes("<|DSL|"))
   check("generate: a synthetic recovery turn is appended", (r110.injected?.length ?? 0) === 1 && (r110.injected?.[0] ?? "").includes("Re-issue the intended call now"))
 
+  const r111Probe = `
+import { v2Setup } from ${JSON.stringify(new URL("../src/opencode-v2.ts", import.meta.url).href)}
+const interrupts = []
+const prompts = []
+const yielded = []
+const stub = {
+  location: { directory: process.env.R111_PROJECT },
+  tool: { hook: async () => ({ dispose: async () => {} }) },
+  session: {
+    hook: async () => ({ dispose: async () => {} }),
+    interrupt: async (input) => { interrupts.push(input); return { interrupted: true } },
+    prompt: async (input) => { prompts.push(input); return {} },
+  },
+  event: {
+    subscribe: (input) => (async function* () {
+      for (const evt of yielded) yield evt
+      await new Promise((r) => input.signal.addEventListener("abort", r, { once: true }))
+    })(),
+  },
+}
+const stuck = "Hmm. ".repeat(100)
+yielded.push({ type: "session.reasoning.delta", data: { sessionID: "v2lr1", assistantMessageID: "vm1", ordinal: 0, delta: stuck } })
+yielded.push({ type: "session.text.delta", data: { sessionID: "v2lr2", assistantMessageID: "vm2", ordinal: 0, delta: "I will run the tests." } })
+yielded.push({ type: "session.reasoning.delta", data: { sessionID: "v2lr2", assistantMessageID: "vm2", ordinal: 0, delta: stuck } })
+const cleanup = await v2Setup(stub)
+await new Promise((r) => setTimeout(r, 60))
+cleanup()
+console.log(JSON.stringify({
+  interrupts: interrupts.length,
+  prompts: prompts.length,
+  interruptSessions: interrupts.map((i) => i.sessionID),
+  promptTexts: prompts.map((p) => p.text),
+}))
+`
+  const r111Run = spawnSync(process.execPath, ["-e", r111Probe], {
+    env: { ...process.env, DEJAVU_LOOP_RECOVERY: "1", DEJAVU_HOME: join(tmp2, "r111-home"), R111_PROJECT: join(tmp2, "r111-project") },
+    encoding: "utf8",
+  })
+  const r111Line = (r111Run.stdout ?? "").trim().split("\n").filter((l) => l.startsWith("{")).pop()
+  const r111 = JSON.parse(r111Line ?? "{}") as { interrupts?: number; prompts?: number; interruptSessions?: string[]; promptTexts?: string[] }
+  check("v2 loop recovery: a stuck reasoning delta interrupts and injects", r111.interrupts === 1 && r111.prompts === 1)
+  check("v2 loop recovery: the injected turn is the spam correction", (r111.promptTexts ?? []).every((t) => t.includes("repetition loop")))
+  check("v2 loop recovery: a preceding text delta suppresses the injection", !(r111.interruptSessions ?? []).includes("v2lr2"))
+
   check("v2Setup returns a function", typeof cleanup === "function")
   let cleanupThrew: unknown = null
   if (cleanup !== null) {

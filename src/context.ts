@@ -17,6 +17,8 @@ const RECENT_RECORDS_CAP = 1000
 const RECENT_RECORDS_KEEP = 500
 /** leak recovery: per-session injection map cap (in-process) */
 export const LEAK_RECOVERY_SESSIONS_CAP = 1000
+/** loop recovery: per-session/per-message map cap (in-process) */
+export const LOOP_RECOVERY_SESSIONS_CAP = 1000
 /** a gate reminded this many times with ZERO in-session reoffense has taught its
  *  lesson — the agent changed behavior, so no success can ever heal it */
 export const TAUGHT_REMINDERS = envInt("DEJAVU_TAUGHT_REMINDERS", 5, 1, 100)
@@ -68,6 +70,18 @@ export interface EphemeralState {
   leakRecoveryLogged: Set<string>
   /** leak recovery: sessionID → injected count (per-session cap) */
   leakRecoveryInjected: Map<string, number>
+  /** loop recovery: sessionID → injection count (cap LOOP_RECOVERY_MAX) */
+  stuckRecoveryInjected: Map<string, number>
+  /** loop recovery: session IDs that already logged a recovery injection */
+  stuckRecoveryLogged: Set<string>
+  /** loop recovery: sessionID → last injection ts (cooldown) */
+  stuckRecoveryLastAt: Map<string, number>
+  /** loop recovery: `${sessionID}:${messageID}` → last-checked text length (throttle) */
+  stuckReasoningChecked: Map<string, number>
+  /** loop recovery: messageID → turn acted (tool/text part seen) */
+  stuckReasoningActed: Set<string>
+  /** loop recovery: messageID → accumulated delta buffer (V2) */
+  stuckReasoningText: Map<string, string>
 }
 
 /** Fresh in-process state. A long-lived host (the OpenCode plugin process)
@@ -97,6 +111,12 @@ export function createEphemeralState(): EphemeralState {
     recentRecords: new Map(),
     leakRecoveryLogged: new Set(),
     leakRecoveryInjected: new Map(),
+    stuckRecoveryInjected: new Map(),
+    stuckRecoveryLogged: new Set(),
+    stuckRecoveryLastAt: new Map(),
+    stuckReasoningChecked: new Map(),
+    stuckReasoningActed: new Set(),
+    stuckReasoningText: new Map(),
   }
 }
 

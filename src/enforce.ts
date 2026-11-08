@@ -40,3 +40,17 @@ export {
 export { enforceBefore } from "./before"
 export { enforceAfter } from "./after"
 export { cleanupSession, recordEventFailure } from "./event"
+export {
+  appendReasoningDelta,
+  checkLoopRecovery,
+  clearLoopRecoverySession,
+  LOOP_RECOVERY,
+  LOOP_RECOVERY_COOLDOWN_MS,
+  LOOP_RECOVERY_MAX,
+  LOOP_RECOVERY_OSC_TEXT,
+  LOOP_RECOVERY_SPAM_TEXT,
+  markTurnActed,
+  STUCK_CHECK_GROWTH,
+  TEMPLATE_LOOP_RECOVERY,
+  type LoopRecoveryAction,
+} from "./loop-recovery"

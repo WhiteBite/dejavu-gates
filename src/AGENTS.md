@@ -15,6 +15,8 @@ Dependency-free core: `patterns.ts` (pure functions — call identity, normaliza
 | Near-duplicate merge | patterns.ts | `fuzzySimilar` = `levenshteinCapped` (early-exit) ≤ 0.3 + flag-subset rule + strict-flag-addition rescue on an absolute budget |
 | Failure text scan | patterns.ts | `detectFailure` + `FAILURE_SIGNATURES` |
 | Leaked tool-call serialization | patterns.ts | `detectLeakedToolCall` (last full block, fence-guarded, tail-anchored) + `neutralizeLeakedToolCalls` + `NEUTRAL_PLACEHOLDER` |
+| Stuck-reasoning detection | patterns.ts | `detectStuckReasoning` — token dominance / near-duplicate lines / hedge density; `StuckVerdict` |
+| Loop recovery (opt-in) | loop-recovery.ts | `checkLoopRecovery`/`markTurnActed`/`appendReasoningDelta`/`clearLoopRecoverySession` — `DEJAVU_LOOP_RECOVERY`, cap 2, 30s cooldown, project-log `loop-recovery`; hosts wire it (V1 `event` / V2 `event.subscribe`) |
 | Noise filtering | patterns.ts | `isNoiseError` + `NOISE_ERRORS` (aborted/cancelled ≠ failed) |
 | Diagnostic/intended-exit logic | patterns.ts | `DIAGNOSTIC_VERBS`, `isIntendedNonzero`, `canBlock`, `canRemind`, `isUnixViewerSignature` |
 | Over-generic shape guard | patterns.ts | `hasResidualIdentity` — parameterized-away substance ⇒ watching only |
@@ -36,7 +38,7 @@ Dependency-free core: `patterns.ts` (pure functions — call identity, normaliza
 | Repeat/loop-break transform channel | repeat-channel.ts | `applyRepeatChannel` — marker sanitization, REPETITION/windowed/shape notes, loop-break injection, opt-in leaked tool-call recovery (`recoverLeakedToolCall`, `DEJAVU_LEAK_RECOVERY`) over structural messages; hosts wire it (V1 transform / V2 generate) |
 | Harness payload mapping | adapters/*.ts | per-harness `mapInbound`/`mapOutbound`; `adapters/shared.ts` — `internalTool`/`internalArgs`/`str`/`rec`/`extractOutput`/`errorSignalled`/`genericToolOutput`/`allowDecision`/`denyDecision` |
 | Hook-handler CLI | cli.ts | argv/stdin parse → adapter → engine → decision JSON; fail-open; registry `ADAPTERS`; `session-start` phase → SessionStart gate digest (claude-only, read-only) |
-| OpenCode V2 host glue | opencode-v2.ts | `v2Setup` — registers execute.before/after, event.subscribe (session.deleted), compaction, and generate (repeat-channel parity) on the V2 plugin Context; deny-by-throw; reuses enforceBefore/enforceAfter/recordEventFailure/cleanupSession |
+| OpenCode V2 host glue | opencode-v2.ts | `v2Setup` — registers execute.before/after, event.subscribe (session.deleted + loop-recovery reasoning/text/tool deltas), compaction, and generate (repeat-channel parity) on the V2 plugin Context; deny-by-throw; reuses enforceBefore/enforceAfter/recordEventFailure/cleanupSession |
 
 ## INVARIANTS (do not break)
 

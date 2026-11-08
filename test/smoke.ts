@@ -3468,6 +3468,88 @@ check("leak recovery: a bare marker mention is left untouched", r110.bare === "t
 const r110Log = await readFile(join(r110Dir, ".opencode", "dejavu", "log.jsonl"), "utf8").catch(() => "")
 check("leak recovery: exactly one leak-recovery log event per session", r110Log.split("\n").filter((l) => l.includes('"type":"leak-recovery"')).length === 1)
 
+const r111Stuck = "Hmm. ".repeat(100)
+const r111Dir = join(tmp, "r111-loop-project")
+await mkdir(r111Dir, { recursive: true })
+const r111Aborts: unknown[] = []
+const r111Prompts: unknown[] = []
+const r111Hooks = await Dejavu({
+  directory: r111Dir,
+  client: {
+    app: { log: async () => ({}) },
+    session: {
+      abort: async (input: unknown) => {
+        r111Aborts.push(input)
+        return {}
+      },
+      prompt: async (input: unknown) => {
+        r111Prompts.push(input)
+        return {}
+      },
+    },
+  },
+} as unknown as Ctx)
+await (r111Hooks.event as EventHook)({
+  event: { type: "message.part.updated", properties: { part: { id: "r111-p", type: "reasoning", sessionID: "r111off", messageID: "r111m", text: r111Stuck } } },
+} as unknown as EventInput)
+await new Promise<void>((resolve) => setTimeout(resolve, 30))
+check("loop recovery: flag off injects nothing", r111Aborts.length === 0 && r111Prompts.length === 0)
+
+const r111Probe = `
+import { Dejavu } from ${JSON.stringify(new URL("../index.ts", import.meta.url).href)}
+const aborts = []
+const prompts = []
+const client = {
+  app: { log: async () => ({}) },
+  session: {
+    abort: async (input) => { aborts.push(input); return {} },
+    prompt: async (input) => { prompts.push(input); return {} },
+  },
+}
+const hooks = await Dejavu({ directory: process.env.R111_PROJECT, client })
+const event = hooks.event
+const stuck = "Hmm. ".repeat(100)
+const drive = async (sessionID, messageID, text) => {
+  await event({ event: { type: "message.part.updated", properties: { part: { id: messageID + "-p", type: "reasoning", sessionID, messageID, text } } } })
+}
+const driveText = async (sessionID, messageID, text) => {
+  await event({ event: { type: "message.part.updated", properties: { part: { id: messageID + "-t", type: "text", sessionID, messageID, text } } } })
+}
+await drive("lr1", "m1", stuck)
+await new Promise((r) => setTimeout(r, 30))
+await driveText("lr2", "m2", "I will run the tests now.")
+await drive("lr2", "m2", stuck)
+await new Promise((r) => setTimeout(r, 30))
+const realNow = Date.now
+let fake = realNow()
+Date.now = () => fake
+await drive("lr3", "m3", stuck)
+fake += 31000
+await drive("lr3", "m4", stuck)
+fake += 31000
+await drive("lr3", "m5", stuck)
+await new Promise((r) => setTimeout(r, 30))
+Date.now = realNow
+console.log(JSON.stringify({
+  aborts: aborts.length,
+  prompts: prompts.length,
+  abortSessions: aborts.map((a) => a.path.id),
+  promptTexts: prompts.map((p) => p.body.parts[0].text),
+}))
+`
+const r111Run = spawnSync(process.execPath, ["-e", r111Probe], {
+  env: { ...process.env, DEJAVU_LOOP_RECOVERY: "1", DEJAVU_HOME: join(tmp, "r111-home"), R111_PROJECT: r111Dir },
+  encoding: "utf8",
+})
+const r111Line = (r111Run.stdout ?? "").trim().split("\n").filter((l) => l.startsWith("{")).pop()
+const r111 = JSON.parse(r111Line ?? "{}") as { aborts?: number; prompts?: number; abortSessions?: string[]; promptTexts?: string[] }
+check("loop recovery: a stuck reasoning part aborts and injects", r111.aborts === 3 && r111.prompts === 3)
+check("loop recovery: the injected turn is the spam correction", (r111.promptTexts ?? []).every((t) => t.includes("repetition loop")))
+check("loop recovery: the acted turn is suppressed", !(r111.abortSessions ?? []).includes("lr2"))
+check("loop recovery: the per-session cap stops at 2", (r111.abortSessions ?? []).filter((s) => s === "lr3").length === 2)
+const r111Log = await readFile(join(r111Dir, ".opencode", "dejavu", "log.jsonl"), "utf8").catch(() => "")
+check("loop recovery: a loop-recovery log event is written", r111Log.includes('"type":"loop-recovery"'))
+
 await rm(tmp, { recursive: true, force: true })
 
 report()

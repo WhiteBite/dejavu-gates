@@ -22,6 +22,7 @@ import {
   canRemind,
   detectFailure,
   detectLeakedToolCall,
+  detectStuckReasoning,
   hasGenericResidualIdentity,
   isIntendedNonzero,
   isNoiseError,
@@ -806,6 +807,100 @@ check("detectLeakedToolCall: the span covers the block", leakSpan !== null && le
 const neutralized = neutralizeLeakedToolCalls("before " + leakBlock + " after")
 check("neutralizeLeakedToolCalls: replaces the block with the placeholder", neutralized.includes(NEUTRAL_PLACEHOLDER) && neutralized.startsWith("before ") && neutralized.endsWith(" after"))
 check("neutralizeLeakedToolCalls: no raw markers remain", !neutralized.includes("<|DSL|") && !neutralized.includes("</|DSL|"))
+
+const spamWall = "Hmm. ".repeat(100)
+const spamVerdict = detectStuckReasoning({ text: spamWall, acted: false })
+check("detectStuckReasoning: a wall of one token is spam/token-dominance", spamVerdict?.kind === "spam" && spamVerdict.signal === "token-dominance")
+
+const dupSentence = "the quick brown fox jumps over the lazy dog again"
+const dupText = Array.from({ length: 10 }, () => `${dupSentence}.`).join(" ") + " alpha beta gamma delta epsilon. one two three four five."
+const dupVerdict = detectStuckReasoning({ text: dupText, acted: false })
+check("detectStuckReasoning: near-duplicate lines are spam/line-duplication", dupVerdict?.kind === "spam" && dupVerdict.signal === "line-duplication")
+
+const hedgeSentences = [
+  "Wait, maybe I should reconsider.",
+  "But actually, perhaps not.",
+  "However, still, maybe reconsider.",
+  "Hmm, okay, wait, actually.",
+  "Perhaps I should reconsider again.",
+]
+const uniqueSentences = [
+  "The parser handles the edge case.",
+  "The config file needs updating.",
+  "The test suite is green.",
+  "The build takes two minutes.",
+  "The server listens on port eight thousand.",
+  "The cache is warm now.",
+  "The migration ran without errors.",
+  "The logs show a steady request rate.",
+]
+const oscText = [...hedgeSentences, ...hedgeSentences, ...hedgeSentences, ...uniqueSentences].join(" ")
+const oscVerdict = detectStuckReasoning({ text: oscText, acted: false })
+check("detectStuckReasoning: hedge-heavy re-deliberation is oscillation", oscVerdict?.kind === "oscillation" && oscVerdict.signal === "hedge-density")
+
+const legitText = [
+  "First I read the failing test to understand the expected behavior.",
+  "Then I traced the call path from the handler into the service layer.",
+  "The bug is a missing null check before the property access.",
+  "I will add the guard and re-run the suite to confirm the fix.",
+  "After that I will update the changelog and open a pull request.",
+  "The reviewer asked for a regression test covering the empty input.",
+  "I added the test and it fails without the guard, passes with it.",
+  "Finally I merged the branch and deleted the stale feature flag.",
+  "The deployment pipeline ran green on the first attempt.",
+  "I monitored the error rate for an hour and it stayed flat.",
+  "No further action is needed for this incident.",
+  "I will document the root cause in the postmortem tomorrow.",
+].join(" ")
+check("detectStuckReasoning: varied deliberation is not stuck", detectStuckReasoning({ text: legitText, acted: false }) === null)
+
+const checklistText = Array.from({ length: 20 }, (_, i) => `Step ${i + 1}: check item ${String.fromCharCode(97 + i)}.`).join(" ")
+check("detectStuckReasoning: a numbered checklist is not stuck", detectStuckReasoning({ text: checklistText, acted: false }) === null)
+
+check("detectStuckReasoning: below the token floor is null", detectStuckReasoning({ text: "Hmm. Hmm. Hmm.", acted: false }) === null)
+check("detectStuckReasoning: acted short-circuits", detectStuckReasoning({ text: spamWall, acted: true }) === null)
+
+const russianText = [
+  "Сначала я прочитал падающий тест чтобы понять ожидаемое поведение.",
+  "Затем я проследил путь вызова от обработчика до слоя сервисов.",
+  "Ошибка в отсутствующей проверке на пустое значение перед доступом.",
+  "Я добавлю защиту и перезапущу набор тестов чтобы подтвердить.",
+  "После этого я обновлю журнал изменений и открою запрос на слияние.",
+  "Ревьюер попросил регрессионный тест для пустого ввода.",
+  "Я добавил тест он падает без защиты и проходит с ней.",
+  "Наконец я слил ветку и удалил устаревший флаг функции.",
+  "Конвейер развёртывания прошёл успешно с первой попытки.",
+  "Я следил за частотой ошибок час и она осталась ровной.",
+  "Дальнейших действий по этому инциденту не требуется.",
+  "Я задокументирую первопричину в разборе завтра.",
+].join(" ")
+check("detectStuckReasoning: non-English hedge-free text is not stuck", detectStuckReasoning({ text: russianText, acted: false }) === null)
+
+const atHalf = [...Array.from({ length: 40 }, () => "x."), ...Array.from({ length: 40 }, (_, i) => `a${i}.`)].join(" ")
+check("detectStuckReasoning: top-share at 0.5 fires token-dominance", detectStuckReasoning({ text: atHalf, acted: false })?.signal === "token-dominance")
+const belowHalf = [...Array.from({ length: 39 }, () => "x."), ...Array.from({ length: 41 }, (_, i) => `a${i}.`)].join(" ")
+check("detectStuckReasoning: top-share just below 0.5 does not fire", detectStuckReasoning({ text: belowHalf, acted: false }) === null)
+
+const dupBelow = Array.from({ length: 9 }, () => `${dupSentence}.`).join(" ") + " alpha beta gamma delta epsilon. one two three four five. six seven eight nine ten."
+check("detectStuckReasoning: dup-ratio just below 0.8 does not fire spam", detectStuckReasoning({ text: dupBelow, acted: false }) === null)
+
+const oscHedge = [
+  "Wait, maybe, perhaps, actually, reconsider.",
+  "But however still again alternatively.",
+  "Hmm okay wait actually maybe.",
+  "Perhaps reconsider but still maybe.",
+]
+const oscAt = [...oscHedge, ...oscHedge, ...uniqueSentences].join(" ")
+const oscAtVerdict = detectStuckReasoning({ text: oscAt, acted: false })
+check("detectStuckReasoning: dup-ratio 0.5 with hedge density fires oscillation", oscAtVerdict?.kind === "oscillation")
+const plainSentences = [
+  "The parser handles the edge case.",
+  "The config file needs updating.",
+  "The test suite is green.",
+  "The build takes two minutes.",
+]
+const noHedge = [...plainSentences, ...plainSentences, ...uniqueSentences].join(" ")
+check("detectStuckReasoning: dup-ratio 0.5 without hedge density is not oscillation", detectStuckReasoning({ text: noHedge, acted: false }) === null)
 
 await rm(tmp, { recursive: true, force: true })
 
