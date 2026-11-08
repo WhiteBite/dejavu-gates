@@ -1,290 +1,952 @@
 [
   {
-    "schema": 4,
     "theme": "opencode",
     "windowTitle": "deploy to staging",
     "takeaway": "A deploy call fails - dejavu starts counting",
+    "delay": 1,
     "before": {
-      "caption": "without dejavu",
+      "surface": "single",
+      "caption": "session 1",
       "sessionTitle": "# deploy to staging",
-      "surface": "terminal",
       "blocks": [
-        { "type": "user", "text": "deploy to staging" },
-        { "type": "tool", "kind": "call", "text": "deploy --to dist --env stg" },
-        { "type": "diff", "lines": [
-          { "type": "del", "text": "Error: unknown flag --env" },
-          { "type": "del", "text": "exit 1 - the agent must figure it out" }
-        ] },
-        { "type": "status", "text": "session 1 - fix found by trial and error" },
-        { "type": "status", "text": "nothing is watched, nothing is stored" }
+        {
+          "type": "user",
+          "text": "deploy to staging"
+        }
       ]
     },
     "after": {
-      "caption": "with dejavu",
-      "sessionTitle": "# deploy to staging",
       "surface": "terminal",
-      "blocks": [
-        { "type": "user", "text": "deploy to staging" },
-        { "type": "tool", "kind": "call", "text": "deploy --to dist --env stg" },
-        { "type": "diff", "lines": [
-          { "type": "del", "text": "Error: unknown flag --env" },
-          { "type": "del", "text": "exit 1 - signature normalized" }
-        ] },
-        { "type": "status", "text": "pattern-key counted, sessions tracked" },
-        { "type": "status", "hl": true, "text": "[dejavu] failure 1/3 - session 1" }
-      ]
+      "blocks": []
     }
   },
   {
-    "schema": 4,
     "theme": "opencode",
     "windowTitle": "deploy to staging",
-    "takeaway": "New session, empty memory - the count survives",
+    "takeaway": "The agent types the deploy command",
+    "delay": 0.12,
     "before": {
-      "caption": "without dejavu",
+      "surface": "single",
+      "caption": "session 1",
       "sessionTitle": "# deploy to staging",
-      "surface": "terminal",
       "blocks": [
-        { "type": "user", "text": "deploy to staging" },
-        { "type": "tool", "kind": "call", "text": "deploy --to dist --env stg" },
-        { "type": "diff", "lines": [
-          { "type": "del", "text": "Error: unknown flag --env" },
-          { "type": "del", "text": "session 2 - same call, same error" }
-        ] },
-        { "type": "status", "text": "fresh agent, empty memory" },
-        { "type": "status", "text": "same fix rediscovered from scratch" }
+        {
+          "type": "user",
+          "text": "deploy to staging"
+        },
+        {
+          "type": "tool",
+          "kind": "call",
+          "text": "deploy --to dist"
+        }
       ]
     },
     "after": {
-      "caption": "with dejavu",
-      "sessionTitle": "# deploy to staging",
       "surface": "terminal",
-      "blocks": [
-        { "type": "user", "text": "deploy to staging" },
-        { "type": "tool", "kind": "call", "text": "deploy --to dist --env stg" },
-        { "type": "diff", "lines": [
-          { "type": "del", "text": "Error: unknown flag --env" },
-          { "type": "del", "text": "session 2 - same call, same error" }
-        ] },
-        { "type": "status", "text": "the pattern is already known" },
-        { "type": "status", "hl": true, "text": "[dejavu] failure 2/3 - 2 sessions" }
-      ]
+      "blocks": []
     }
   },
   {
-    "schema": 4,
     "theme": "opencode",
     "windowTitle": "deploy to staging",
-    "takeaway": "Third failure across two sessions promotes a gate",
+    "takeaway": "The agent types the deploy command",
+    "delay": 0.12,
     "before": {
-      "caption": "without dejavu",
+      "surface": "single",
+      "caption": "session 1",
       "sessionTitle": "# deploy to staging",
-      "surface": "terminal",
       "blocks": [
-        { "type": "user", "text": "deploy to staging" },
-        { "type": "tool", "kind": "call", "text": "deploy --to dist --env stg" },
-        { "type": "diff", "lines": [
-          { "type": "del", "text": "Error: unknown flag --env" },
-          { "type": "del", "text": "retry unchanged - failure 3" }
-        ] },
-        { "type": "status", "text": "no counter, no gate, no memory" },
-        { "type": "status", "text": "the agent loops on its own" }
+        {
+          "type": "user",
+          "text": "deploy to staging"
+        },
+        {
+          "type": "tool",
+          "kind": "call",
+          "text": "deploy --to dist --env stg"
+        }
       ]
     },
     "after": {
-      "caption": "with dejavu",
-      "sessionTitle": "# deploy to staging",
       "surface": "terminal",
-      "blocks": [
-        { "type": "user", "text": "deploy to staging" },
-        { "type": "tool", "kind": "call", "text": "deploy --to dist --env stg" },
-        { "type": "diff", "lines": [
-          { "type": "del", "text": "Error: unknown flag --env" },
-          { "type": "del", "text": "retry unchanged - failure 3" }
-        ] },
-        { "type": "status", "text": "3 failures across 2 distinct sessions" },
-        { "type": "status", "hl": true, "text": "[dejavu] gate promoted - blocking" }
-      ]
+      "blocks": []
     }
   },
   {
-    "schema": 4,
+    "theme": "opencode",
+    "windowTitle": "deploy to staging",
+    "takeaway": "First failure - dejavu starts counting",
+    "delay": 1,
+    "before": {
+      "surface": "single",
+      "caption": "session 1",
+      "sessionTitle": "# deploy to staging",
+      "blocks": [
+        {
+          "type": "user",
+          "text": "deploy to staging"
+        },
+        {
+          "type": "tool",
+          "kind": "call",
+          "text": "deploy --to dist --env stg"
+        },
+        {
+          "type": "diff",
+          "lines": [
+            {
+              "type": "del",
+              "text": "Error: unknown flag --env"
+            }
+          ]
+        },
+        {
+          "type": "status",
+          "hl": true,
+          "text": "[dejavu] failure 1/3 - session 1"
+        }
+      ]
+    },
+    "after": {
+      "surface": "terminal",
+      "blocks": []
+    }
+  },
+  {
+    "theme": "opencode",
+    "windowTitle": "deploy to staging",
+    "takeaway": "A second session repeats the call - the count survives",
+    "delay": 1,
+    "before": {
+      "surface": "single",
+      "caption": "session 2",
+      "sessionTitle": "# deploy to staging",
+      "blocks": [
+        {
+          "type": "user",
+          "text": "deploy to staging"
+        },
+        {
+          "type": "tool",
+          "kind": "call",
+          "text": "deploy --to dist --env stg"
+        },
+        {
+          "type": "diff",
+          "lines": [
+            {
+              "type": "del",
+              "text": "Error: unknown flag --env"
+            }
+          ]
+        },
+        {
+          "type": "status",
+          "text": "[dejavu] failure 1/3 - session 1"
+        },
+        {
+          "type": "status",
+          "hl": true,
+          "text": "[dejavu] failure 2/3 - 2 sessions"
+        }
+      ]
+    },
+    "after": {
+      "surface": "terminal",
+      "blocks": []
+    }
+  },
+  {
+    "theme": "opencode",
+    "windowTitle": "deploy to staging",
+    "takeaway": "Third failure across two sessions - the gate promotes",
+    "delay": 1,
+    "before": {
+      "surface": "single",
+      "caption": "session 2",
+      "sessionTitle": "# deploy to staging",
+      "blocks": [
+        {
+          "type": "user",
+          "text": "deploy to staging"
+        },
+        {
+          "type": "tool",
+          "kind": "call",
+          "text": "deploy --to dist --env stg"
+        },
+        {
+          "type": "diff",
+          "lines": [
+            {
+              "type": "del",
+              "text": "Error: unknown flag --env"
+            }
+          ]
+        },
+        {
+          "type": "status",
+          "text": "[dejavu] failure 1/3 - session 1"
+        },
+        {
+          "type": "status",
+          "text": "[dejavu] failure 2/3 - 2 sessions"
+        },
+        {
+          "type": "status",
+          "hl": true,
+          "text": "[dejavu] failure 3/3 - 2 sessions"
+        }
+      ]
+    },
+    "after": {
+      "surface": "terminal",
+      "blocks": []
+    }
+  },
+  {
+    "theme": "opencode",
+    "windowTitle": "deploy to staging",
+    "takeaway": "The gate is now blocking - the next attempt is intercepted",
+    "delay": 1.2,
+    "before": {
+      "surface": "single",
+      "caption": "gate promoted",
+      "sessionTitle": "# deploy to staging",
+      "blocks": [
+        {
+          "type": "user",
+          "text": "deploy to staging"
+        },
+        {
+          "type": "tool",
+          "kind": "call",
+          "text": "deploy --to dist --env stg"
+        },
+        {
+          "type": "diff",
+          "lines": [
+            {
+              "type": "del",
+              "text": "Error: unknown flag --env"
+            }
+          ]
+        },
+        {
+          "type": "status",
+          "text": "[dejavu] failure 1/3 - session 1"
+        },
+        {
+          "type": "status",
+          "text": "[dejavu] failure 2/3 - 2 sessions"
+        },
+        {
+          "type": "status",
+          "text": "[dejavu] failure 3/3 - 2 sessions"
+        },
+        {
+          "type": "status",
+          "hl": true,
+          "text": "[dejavu] gate promoted - blocking"
+        }
+      ]
+    },
+    "after": {
+      "surface": "terminal",
+      "blocks": []
+    }
+  },
+  {
+    "theme": "opencode",
+    "windowTitle": "deploy to staging",
+    "takeaway": "The agent tries the same call again",
+    "delay": 0.12,
+    "before": {
+      "surface": "single",
+      "caption": "session 3",
+      "sessionTitle": "# deploy to staging",
+      "blocks": [
+        {
+          "type": "user",
+          "text": "deploy to staging"
+        },
+        {
+          "type": "tool",
+          "kind": "call",
+          "text": "deploy --to dist --env stg"
+        },
+        {
+          "type": "diff",
+          "lines": [
+            {
+              "type": "del",
+              "text": "Error: unknown flag --env"
+            }
+          ]
+        },
+        {
+          "type": "status",
+          "text": "[dejavu] failure 1/3 - session 1"
+        },
+        {
+          "type": "status",
+          "text": "[dejavu] failure 2/3 - 2 sessions"
+        },
+        {
+          "type": "status",
+          "text": "[dejavu] failure 3/3 - 2 sessions"
+        },
+        {
+          "type": "status",
+          "hl": true,
+          "text": "[dejavu] gate promoted - blocking"
+        },
+        {
+          "type": "tool",
+          "kind": "call",
+          "text": "deploy --to dist"
+        }
+      ]
+    },
+    "after": {
+      "surface": "terminal",
+      "blocks": []
+    }
+  },
+  {
+    "theme": "opencode",
+    "windowTitle": "deploy to staging",
+    "takeaway": "The agent tries the same call again",
+    "delay": 0.12,
+    "before": {
+      "surface": "single",
+      "caption": "session 3",
+      "sessionTitle": "# deploy to staging",
+      "blocks": [
+        {
+          "type": "user",
+          "text": "deploy to staging"
+        },
+        {
+          "type": "tool",
+          "kind": "call",
+          "text": "deploy --to dist --env stg"
+        },
+        {
+          "type": "diff",
+          "lines": [
+            {
+              "type": "del",
+              "text": "Error: unknown flag --env"
+            }
+          ]
+        },
+        {
+          "type": "status",
+          "text": "[dejavu] failure 1/3 - session 1"
+        },
+        {
+          "type": "status",
+          "text": "[dejavu] failure 2/3 - 2 sessions"
+        },
+        {
+          "type": "status",
+          "text": "[dejavu] failure 3/3 - 2 sessions"
+        },
+        {
+          "type": "status",
+          "hl": true,
+          "text": "[dejavu] gate promoted - blocking"
+        },
+        {
+          "type": "tool",
+          "kind": "call",
+          "text": "deploy --to dist --env stg"
+        }
+      ]
+    },
+    "after": {
+      "surface": "terminal",
+      "blocks": []
+    }
+  },
+  {
     "theme": "opencode",
     "windowTitle": "deploy to staging",
     "takeaway": "The gate teaches: CORRECTION and EVIDENCE, not just no",
+    "delay": 1.2,
     "before": {
-      "caption": "without dejavu",
+      "surface": "single",
+      "caption": "reminder",
       "sessionTitle": "# deploy to staging",
-      "surface": "terminal",
       "blocks": [
-        { "type": "user", "text": "deploy to staging" },
-        { "type": "tool", "kind": "call", "text": "deploy --to dist --env stg" },
-        { "type": "diff", "lines": [
-          { "type": "del", "text": "Error: unknown flag --env" },
-          { "type": "del", "text": "session 3 - memory wiped clean" }
-        ] },
-        { "type": "status", "text": "the broken call runs again" },
-        { "type": "status", "text": "turns burned rediscovering the fix" }
+        {
+          "type": "user",
+          "text": "deploy to staging"
+        },
+        {
+          "type": "tool",
+          "kind": "call",
+          "text": "deploy --to dist --env stg"
+        },
+        {
+          "type": "diff",
+          "lines": [
+            {
+              "type": "del",
+              "text": "Error: unknown flag --env"
+            }
+          ]
+        },
+        {
+          "type": "status",
+          "text": "[dejavu] failure 1/3 - session 1"
+        },
+        {
+          "type": "status",
+          "text": "[dejavu] failure 2/3 - 2 sessions"
+        },
+        {
+          "type": "status",
+          "text": "[dejavu] failure 3/3 - 2 sessions"
+        },
+        {
+          "type": "status",
+          "hl": true,
+          "text": "[dejavu] gate promoted - blocking"
+        },
+        {
+          "type": "tool",
+          "kind": "call",
+          "text": "deploy --to dist --env stg"
+        },
+        {
+          "type": "status",
+          "text": "[dejavu] REMINDER - call aborted"
+        },
+        {
+          "type": "status",
+          "hl": true,
+          "text": "CORRECTION: use --environment, not --env"
+        },
+        {
+          "type": "status",
+          "text": "EVIDENCE: 3 failures across 2 sessions"
+        }
       ]
     },
     "after": {
-      "caption": "with dejavu",
-      "sessionTitle": "# deploy to staging",
       "surface": "terminal",
-      "blocks": [
-        { "type": "user", "text": "deploy to staging" },
-        { "type": "tool", "kind": "call", "text": "deploy --to dist --env stg" },
-        { "type": "diff", "hl": true, "lines": [
-          { "type": "ctx", "text": "[dejavu] REMINDER — call aborted" },
-          { "type": "ctx", "text": "CORRECTION: use --environment, not --env" }
-        ] },
-        { "type": "status", "text": "EVIDENCE: 3 failures across 2 sessions" },
-        { "type": "done", "text": "teaches, not just prohibits" }
-      ]
+      "blocks": []
     }
   },
   {
-    "schema": 4,
     "theme": "opencode",
     "windowTitle": "deploy to staging",
-    "takeaway": "Ignore the reminder: the repeat offense blocks",
+    "takeaway": "Ignore the reminder and the repeat offense blocks",
+    "delay": 1.2,
     "before": {
-      "caption": "without dejavu",
+      "surface": "single",
+      "caption": "blocked",
       "sessionTitle": "# deploy to staging",
-      "surface": "terminal",
       "blocks": [
-        { "type": "user", "text": "deploy to staging" },
-        { "type": "tool", "kind": "call", "text": "deploy --to dist --env stg" },
-        { "type": "diff", "lines": [
-          { "type": "del", "text": "Error: unknown flag --env" },
-          { "type": "del", "text": "nothing stands between call and failure" }
-        ] },
-        { "type": "status", "text": "session 3 - the loop never breaks" },
-        { "type": "status", "text": "same error, same wasted turns" }
+        {
+          "type": "user",
+          "text": "deploy to staging"
+        },
+        {
+          "type": "tool",
+          "kind": "call",
+          "text": "deploy --to dist --env stg"
+        },
+        {
+          "type": "diff",
+          "lines": [
+            {
+              "type": "del",
+              "text": "Error: unknown flag --env"
+            }
+          ]
+        },
+        {
+          "type": "status",
+          "text": "[dejavu] failure 1/3 - session 1"
+        },
+        {
+          "type": "status",
+          "text": "[dejavu] failure 2/3 - 2 sessions"
+        },
+        {
+          "type": "status",
+          "text": "[dejavu] failure 3/3 - 2 sessions"
+        },
+        {
+          "type": "status",
+          "hl": true,
+          "text": "[dejavu] gate promoted - blocking"
+        },
+        {
+          "type": "tool",
+          "kind": "call",
+          "text": "deploy --to dist --env stg"
+        },
+        {
+          "type": "status",
+          "text": "[dejavu] REMINDER - call aborted"
+        },
+        {
+          "type": "status",
+          "hl": true,
+          "text": "CORRECTION: use --environment, not --env"
+        },
+        {
+          "type": "status",
+          "text": "EVIDENCE: 3 failures across 2 sessions"
+        },
+        {
+          "type": "status",
+          "hl": true,
+          "text": "[dejavu] BLOCKED - repeat offense"
+        }
       ]
     },
     "after": {
-      "caption": "with dejavu",
-      "sessionTitle": "# deploy to staging",
       "surface": "terminal",
-      "blocks": [
-        { "type": "user", "text": "deploy to staging" },
-        { "type": "tool", "kind": "call", "text": "deploy --to dist --env stg" },
-        { "type": "diff", "lines": [
-          { "type": "del", "text": "retry after reminder failed again" },
-          { "type": "ctx", "hl": true, "text": "[dejavu] BLOCKED — repeat offense" }
-        ] },
-        { "type": "status", "text": "further attempts are hard-blocked" },
-        { "type": "status", "text": "EVIDENCE: 4 failures across 3 sessions" }
-      ]
+      "blocks": []
     }
   },
   {
-    "schema": 4,
     "theme": "opencode",
     "windowTitle": "deploy to staging",
-    "takeaway": "The correction lands - the fixed call succeeds",
+    "takeaway": "The agent applies the correction",
+    "delay": 0.12,
     "before": {
-      "caption": "without dejavu",
+      "surface": "single",
+      "caption": "session 3",
       "sessionTitle": "# deploy to staging",
-      "surface": "terminal",
       "blocks": [
-        { "type": "user", "text": "deploy to staging" },
-        { "type": "tool", "kind": "call", "text": "deploy --to dist --environment stg" },
-        { "type": "diff", "lines": [
-          { "type": "ctx", "text": "deployed to staging - after wasted turns" },
-          { "type": "del", "text": "nothing is stored for the next session" }
-        ] },
-        { "type": "status", "text": "session 3 - fix found, memory not kept" },
-        { "type": "status", "text": "session 4 will start from zero" }
+        {
+          "type": "tool",
+          "kind": "call",
+          "text": "deploy --to dist --env stg"
+        },
+        {
+          "type": "diff",
+          "lines": [
+            {
+              "type": "del",
+              "text": "Error: unknown flag --env"
+            }
+          ]
+        },
+        {
+          "type": "status",
+          "text": "[dejavu] failure 1/3 - session 1"
+        },
+        {
+          "type": "status",
+          "text": "[dejavu] failure 2/3 - 2 sessions"
+        },
+        {
+          "type": "status",
+          "text": "[dejavu] failure 3/3 - 2 sessions"
+        },
+        {
+          "type": "status",
+          "hl": true,
+          "text": "[dejavu] gate promoted - blocking"
+        },
+        {
+          "type": "tool",
+          "kind": "call",
+          "text": "deploy --to dist --env stg"
+        },
+        {
+          "type": "status",
+          "text": "[dejavu] REMINDER - call aborted"
+        },
+        {
+          "type": "status",
+          "hl": true,
+          "text": "CORRECTION: use --environment, not --env"
+        },
+        {
+          "type": "status",
+          "text": "EVIDENCE: 3 failures across 2 sessions"
+        },
+        {
+          "type": "status",
+          "hl": true,
+          "text": "[dejavu] BLOCKED - repeat offense"
+        },
+        {
+          "type": "tool",
+          "kind": "call",
+          "text": "deploy --to dist --environment"
+        }
       ]
     },
     "after": {
-      "caption": "with dejavu",
-      "sessionTitle": "# deploy to staging",
       "surface": "terminal",
-      "blocks": [
-        { "type": "user", "text": "deploy to staging" },
-        { "type": "tool", "kind": "call", "hl": true, "text": "deploy --to dist --environment stg" },
-        { "type": "diff", "lines": [
-          { "type": "add", "text": "deployed to staging - exit 0" },
-          { "type": "add", "text": "the corrected call just works" }
-        ] },
-        { "type": "status", "text": "the agent weighed the correction" },
-        { "type": "done", "text": "[dejavu] success 1/3 toward healing" }
-      ]
+      "blocks": []
     }
   },
   {
-    "schema": 4,
     "theme": "opencode",
     "windowTitle": "deploy to staging",
-    "takeaway": "Three successes heal the gate back to watching",
+    "takeaway": "The agent applies the correction",
+    "delay": 0.12,
     "before": {
-      "caption": "without dejavu",
+      "surface": "single",
+      "caption": "session 3",
       "sessionTitle": "# deploy to staging",
-      "surface": "terminal",
       "blocks": [
-        { "type": "user", "text": "deploy to staging" },
-        { "type": "tool", "kind": "call", "text": "deploy --to dist --env stg" },
-        { "type": "diff", "lines": [
-          { "type": "del", "text": "Error: unknown flag --env" },
-          { "type": "del", "text": "session 4 - memory wiped, cycle restarts" }
-        ] },
-        { "type": "status", "text": "the fix is rediscovered every session" },
-        { "type": "status", "text": "nothing ever retires the pain" }
+        {
+          "type": "tool",
+          "kind": "call",
+          "text": "deploy --to dist --env stg"
+        },
+        {
+          "type": "diff",
+          "lines": [
+            {
+              "type": "del",
+              "text": "Error: unknown flag --env"
+            }
+          ]
+        },
+        {
+          "type": "status",
+          "text": "[dejavu] failure 1/3 - session 1"
+        },
+        {
+          "type": "status",
+          "text": "[dejavu] failure 2/3 - 2 sessions"
+        },
+        {
+          "type": "status",
+          "text": "[dejavu] failure 3/3 - 2 sessions"
+        },
+        {
+          "type": "status",
+          "hl": true,
+          "text": "[dejavu] gate promoted - blocking"
+        },
+        {
+          "type": "tool",
+          "kind": "call",
+          "text": "deploy --to dist --env stg"
+        },
+        {
+          "type": "status",
+          "text": "[dejavu] REMINDER - call aborted"
+        },
+        {
+          "type": "status",
+          "hl": true,
+          "text": "CORRECTION: use --environment, not --env"
+        },
+        {
+          "type": "status",
+          "text": "EVIDENCE: 3 failures across 2 sessions"
+        },
+        {
+          "type": "status",
+          "hl": true,
+          "text": "[dejavu] BLOCKED - repeat offense"
+        },
+        {
+          "type": "tool",
+          "kind": "call",
+          "text": "deploy --to dist --environment stg"
+        }
       ]
     },
     "after": {
-      "caption": "with dejavu",
-      "sessionTitle": "# deploy to staging",
       "surface": "terminal",
-      "blocks": [
-        { "type": "user", "text": "deploy to staging" },
-        { "type": "tool", "kind": "call", "text": "deploy --to dist --environment stg" },
-        { "type": "diff", "lines": [
-          { "type": "add", "text": "deployed to staging" },
-          { "type": "add", "text": "success 3/3 - the error is gone" }
-        ] },
-        { "type": "status", "hl": true, "text": "[dejavu] 3 successes - gate HEALS" },
-        { "type": "status", "text": "retires to watching - no interrupts" }
-      ]
+      "blocks": []
     }
   },
   {
-    "schema": 4,
     "theme": "opencode",
     "windowTitle": "deploy to staging",
-    "takeaway": "Fail, learn, remind, block, heal - one closed loop",
+    "takeaway": "The corrected call succeeds - the gate starts to heal",
+    "delay": 1,
     "before": {
-      "caption": "without dejavu",
+      "surface": "single",
+      "caption": "healing",
       "sessionTitle": "# deploy to staging",
-      "surface": "terminal",
       "blocks": [
-        { "type": "user", "text": "deploy to staging" },
-        { "type": "tool", "kind": "call", "text": "deploy --to dist --env stg" },
-        { "type": "diff", "lines": [
-          { "type": "del", "text": "Error: unknown flag --env" },
-          { "type": "del", "text": "session 5 - here we go again" }
-        ] },
-        { "type": "status", "text": "5 sessions, 5 rediscoveries" },
-        { "type": "status", "text": "0 stored - the loop never closes" }
+        {
+          "type": "status",
+          "text": "[dejavu] failure 1/3 - session 1"
+        },
+        {
+          "type": "status",
+          "text": "[dejavu] failure 2/3 - 2 sessions"
+        },
+        {
+          "type": "status",
+          "text": "[dejavu] failure 3/3 - 2 sessions"
+        },
+        {
+          "type": "status",
+          "hl": true,
+          "text": "[dejavu] gate promoted - blocking"
+        },
+        {
+          "type": "tool",
+          "kind": "call",
+          "text": "deploy --to dist --env stg"
+        },
+        {
+          "type": "status",
+          "text": "[dejavu] REMINDER - call aborted"
+        },
+        {
+          "type": "status",
+          "hl": true,
+          "text": "CORRECTION: use --environment, not --env"
+        },
+        {
+          "type": "status",
+          "text": "EVIDENCE: 3 failures across 2 sessions"
+        },
+        {
+          "type": "status",
+          "hl": true,
+          "text": "[dejavu] BLOCKED - repeat offense"
+        },
+        {
+          "type": "tool",
+          "kind": "call",
+          "text": "deploy --to dist --environment stg"
+        },
+        {
+          "type": "done",
+          "text": "deployed to staging - exit 0"
+        },
+        {
+          "type": "status",
+          "text": "[dejavu] success 1/3 toward healing"
+        }
       ]
     },
     "after": {
-      "caption": "with dejavu",
-      "sessionTitle": "# deploy to staging",
       "surface": "terminal",
+      "blocks": []
+    }
+  },
+  {
+    "theme": "opencode",
+    "windowTitle": "deploy to staging",
+    "takeaway": "Two successes - the gate is nearly retired",
+    "delay": 1,
+    "before": {
+      "surface": "single",
+      "caption": "healing",
+      "sessionTitle": "# deploy to staging",
       "blocks": [
-        { "type": "user", "text": "deploy to staging" },
-        { "type": "tool", "kind": "call", "text": "deploy --to dist --environment stg" },
-        { "type": "diff", "lines": [
-          { "type": "add", "text": "deployed to staging" },
-          { "type": "add", "text": "the gate already taught this agent" }
-        ] },
-        { "type": "status", "text": "fail → gate → remind → block → heal" },
-        { "type": "done", "hl": true, "text": "learned once - taught - healed - retired" }
+        {
+          "type": "status",
+          "text": "[dejavu] failure 2/3 - 2 sessions"
+        },
+        {
+          "type": "status",
+          "text": "[dejavu] failure 3/3 - 2 sessions"
+        },
+        {
+          "type": "status",
+          "hl": true,
+          "text": "[dejavu] gate promoted - blocking"
+        },
+        {
+          "type": "tool",
+          "kind": "call",
+          "text": "deploy --to dist --env stg"
+        },
+        {
+          "type": "status",
+          "text": "[dejavu] REMINDER - call aborted"
+        },
+        {
+          "type": "status",
+          "hl": true,
+          "text": "CORRECTION: use --environment, not --env"
+        },
+        {
+          "type": "status",
+          "text": "EVIDENCE: 3 failures across 2 sessions"
+        },
+        {
+          "type": "status",
+          "hl": true,
+          "text": "[dejavu] BLOCKED - repeat offense"
+        },
+        {
+          "type": "tool",
+          "kind": "call",
+          "text": "deploy --to dist --environment stg"
+        },
+        {
+          "type": "done",
+          "text": "deployed to staging - exit 0"
+        },
+        {
+          "type": "status",
+          "text": "[dejavu] success 1/3 toward healing"
+        },
+        {
+          "type": "status",
+          "text": "[dejavu] success 2/3 toward healing"
+        }
       ]
+    },
+    "after": {
+      "surface": "terminal",
+      "blocks": []
+    }
+  },
+  {
+    "theme": "opencode",
+    "windowTitle": "deploy to staging",
+    "takeaway": "Three successes - the gate heals back to watching",
+    "delay": 1.2,
+    "before": {
+      "surface": "single",
+      "caption": "healed",
+      "sessionTitle": "# deploy to staging",
+      "blocks": [
+        {
+          "type": "status",
+          "text": "[dejavu] failure 3/3 - 2 sessions"
+        },
+        {
+          "type": "status",
+          "hl": true,
+          "text": "[dejavu] gate promoted - blocking"
+        },
+        {
+          "type": "tool",
+          "kind": "call",
+          "text": "deploy --to dist --env stg"
+        },
+        {
+          "type": "status",
+          "text": "[dejavu] REMINDER - call aborted"
+        },
+        {
+          "type": "status",
+          "hl": true,
+          "text": "CORRECTION: use --environment, not --env"
+        },
+        {
+          "type": "status",
+          "text": "EVIDENCE: 3 failures across 2 sessions"
+        },
+        {
+          "type": "status",
+          "hl": true,
+          "text": "[dejavu] BLOCKED - repeat offense"
+        },
+        {
+          "type": "tool",
+          "kind": "call",
+          "text": "deploy --to dist --environment stg"
+        },
+        {
+          "type": "done",
+          "text": "deployed to staging - exit 0"
+        },
+        {
+          "type": "status",
+          "text": "[dejavu] success 1/3 toward healing"
+        },
+        {
+          "type": "status",
+          "text": "[dejavu] success 2/3 toward healing"
+        },
+        {
+          "type": "status",
+          "hl": true,
+          "text": "[dejavu] 3 successes - gate HEALS - watching"
+        }
+      ]
+    },
+    "after": {
+      "surface": "terminal",
+      "blocks": []
+    }
+  },
+  {
+    "theme": "opencode",
+    "windowTitle": "deploy to staging",
+    "takeaway": "the loop closes on behavior - learned, taught, healed",
+    "delay": 3,
+    "before": {
+      "surface": "single",
+      "caption": "the loop closes",
+      "sessionTitle": "# deploy to staging",
+      "blocks": [
+        {
+          "type": "status",
+          "text": "[dejavu] failure 3/3 - 2 sessions"
+        },
+        {
+          "type": "status",
+          "hl": true,
+          "text": "[dejavu] gate promoted - blocking"
+        },
+        {
+          "type": "tool",
+          "kind": "call",
+          "text": "deploy --to dist --env stg"
+        },
+        {
+          "type": "status",
+          "text": "[dejavu] REMINDER - call aborted"
+        },
+        {
+          "type": "status",
+          "hl": true,
+          "text": "CORRECTION: use --environment, not --env"
+        },
+        {
+          "type": "status",
+          "text": "EVIDENCE: 3 failures across 2 sessions"
+        },
+        {
+          "type": "status",
+          "hl": true,
+          "text": "[dejavu] BLOCKED - repeat offense"
+        },
+        {
+          "type": "tool",
+          "kind": "call",
+          "text": "deploy --to dist --environment stg"
+        },
+        {
+          "type": "done",
+          "text": "deployed to staging - exit 0"
+        },
+        {
+          "type": "status",
+          "text": "[dejavu] success 1/3 toward healing"
+        },
+        {
+          "type": "status",
+          "text": "[dejavu] success 2/3 toward healing"
+        },
+        {
+          "type": "status",
+          "hl": true,
+          "text": "[dejavu] 3 successes - gate HEALS - watching"
+        }
+      ]
+    },
+    "after": {
+      "surface": "terminal",
+      "blocks": []
     }
   }
 ]
