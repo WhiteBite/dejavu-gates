@@ -5,7 +5,7 @@ import { LOOP_RECOVERY_SESSIONS_CAP, type EnforceContext } from "./context"
 export const LOOP_RECOVERY = envFlag("DEJAVU_LOOP_RECOVERY", false)
 export const LOOP_RECOVERY_MAX = 2
 export const LOOP_RECOVERY_COOLDOWN_MS = 30_000
-export const STUCK_CHECK_GROWTH = 400
+export const STUCK_CHECK_GROWTH = 150
 export const TEMPLATE_LOOP_RECOVERY = "loop-recovery-inject-v1"
 export const LOOP_RECOVERY_SPAM_TEXT = "[dejavu loop recovery - automated message, not the user] Your reasoning has degenerated into a repetition loop (the same token/phrase repeated). Stop. State your decision in one line and take the next action - a tool call or a final answer. Do not repeat the loop."
 export const LOOP_RECOVERY_OSC_TEXT = "[dejavu loop recovery - automated message, not the user] You are re-deliberating the same decision without converging. Stop. State the decision in one line and act on it - a tool call or a final answer. Do not re-open the decision."
@@ -36,18 +36,34 @@ function evictSet(set: Set<string>, cap: number): void {
   }
 }
 
-export function markTurnActed(ctx: EnforceContext, messageID: string): void {
+function stuckKey(sessionID: string, messageID: string): string {
+  return `${sessionID}:${messageID}`
+}
+
+export function markTurnActed(ctx: EnforceContext, sessionID: string, messageID: string): void {
   if (!LOOP_RECOVERY) return
-  ctx.ephemeral.stuckReasoningActed.add(messageID)
+  const key = stuckKey(sessionID, messageID)
+  ctx.ephemeral.stuckReasoningActed.add(key)
   evictSet(ctx.ephemeral.stuckReasoningActed, LOOP_RECOVERY_SESSIONS_CAP)
 }
 
-export function appendReasoningDelta(ctx: EnforceContext, messageID: string, delta: string): string {
+export function appendReasoningDelta(ctx: EnforceContext, sessionID: string, messageID: string, delta: string): string {
   if (!LOOP_RECOVERY) return delta
-  const next = ((ctx.ephemeral.stuckReasoningText.get(messageID) ?? "") + delta).slice(-STUCK_BUFFER_CAP)
-  ctx.ephemeral.stuckReasoningText.set(messageID, next)
+  const key = stuckKey(sessionID, messageID)
+  ctx.ephemeral.stuckReasoningTotal.set(key, (ctx.ephemeral.stuckReasoningTotal.get(key) ?? 0) + delta.length)
+  evictMap(ctx.ephemeral.stuckReasoningTotal, LOOP_RECOVERY_SESSIONS_CAP)
+  const next = ((ctx.ephemeral.stuckReasoningText.get(key) ?? "") + delta).slice(-STUCK_BUFFER_CAP)
+  ctx.ephemeral.stuckReasoningText.set(key, next)
   evictMap(ctx.ephemeral.stuckReasoningText, LOOP_RECOVERY_SESSIONS_CAP)
   return next
+}
+
+/** monotonic per-message length — the 8000-char buffer cap must not zero the growth throttle */
+function stuckTotal(ctx: EnforceContext, key: string, text: string): number {
+  const total = Math.max(ctx.ephemeral.stuckReasoningTotal.get(key) ?? 0, text.length)
+  ctx.ephemeral.stuckReasoningTotal.set(key, total)
+  evictMap(ctx.ephemeral.stuckReasoningTotal, LOOP_RECOVERY_SESSIONS_CAP)
+  return total
 }
 
 export async function checkLoopRecovery(
@@ -59,14 +75,24 @@ export async function checkLoopRecovery(
   const count = eph.stuckRecoveryInjected.get(input.sessionID) ?? 0
   if (count >= LOOP_RECOVERY_MAX) return null
   if (Date.now() - (eph.stuckRecoveryLastAt.get(input.sessionID) ?? 0) < LOOP_RECOVERY_COOLDOWN_MS) return null
-  const acted = eph.stuckReasoningActed.has(input.messageID)
-  if (acted) return null
-  const key = `${input.sessionID}:${input.messageID}`
-  if (input.text.length - (eph.stuckReasoningChecked.get(key) ?? 0) < STUCK_CHECK_GROWTH) return null
-  eph.stuckReasoningChecked.set(key, input.text.length)
+  const key = stuckKey(input.sessionID, input.messageID)
+  if (eph.stuckReasoningActed.has(key)) return null
+  const total = stuckTotal(ctx, key, input.text)
+  if (total - (eph.stuckReasoningChecked.get(key) ?? 0) < STUCK_CHECK_GROWTH) return null
+  eph.stuckReasoningChecked.set(key, total)
   evictMap(eph.stuckReasoningChecked, LOOP_RECOVERY_SESSIONS_CAP)
-  const verdict = detectStuckReasoning({ text: input.text, acted })
-  if (verdict === null) return null
+  const verdict = detectStuckReasoning({ text: input.text, acted: false })
+  if (verdict === null) {
+    eph.stuckReasoningPending.delete(key)
+    return null
+  }
+  // two consecutive positives confirm a persistent shape; one transient spike arms only
+  if (!eph.stuckReasoningPending.has(key)) {
+    eph.stuckReasoningPending.add(key)
+    evictSet(eph.stuckReasoningPending, LOOP_RECOVERY_SESSIONS_CAP)
+    return null
+  }
+  eph.stuckReasoningPending.delete(key)
   eph.stuckRecoveryInjected.set(input.sessionID, count + 1)
   evictMap(eph.stuckRecoveryInjected, LOOP_RECOVERY_SESSIONS_CAP)
   eph.stuckRecoveryLastAt.set(input.sessionID, Date.now())
@@ -99,7 +125,20 @@ export function clearLoopRecoverySession(ctx: EnforceContext, sessionID: string)
   ctx.ephemeral.stuckRecoveryInjected.delete(sessionID)
   ctx.ephemeral.stuckRecoveryLogged.delete(sessionID)
   ctx.ephemeral.stuckRecoveryLastAt.delete(sessionID)
+  const prefix = `${sessionID}:`
   for (const key of ctx.ephemeral.stuckReasoningChecked.keys()) {
-    if (key.startsWith(`${sessionID}:`)) ctx.ephemeral.stuckReasoningChecked.delete(key)
+    if (key.startsWith(prefix)) ctx.ephemeral.stuckReasoningChecked.delete(key)
+  }
+  for (const key of ctx.ephemeral.stuckReasoningTotal.keys()) {
+    if (key.startsWith(prefix)) ctx.ephemeral.stuckReasoningTotal.delete(key)
+  }
+  for (const key of ctx.ephemeral.stuckReasoningActed.values()) {
+    if (key.startsWith(prefix)) ctx.ephemeral.stuckReasoningActed.delete(key)
+  }
+  for (const key of ctx.ephemeral.stuckReasoningText.keys()) {
+    if (key.startsWith(prefix)) ctx.ephemeral.stuckReasoningText.delete(key)
+  }
+  for (const key of ctx.ephemeral.stuckReasoningPending.values()) {
+    if (key.startsWith(prefix)) ctx.ephemeral.stuckReasoningPending.delete(key)
   }
 }

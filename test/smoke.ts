@@ -3509,25 +3509,32 @@ const client = {
 const hooks = await Dejavu({ directory: process.env.R111_PROJECT, client })
 const event = hooks.event
 const stuck = "Hmm. ".repeat(100)
+const grown = "Hmm. ".repeat(140)
 const drive = async (sessionID, messageID, text) => {
   await event({ event: { type: "message.part.updated", properties: { part: { id: messageID + "-p", type: "reasoning", sessionID, messageID, text } } } })
 }
 const driveText = async (sessionID, messageID, text) => {
   await event({ event: { type: "message.part.updated", properties: { part: { id: messageID + "-t", type: "text", sessionID, messageID, text } } } })
 }
-await drive("lr1", "m1", stuck)
+const confirm = async (sessionID, messageID) => {
+  await drive(sessionID, messageID, stuck)
+  await drive(sessionID, messageID, grown)
+}
+await confirm("lr1", "m1")
+await new Promise((r) => setTimeout(r, 30))
+await drive("lr9", "m9", stuck)
 await new Promise((r) => setTimeout(r, 30))
 await driveText("lr2", "m2", "I will run the tests now.")
-await drive("lr2", "m2", stuck)
+await confirm("lr2", "m2")
 await new Promise((r) => setTimeout(r, 30))
 const realNow = Date.now
 let fake = realNow()
 Date.now = () => fake
-await drive("lr3", "m3", stuck)
+await confirm("lr3", "m3")
 fake += 31000
-await drive("lr3", "m4", stuck)
+await confirm("lr3", "m4")
 fake += 31000
-await drive("lr3", "m5", stuck)
+await confirm("lr3", "m5")
 await new Promise((r) => setTimeout(r, 30))
 Date.now = realNow
 console.log(JSON.stringify({
@@ -3543,10 +3550,11 @@ const r111Run = spawnSync(process.execPath, ["-e", r111Probe], {
 })
 const r111Line = (r111Run.stdout ?? "").trim().split("\n").filter((l) => l.startsWith("{")).pop()
 const r111 = JSON.parse(r111Line ?? "{}") as { aborts?: number; prompts?: number; abortSessions?: string[]; promptTexts?: string[] }
-check("loop recovery: a stuck reasoning part aborts and injects", r111.aborts === 3 && r111.prompts === 3)
+check("loop recovery: a confirmed stuck reasoning part aborts and injects", (r111.abortSessions ?? []).filter((s) => s === "lr1").length === 1 && (r111.prompts ?? 0) === (r111.aborts ?? 0))
+check("loop recovery: a single unconfirmed spike does not fire", !(r111.abortSessions ?? []).includes("lr9"))
 check("loop recovery: the injected turn is the spam correction", (r111.promptTexts ?? []).every((t) => t.includes("repetition loop")))
 check("loop recovery: the acted turn is suppressed", !(r111.abortSessions ?? []).includes("lr2"))
-check("loop recovery: the per-session cap stops at 2", (r111.abortSessions ?? []).filter((s) => s === "lr3").length === 2)
+check("loop recovery: the per-session cap stops at 2", (r111.abortSessions ?? []).filter((s) => s === "lr3").length === 2 && (r111.aborts ?? 0) === 3)
 const r111Log = await readFile(join(r111Dir, ".opencode", "dejavu", "log.jsonl"), "utf8").catch(() => "")
 check("loop recovery: a loop-recovery log event is written", r111Log.includes('"type":"loop-recovery"'))
 

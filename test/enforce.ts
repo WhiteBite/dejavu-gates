@@ -813,9 +813,9 @@ const spamVerdict = detectStuckReasoning({ text: spamWall, acted: false })
 check("detectStuckReasoning: a wall of one token is spam/token-dominance", spamVerdict?.kind === "spam" && spamVerdict.signal === "token-dominance")
 
 const dupSentence = "the quick brown fox jumps over the lazy dog again"
-const dupText = Array.from({ length: 10 }, () => `${dupSentence}.`).join(" ") + " alpha beta gamma delta epsilon. one two three four five."
+const dupText = Array.from({ length: 13 }, () => `${dupSentence}.`).join(" ") + " alpha beta gamma delta epsilon. one two three four five."
 const dupVerdict = detectStuckReasoning({ text: dupText, acted: false })
-check("detectStuckReasoning: near-duplicate lines are spam/line-duplication", dupVerdict?.kind === "spam" && dupVerdict.signal === "line-duplication")
+check("detectStuckReasoning: exact-duplicate lines are spam/line-duplication", dupVerdict?.kind === "spam" && dupVerdict.signal === "line-duplication")
 
 const hedgeSentences = [
   "Wait, maybe I should reconsider.",
@@ -834,7 +834,7 @@ const uniqueSentences = [
   "The migration ran without errors.",
   "The logs show a steady request rate.",
 ]
-const oscText = [...hedgeSentences, ...hedgeSentences, ...hedgeSentences, ...uniqueSentences].join(" ")
+const oscText = [...hedgeSentences, ...hedgeSentences, ...hedgeSentences, ...hedgeSentences, ...uniqueSentences].join(" ")
 const oscVerdict = detectStuckReasoning({ text: oscText, acted: false })
 check("detectStuckReasoning: hedge-heavy re-deliberation is oscillation", oscVerdict?.kind === "oscillation" && oscVerdict.signal === "hedge-density")
 
@@ -881,7 +881,7 @@ check("detectStuckReasoning: top-share at 0.5 fires token-dominance", detectStuc
 const belowHalf = [...Array.from({ length: 39 }, () => "x."), ...Array.from({ length: 41 }, (_, i) => `a${i}.`)].join(" ")
 check("detectStuckReasoning: top-share just below 0.5 does not fire", detectStuckReasoning({ text: belowHalf, acted: false }) === null)
 
-const dupBelow = Array.from({ length: 9 }, () => `${dupSentence}.`).join(" ") + " alpha beta gamma delta epsilon. one two three four five. six seven eight nine ten."
+const dupBelow = Array.from({ length: 40 }, () => `${dupSentence}.`).join(" ") + Array.from({ length: 9 }, (_, i) => `alpha beta gamma delta ${["epsilon", "zeta", "eta", "theta", "iota", "kappa", "lambda", "mu", "nu"][i]}.`).join(" ")
 check("detectStuckReasoning: dup-ratio just below 0.8 does not fire spam", detectStuckReasoning({ text: dupBelow, acted: false }) === null)
 
 const oscHedge = [
@@ -890,7 +890,7 @@ const oscHedge = [
   "Hmm okay wait actually maybe.",
   "Perhaps reconsider but still maybe.",
 ]
-const oscAt = [...oscHedge, ...oscHedge, ...uniqueSentences].join(" ")
+const oscAt = [...oscHedge, ...oscHedge, ...oscHedge, ...oscHedge, ...uniqueSentences].join(" ")
 const oscAtVerdict = detectStuckReasoning({ text: oscAt, acted: false })
 check("detectStuckReasoning: dup-ratio 0.5 with hedge density fires oscillation", oscAtVerdict?.kind === "oscillation")
 const plainSentences = [
@@ -901,6 +901,35 @@ const plainSentences = [
 ]
 const noHedge = [...plainSentences, ...plainSentences, ...uniqueSentences].join(" ")
 check("detectStuckReasoning: dup-ratio 0.5 without hedge density is not oscillation", detectStuckReasoning({ text: noHedge, acted: false }) === null)
+
+check("detectStuckReasoning: a punctuation-free token wall fires", detectStuckReasoning({ text: "hmm ".repeat(200), acted: false })?.signal === "token-dominance")
+check("detectStuckReasoning: a non-word token wall fires", detectStuckReasoning({ text: "the ".repeat(200), acted: false })?.signal === "token-dominance")
+check("detectStuckReasoning: a Cyrillic wall fires", detectStuckReasoning({ text: "Хм. ".repeat(200), acted: false })?.signal === "token-dominance")
+check("detectStuckReasoning: a Cyrillic multi-word loop fires line-duplication", detectStuckReasoning({ text: "повтор повторить повторяю заново. ".repeat(100), acted: false })?.signal === "line-duplication")
+check("detectStuckReasoning: a CJK wall fires", detectStuckReasoning({ text: "嗯。".repeat(300), acted: false })?.signal === "token-dominance")
+check("detectStuckReasoning: a digit-heavy wall fires on the letter share", detectStuckReasoning({ text: "Шаг 1. ".repeat(200), acted: false })?.signal === "token-dominance")
+const matrixDump = "The adjacency matrix is:\n" + Array.from({ length: 30 }, (_, r) => Array.from({ length: 30 }, (_, c) => (r + c) % 2).join(" ")).join("\n")
+check("detectStuckReasoning: a numeric data dump is not stuck", detectStuckReasoning({ text: matrixDump, acted: false }) === null)
+check("detectStuckReasoning: a test-result enumeration is not stuck", detectStuckReasoning({ text: Array.from({ length: 40 }, (_, i) => `test ${i} passed`).join(" ") + ".", acted: false }) === null)
+check("detectStuckReasoning: distinct enumerations with one varying word are not near-duplicates", detectStuckReasoning({ text: Array.from({ length: 12 }, (_, i) => `the module thing${i} compiles without any warnings.`).join(" "), acted: false }) === null)
+check("detectStuckReasoning: fenced repeated code is not stuck", detectStuckReasoning({ text: "```\n" + "return null\n".repeat(100) + "```", acted: false }) === null)
+check("detectStuckReasoning: tilde-fenced repeated code is not stuck", detectStuckReasoning({ text: "~~~\n" + "return null\n".repeat(100) + "~~~", acted: false }) === null)
+check("detectStuckReasoning: an unclosed fence absorbs the tail", detectStuckReasoning({ text: "```\n" + "return null\n".repeat(100), acted: false }) === null)
+check("detectStuckReasoning: bare repeated code lines fire line-duplication", detectStuckReasoning({ text: "return null\n".repeat(100), acted: false })?.signal === "line-duplication")
+check("detectStuckReasoning: a stray mid-line fence does not blind the detector", detectStuckReasoning({ text: "a snippet starts here ``` and then some prose. " + "hmm ".repeat(300), acted: false })?.signal === "token-dominance")
+check("detectStuckReasoning: top share above 0.5 without a run of 3 stays null", detectStuckReasoning({ text: "x x y ".repeat(40), acted: false }) === null)
+check("detectStuckReasoning: a run of exactly 3 fires token-dominance", detectStuckReasoning({ text: "x x x y ".repeat(30), acted: false })?.signal === "token-dominance")
+check("detectStuckReasoning: letter floor at 79 stays null", detectStuckReasoning({ text: "hmm ".repeat(79), acted: false }) === null)
+check("detectStuckReasoning: letter floor at 80 fires", detectStuckReasoning({ text: "hmm ".repeat(80), acted: false })?.signal === "token-dominance")
+check("detectStuckReasoning: 11 duplicate sentences stay under the sentence floor", detectStuckReasoning({ text: Array.from({ length: 11 }, () => `${dupSentence}.`).join(" "), acted: false }) === null)
+check("detectStuckReasoning: 12 duplicate sentences fire line-duplication", detectStuckReasoning({ text: Array.from({ length: 12 }, () => `${dupSentence}.`).join(" "), acted: false })?.signal === "line-duplication")
+
+const incidentCycle = "Hmm. Let me run it.\nLet me run the command.\nHmm. OK.\nLet me run `git status --short`.\nHmm. Let me do it.\nOK. Running.\n"
+check("incident: three cycles of a short loop stay under the letter floor", detectStuckReasoning({ text: incidentCycle.repeat(3), acted: false }) === null)
+check("incident: four cycles of a short loop fire line-duplication", detectStuckReasoning({ text: incidentCycle.repeat(4), acted: false })?.signal === "line-duplication")
+const incidentRecovery = "Hmm, but cli_parsers.py and cli_commands_package.py and __main__.py are shared between the two changes? No — I only changed them for the provider_manifest removal. Hmm. Let me check: did I change cli_parsers.py for anything else? No, only the provider-manifest subparser removal. Same for cli_commands_package.py and __main__.py."
+check("incident: the recovered deliberation block is not stuck", detectStuckReasoning({ text: incidentRecovery, acted: false }) === null)
+check("incident: cycles followed by recovery still count as oscillation", detectStuckReasoning({ text: incidentCycle.repeat(4) + incidentRecovery, acted: false })?.kind === "oscillation")
 
 await rm(tmp, { recursive: true, force: true })
 

@@ -311,9 +311,15 @@ const stub = {
   },
 }
 const stuck = "Hmm. ".repeat(100)
+const more = "Hmm. ".repeat(40)
+const spamChunk = "Hmm. ".repeat(10)
 yielded.push({ type: "session.reasoning.delta", data: { sessionID: "v2lr1", assistantMessageID: "vm1", ordinal: 0, delta: stuck } })
+yielded.push({ type: "session.reasoning.delta", data: { sessionID: "v2lr1", assistantMessageID: "vm1", ordinal: 1, delta: more } })
 yielded.push({ type: "session.text.delta", data: { sessionID: "v2lr2", assistantMessageID: "vm2", ordinal: 0, delta: "I will run the tests." } })
 yielded.push({ type: "session.reasoning.delta", data: { sessionID: "v2lr2", assistantMessageID: "vm2", ordinal: 0, delta: stuck } })
+yielded.push({ type: "session.reasoning.delta", data: { sessionID: "v2lr2", assistantMessageID: "vm2", ordinal: 1, delta: more } })
+for (let i = 0; i < 120; i++) yielded.push({ type: "session.reasoning.delta", data: { sessionID: "v2lr3", assistantMessageID: "vm3", ordinal: i, delta: "unique reasoning trace line number " + i + " with plenty of distinct words token" + i + ". " } })
+for (let i = 0; i < 90; i++) yielded.push({ type: "session.reasoning.delta", data: { sessionID: "v2lr3", assistantMessageID: "vm3", ordinal: 120 + i, delta: spamChunk } })
 const cleanup = await v2Setup(stub)
 await new Promise((r) => setTimeout(r, 60))
 cleanup()
@@ -330,9 +336,12 @@ console.log(JSON.stringify({
   })
   const r111Line = (r111Run.stdout ?? "").trim().split("\n").filter((l) => l.startsWith("{")).pop()
   const r111 = JSON.parse(r111Line ?? "{}") as { interrupts?: number; prompts?: number; interruptSessions?: string[]; promptTexts?: string[] }
-  check("v2 loop recovery: a stuck reasoning delta interrupts and injects", r111.interrupts === 1 && r111.prompts === 1)
-  check("v2 loop recovery: the injected turn is the spam correction", (r111.promptTexts ?? []).every((t) => t.includes("repetition loop")))
+  const r111SpamPrompt = (r111.promptTexts ?? []).find((_, i) => (r111.interruptSessions ?? [])[i] === "v2lr1") ?? ""
+  check("v2 loop recovery: a confirmed stuck reasoning delta interrupts and injects", (r111.interruptSessions ?? []).filter((s) => s === "v2lr1").length === 1 && (r111.prompts ?? 0) === (r111.interrupts ?? 0))
+  check("v2 loop recovery: the spam wall injects the spam correction", r111SpamPrompt.includes("repetition loop"))
+  check("v2 loop recovery: every injected turn carries the loop-recovery marker", (r111.promptTexts ?? []).every((t) => t.startsWith("[dejavu loop recovery")))
   check("v2 loop recovery: a preceding text delta suppresses the injection", !(r111.interruptSessions ?? []).includes("v2lr2"))
+  check("v2 loop recovery: a saturated 8000-char buffer still detects the late spam tail", (r111.interruptSessions ?? []).filter((s) => s === "v2lr3").length === 1)
 
   check("v2Setup returns a function", typeof cleanup === "function")
   let cleanupThrew: unknown = null

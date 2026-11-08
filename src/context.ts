@@ -78,10 +78,14 @@ export interface EphemeralState {
   stuckRecoveryLastAt: Map<string, number>
   /** loop recovery: `${sessionID}:${messageID}` → last-checked text length (throttle) */
   stuckReasoningChecked: Map<string, number>
-  /** loop recovery: messageID → turn acted (tool/text part seen) */
+  /** loop recovery: `${sessionID}:${messageID}` → monotonic accumulated length (V2 buffer cap evades the throttle) */
+  stuckReasoningTotal: Map<string, number>
+  /** loop recovery: `${sessionID}:${messageID}` → turn acted (tool/text part seen) */
   stuckReasoningActed: Set<string>
-  /** loop recovery: messageID → accumulated delta buffer (V2) */
+  /** loop recovery: `${sessionID}:${messageID}` → accumulated delta buffer (V2) */
   stuckReasoningText: Map<string, string>
+  /** loop recovery: `${sessionID}:${messageID}` → first positive seen (two-check confirmation) */
+  stuckReasoningPending: Set<string>
 }
 
 /** Fresh in-process state. A long-lived host (the OpenCode plugin process)
@@ -115,8 +119,10 @@ export function createEphemeralState(): EphemeralState {
     stuckRecoveryLogged: new Set(),
     stuckRecoveryLastAt: new Map(),
     stuckReasoningChecked: new Map(),
+    stuckReasoningTotal: new Map(),
     stuckReasoningActed: new Set(),
     stuckReasoningText: new Map(),
+    stuckReasoningPending: new Set(),
   }
 }
 

@@ -137,10 +137,10 @@ export const Dejavu: Plugin = async ({ directory, client }) => {
         const p = part as { id?: unknown; type?: unknown; tool?: unknown; state?: unknown; sessionID?: unknown; messageID?: unknown; text?: unknown }
         const sessionID = typeof p.sessionID === "string" ? p.sessionID : "unknown"
         const messageID = typeof p.messageID === "string" ? p.messageID : ""
-        // loop recovery: reasoning parts carry the accumulated text; a delta-only build falls back to the buffer
+        // loop recovery: a delta, when present, accumulates the same full text under either semantics
         if (p.type === "reasoning") {
           const delta = (props as { delta?: unknown }).delta
-          const text = typeof p.text === "string" && p.text !== "" ? p.text : typeof delta === "string" ? appendReasoningDelta(ctx, messageID, delta) : null
+          const text = typeof delta === "string" && delta !== "" ? appendReasoningDelta(ctx, sessionID, messageID, delta) : typeof p.text === "string" && p.text !== "" ? p.text : null
           if (text !== null) {
             const action = await checkLoopRecovery(ctx, { sessionID, messageID, text })
             if (action !== null) {
@@ -157,10 +157,10 @@ export const Dejavu: Plugin = async ({ directory, client }) => {
           return
         }
         if (p.type === "text" && typeof p.text === "string" && p.text !== "") {
-          markTurnActed(ctx, messageID)
+          markTurnActed(ctx, sessionID, messageID)
           return
         }
-        if (p.type === "tool") markTurnActed(ctx, messageID)
+        if (p.type === "tool") markTurnActed(ctx, sessionID, messageID)
         if (p.type !== "tool" || typeof p.id !== "string") return
         const state: unknown = p.state
         if (typeof state !== "object" || state === null) return

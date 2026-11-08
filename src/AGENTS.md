@@ -15,8 +15,8 @@ Dependency-free core: `patterns.ts` (pure functions — call identity, normaliza
 | Near-duplicate merge | patterns.ts | `fuzzySimilar` = `levenshteinCapped` (early-exit) ≤ 0.3 + flag-subset rule + strict-flag-addition rescue on an absolute budget |
 | Failure text scan | patterns.ts | `detectFailure` + `FAILURE_SIGNATURES` |
 | Leaked tool-call serialization | patterns.ts | `detectLeakedToolCall` (last full block, fence-guarded, tail-anchored) + `neutralizeLeakedToolCalls` + `NEUTRAL_PLACEHOLDER` |
-| Stuck-reasoning detection | patterns.ts | `detectStuckReasoning` — token dominance / near-duplicate lines / hedge density; `StuckVerdict` |
-| Loop recovery (opt-in) | loop-recovery.ts | `checkLoopRecovery`/`markTurnActed`/`appendReasoningDelta`/`clearLoopRecoverySession` — `DEJAVU_LOOP_RECOVERY`, cap 2, 30s cooldown, project-log `loop-recovery`; hosts wire it (V1 `event` / V2 `event.subscribe`) |
+| Stuck-reasoning detection | patterns.ts | `detectStuckReasoning` — letter-token run-length dominance / exact-duplicate lines / hedge density over a fence-stripped Unicode window; `StuckVerdict` |
+| Loop recovery (opt-in) | loop-recovery.ts | `checkLoopRecovery`/`markTurnActed`/`appendReasoningDelta`/`clearLoopRecoverySession` — `DEJAVU_LOOP_RECOVERY`, cap 2, 30s cooldown, two-check confirmation, monotonic per-message length (`stuckReasoningTotal`) so the 8000-char buffer cap cannot stall the throttle, session-scoped `${sessionID}:${messageID}` keys with full cleanup; hosts wire it (V1 `event` / V2 `event.subscribe`) |
 | Noise filtering | patterns.ts | `isNoiseError` + `NOISE_ERRORS` (aborted/cancelled ≠ failed) |
 | Diagnostic/intended-exit logic | patterns.ts | `DIAGNOSTIC_VERBS`, `isIntendedNonzero`, `canBlock`, `canRemind`, `isUnixViewerSignature` |
 | Over-generic shape guard | patterns.ts | `hasResidualIdentity` — parameterized-away substance ⇒ watching only |

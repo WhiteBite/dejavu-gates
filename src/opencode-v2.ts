@@ -285,7 +285,7 @@ export async function v2Setup(ctx: Plugin.Context): Promise<() => void> {
         }
         if (evt.type === "session.reasoning.delta") {
           const data = evt.data
-          const text = appendReasoningDelta(enforceCtx, data.assistantMessageID, data.delta)
+          const text = appendReasoningDelta(enforceCtx, data.sessionID, data.assistantMessageID, data.delta)
           const action = await checkLoopRecovery(enforceCtx, { sessionID: data.sessionID, messageID: data.assistantMessageID, text })
           if (action !== null) {
             void (async () => {
@@ -300,11 +300,11 @@ export async function v2Setup(ctx: Plugin.Context): Promise<() => void> {
           continue
         }
         if (evt.type === "session.text.delta") {
-          markTurnActed(enforceCtx, evt.data.assistantMessageID)
+          markTurnActed(enforceCtx, evt.data.sessionID, evt.data.assistantMessageID)
           continue
         }
         if (evt.type === "session.tool.called") {
-          markTurnActed(enforceCtx, evt.data.assistantMessageID)
+          markTurnActed(enforceCtx, evt.data.sessionID, evt.data.assistantMessageID)
           continue
         }
       }
