@@ -102,8 +102,8 @@
         },
         {
           "type": "status",
-          "hl": true,
-          "text": "[dejavu] failure 1/3 - session 1"
+          "text": "[dejavu] failure 1/3 - session 1",
+          "hl": true
         }
       ]
     },
@@ -146,8 +146,8 @@
         },
         {
           "type": "status",
-          "hl": true,
-          "text": "[dejavu] failure 2/3 - 2 sessions"
+          "text": "[dejavu] failure 2/3 - 2 sessions",
+          "hl": true
         }
       ]
     },
@@ -194,8 +194,8 @@
         },
         {
           "type": "status",
-          "hl": true,
-          "text": "[dejavu] failure 3/3 - 2 sessions"
+          "text": "[dejavu] failure 3/3 - 2 sessions",
+          "hl": true
         }
       ]
     },
@@ -246,8 +246,8 @@
         },
         {
           "type": "status",
-          "hl": true,
-          "text": "[dejavu] gate promoted - blocking"
+          "text": "[dejavu] gate promoted - blocking",
+          "hl": true
         }
       ]
     },
@@ -298,8 +298,8 @@
         },
         {
           "type": "status",
-          "hl": true,
-          "text": "[dejavu] gate promoted - blocking"
+          "text": "[dejavu] gate promoted - blocking",
+          "hl": true
         },
         {
           "type": "tool",
@@ -355,13 +355,407 @@
         },
         {
           "type": "status",
-          "hl": true,
-          "text": "[dejavu] gate promoted - blocking"
+          "text": "[dejavu] gate promoted - blocking",
+          "hl": true
         },
         {
           "type": "tool",
           "kind": "call",
           "text": "deploy --to dist --env stg"
+        }
+      ]
+    },
+    "after": {
+      "surface": "terminal",
+      "blocks": []
+    }
+  },
+  {
+    "theme": "opencode",
+    "windowTitle": "deploy to staging",
+    "takeaway": "The gate teaches: CORRECTION and EVIDENCE, not just no",
+    "delay": 0.1,
+    "before": {
+      "surface": "single",
+      "caption": "reminder",
+      "sessionTitle": "# deploy to staging",
+      "blocks": [
+        {
+          "type": "user",
+          "text": "deploy to staging"
+        },
+        {
+          "type": "tool",
+          "kind": "call",
+          "text": "deploy --to dist --env stg"
+        },
+        {
+          "type": "diff",
+          "lines": [
+            {
+              "type": "del",
+              "text": "Error: unknown flag --env"
+            }
+          ]
+        },
+        {
+          "type": "status",
+          "text": "[dejavu] failure 1/3 - session 1"
+        },
+        {
+          "type": "status",
+          "text": "[dejavu] failure 2/3 - 2 sessions"
+        },
+        {
+          "type": "status",
+          "text": "[dejavu] failure 3/3 - 2 sessions"
+        },
+        {
+          "type": "status",
+          "text": "[dejavu] gate promoted - blocking",
+          "hl": true
+        },
+        {
+          "type": "tool",
+          "kind": "call",
+          "text": "deploy --to dist --env stg"
+        },
+        {
+          "type": "status",
+          "text": "[dejavu] REMINDER"
+        }
+      ]
+    },
+    "after": {
+      "surface": "terminal",
+      "blocks": []
+    }
+  },
+  {
+    "theme": "opencode",
+    "windowTitle": "deploy to staging",
+    "takeaway": "The gate teaches: CORRECTION and EVIDENCE, not just no",
+    "delay": 0.1,
+    "before": {
+      "surface": "single",
+      "caption": "reminder",
+      "sessionTitle": "# deploy to staging",
+      "blocks": [
+        {
+          "type": "user",
+          "text": "deploy to staging"
+        },
+        {
+          "type": "tool",
+          "kind": "call",
+          "text": "deploy --to dist --env stg"
+        },
+        {
+          "type": "diff",
+          "lines": [
+            {
+              "type": "del",
+              "text": "Error: unknown flag --env"
+            }
+          ]
+        },
+        {
+          "type": "status",
+          "text": "[dejavu] failure 1/3 - session 1"
+        },
+        {
+          "type": "status",
+          "text": "[dejavu] failure 2/3 - 2 sessions"
+        },
+        {
+          "type": "status",
+          "text": "[dejavu] failure 3/3 - 2 sessions"
+        },
+        {
+          "type": "status",
+          "text": "[dejavu] gate promoted - blocking",
+          "hl": true
+        },
+        {
+          "type": "tool",
+          "kind": "call",
+          "text": "deploy --to dist --env stg"
+        },
+        {
+          "type": "status",
+          "text": "[dejavu] REMINDER - call aborted"
+        }
+      ]
+    },
+    "after": {
+      "surface": "terminal",
+      "blocks": []
+    }
+  },
+  {
+    "theme": "opencode",
+    "windowTitle": "deploy to staging",
+    "takeaway": "The gate teaches: CORRECTION and EVIDENCE, not just no",
+    "delay": 0.1,
+    "before": {
+      "surface": "single",
+      "caption": "reminder",
+      "sessionTitle": "# deploy to staging",
+      "blocks": [
+        {
+          "type": "user",
+          "text": "deploy to staging"
+        },
+        {
+          "type": "tool",
+          "kind": "call",
+          "text": "deploy --to dist --env stg"
+        },
+        {
+          "type": "diff",
+          "lines": [
+            {
+              "type": "del",
+              "text": "Error: unknown flag --env"
+            }
+          ]
+        },
+        {
+          "type": "status",
+          "text": "[dejavu] failure 1/3 - session 1"
+        },
+        {
+          "type": "status",
+          "text": "[dejavu] failure 2/3 - 2 sessions"
+        },
+        {
+          "type": "status",
+          "text": "[dejavu] failure 3/3 - 2 sessions"
+        },
+        {
+          "type": "status",
+          "text": "[dejavu] gate promoted - blocking",
+          "hl": true
+        },
+        {
+          "type": "tool",
+          "kind": "call",
+          "text": "deploy --to dist --env stg"
+        },
+        {
+          "type": "status",
+          "text": "[dejavu] REMINDER - call aborted"
+        },
+        {
+          "type": "status",
+          "text": "CORRECTION: use",
+          "hl": true
+        }
+      ]
+    },
+    "after": {
+      "surface": "terminal",
+      "blocks": []
+    }
+  },
+  {
+    "theme": "opencode",
+    "windowTitle": "deploy to staging",
+    "takeaway": "The gate teaches: CORRECTION and EVIDENCE, not just no",
+    "delay": 0.1,
+    "before": {
+      "surface": "single",
+      "caption": "reminder",
+      "sessionTitle": "# deploy to staging",
+      "blocks": [
+        {
+          "type": "user",
+          "text": "deploy to staging"
+        },
+        {
+          "type": "tool",
+          "kind": "call",
+          "text": "deploy --to dist --env stg"
+        },
+        {
+          "type": "diff",
+          "lines": [
+            {
+              "type": "del",
+              "text": "Error: unknown flag --env"
+            }
+          ]
+        },
+        {
+          "type": "status",
+          "text": "[dejavu] failure 1/3 - session 1"
+        },
+        {
+          "type": "status",
+          "text": "[dejavu] failure 2/3 - 2 sessions"
+        },
+        {
+          "type": "status",
+          "text": "[dejavu] failure 3/3 - 2 sessions"
+        },
+        {
+          "type": "status",
+          "text": "[dejavu] gate promoted - blocking",
+          "hl": true
+        },
+        {
+          "type": "tool",
+          "kind": "call",
+          "text": "deploy --to dist --env stg"
+        },
+        {
+          "type": "status",
+          "text": "[dejavu] REMINDER - call aborted"
+        },
+        {
+          "type": "status",
+          "text": "CORRECTION: use --environment, not --env",
+          "hl": true
+        }
+      ]
+    },
+    "after": {
+      "surface": "terminal",
+      "blocks": []
+    }
+  },
+  {
+    "theme": "opencode",
+    "windowTitle": "deploy to staging",
+    "takeaway": "The gate teaches: CORRECTION and EVIDENCE, not just no",
+    "delay": 0.1,
+    "before": {
+      "surface": "single",
+      "caption": "reminder",
+      "sessionTitle": "# deploy to staging",
+      "blocks": [
+        {
+          "type": "user",
+          "text": "deploy to staging"
+        },
+        {
+          "type": "tool",
+          "kind": "call",
+          "text": "deploy --to dist --env stg"
+        },
+        {
+          "type": "diff",
+          "lines": [
+            {
+              "type": "del",
+              "text": "Error: unknown flag --env"
+            }
+          ]
+        },
+        {
+          "type": "status",
+          "text": "[dejavu] failure 1/3 - session 1"
+        },
+        {
+          "type": "status",
+          "text": "[dejavu] failure 2/3 - 2 sessions"
+        },
+        {
+          "type": "status",
+          "text": "[dejavu] failure 3/3 - 2 sessions"
+        },
+        {
+          "type": "status",
+          "text": "[dejavu] gate promoted - blocking",
+          "hl": true
+        },
+        {
+          "type": "tool",
+          "kind": "call",
+          "text": "deploy --to dist --env stg"
+        },
+        {
+          "type": "status",
+          "text": "[dejavu] REMINDER - call aborted"
+        },
+        {
+          "type": "status",
+          "text": "CORRECTION: use --environment, not --env",
+          "hl": true
+        },
+        {
+          "type": "status",
+          "text": "EVIDENCE: 3"
+        }
+      ]
+    },
+    "after": {
+      "surface": "terminal",
+      "blocks": []
+    }
+  },
+  {
+    "theme": "opencode",
+    "windowTitle": "deploy to staging",
+    "takeaway": "The gate teaches: CORRECTION and EVIDENCE, not just no",
+    "delay": 0.1,
+    "before": {
+      "surface": "single",
+      "caption": "reminder",
+      "sessionTitle": "# deploy to staging",
+      "blocks": [
+        {
+          "type": "user",
+          "text": "deploy to staging"
+        },
+        {
+          "type": "tool",
+          "kind": "call",
+          "text": "deploy --to dist --env stg"
+        },
+        {
+          "type": "diff",
+          "lines": [
+            {
+              "type": "del",
+              "text": "Error: unknown flag --env"
+            }
+          ]
+        },
+        {
+          "type": "status",
+          "text": "[dejavu] failure 1/3 - session 1"
+        },
+        {
+          "type": "status",
+          "text": "[dejavu] failure 2/3 - 2 sessions"
+        },
+        {
+          "type": "status",
+          "text": "[dejavu] failure 3/3 - 2 sessions"
+        },
+        {
+          "type": "status",
+          "text": "[dejavu] gate promoted - blocking",
+          "hl": true
+        },
+        {
+          "type": "tool",
+          "kind": "call",
+          "text": "deploy --to dist --env stg"
+        },
+        {
+          "type": "status",
+          "text": "[dejavu] REMINDER - call aborted"
+        },
+        {
+          "type": "status",
+          "text": "CORRECTION: use --environment, not --env",
+          "hl": true
+        },
+        {
+          "type": "status",
+          "text": "EVIDENCE: 3 failures across"
         }
       ]
     },
@@ -412,8 +806,8 @@
         },
         {
           "type": "status",
-          "hl": true,
-          "text": "[dejavu] gate promoted - blocking"
+          "text": "[dejavu] gate promoted - blocking",
+          "hl": true
         },
         {
           "type": "tool",
@@ -426,8 +820,8 @@
         },
         {
           "type": "status",
-          "hl": true,
-          "text": "CORRECTION: use --environment, not --env"
+          "text": "CORRECTION: use --environment, not --env",
+          "hl": true
         },
         {
           "type": "status",
@@ -482,8 +876,8 @@
         },
         {
           "type": "status",
-          "hl": true,
-          "text": "[dejavu] gate promoted - blocking"
+          "text": "[dejavu] gate promoted - blocking",
+          "hl": true
         },
         {
           "type": "tool",
@@ -496,8 +890,8 @@
         },
         {
           "type": "status",
-          "hl": true,
-          "text": "CORRECTION: use --environment, not --env"
+          "text": "CORRECTION: use --environment, not --env",
+          "hl": true
         },
         {
           "type": "status",
@@ -505,8 +899,8 @@
         },
         {
           "type": "status",
-          "hl": true,
-          "text": "[dejavu] BLOCKED - repeat offense"
+          "text": "[dejavu] BLOCKED - repeat offense",
+          "hl": true
         }
       ]
     },
@@ -519,7 +913,7 @@
     "theme": "opencode",
     "windowTitle": "deploy to staging",
     "takeaway": "The agent applies the correction",
-    "delay": 0.12,
+    "delay": 0.1,
     "before": {
       "surface": "single",
       "caption": "session 3",
@@ -553,8 +947,8 @@
         },
         {
           "type": "status",
-          "hl": true,
-          "text": "[dejavu] gate promoted - blocking"
+          "text": "[dejavu] gate promoted - blocking",
+          "hl": true
         },
         {
           "type": "tool",
@@ -567,8 +961,8 @@
         },
         {
           "type": "status",
-          "hl": true,
-          "text": "CORRECTION: use --environment, not --env"
+          "text": "CORRECTION: use --environment, not --env",
+          "hl": true
         },
         {
           "type": "status",
@@ -576,8 +970,157 @@
         },
         {
           "type": "status",
-          "hl": true,
-          "text": "[dejavu] BLOCKED - repeat offense"
+          "text": "[dejavu] BLOCKED - repeat offense",
+          "hl": true
+        },
+        {
+          "type": "prose",
+          "text": "Applying the correction:"
+        }
+      ]
+    },
+    "after": {
+      "surface": "terminal",
+      "blocks": []
+    }
+  },
+  {
+    "theme": "opencode",
+    "windowTitle": "deploy to staging",
+    "takeaway": "The agent applies the correction",
+    "delay": 1,
+    "before": {
+      "surface": "single",
+      "caption": "session 3",
+      "sessionTitle": "# deploy to staging",
+      "blocks": [
+        {
+          "type": "tool",
+          "kind": "call",
+          "text": "deploy --to dist --env stg"
+        },
+        {
+          "type": "diff",
+          "lines": [
+            {
+              "type": "del",
+              "text": "Error: unknown flag --env"
+            }
+          ]
+        },
+        {
+          "type": "status",
+          "text": "[dejavu] failure 1/3 - session 1"
+        },
+        {
+          "type": "status",
+          "text": "[dejavu] failure 2/3 - 2 sessions"
+        },
+        {
+          "type": "status",
+          "text": "[dejavu] failure 3/3 - 2 sessions"
+        },
+        {
+          "type": "status",
+          "text": "[dejavu] gate promoted - blocking",
+          "hl": true
+        },
+        {
+          "type": "tool",
+          "kind": "call",
+          "text": "deploy --to dist --env stg"
+        },
+        {
+          "type": "status",
+          "text": "[dejavu] REMINDER - call aborted"
+        },
+        {
+          "type": "status",
+          "text": "CORRECTION: use --environment, not --env",
+          "hl": true
+        },
+        {
+          "type": "status",
+          "text": "EVIDENCE: 3 failures across 2 sessions"
+        },
+        {
+          "type": "status",
+          "text": "[dejavu] BLOCKED - repeat offense",
+          "hl": true
+        },
+        {
+          "type": "prose",
+          "text": "Applying the correction: --environment, not --env"
+        }
+      ]
+    },
+    "after": {
+      "surface": "terminal",
+      "blocks": []
+    }
+  },
+  {
+    "theme": "opencode",
+    "windowTitle": "deploy to staging",
+    "takeaway": "The agent applies the correction",
+    "delay": 0.12,
+    "before": {
+      "surface": "single",
+      "caption": "session 3",
+      "sessionTitle": "# deploy to staging",
+      "blocks": [
+        {
+          "type": "diff",
+          "lines": [
+            {
+              "type": "del",
+              "text": "Error: unknown flag --env"
+            }
+          ]
+        },
+        {
+          "type": "status",
+          "text": "[dejavu] failure 1/3 - session 1"
+        },
+        {
+          "type": "status",
+          "text": "[dejavu] failure 2/3 - 2 sessions"
+        },
+        {
+          "type": "status",
+          "text": "[dejavu] failure 3/3 - 2 sessions"
+        },
+        {
+          "type": "status",
+          "text": "[dejavu] gate promoted - blocking",
+          "hl": true
+        },
+        {
+          "type": "tool",
+          "kind": "call",
+          "text": "deploy --to dist --env stg"
+        },
+        {
+          "type": "status",
+          "text": "[dejavu] REMINDER - call aborted"
+        },
+        {
+          "type": "status",
+          "text": "CORRECTION: use --environment, not --env",
+          "hl": true
+        },
+        {
+          "type": "status",
+          "text": "EVIDENCE: 3 failures across 2 sessions"
+        },
+        {
+          "type": "status",
+          "text": "[dejavu] BLOCKED - repeat offense",
+          "hl": true
+        },
+        {
+          "type": "prose",
+          "text": "Applying the correction: --environment, not --env"
         },
         {
           "type": "tool",
@@ -602,11 +1145,6 @@
       "sessionTitle": "# deploy to staging",
       "blocks": [
         {
-          "type": "tool",
-          "kind": "call",
-          "text": "deploy --to dist --env stg"
-        },
-        {
           "type": "diff",
           "lines": [
             {
@@ -629,8 +1167,8 @@
         },
         {
           "type": "status",
-          "hl": true,
-          "text": "[dejavu] gate promoted - blocking"
+          "text": "[dejavu] gate promoted - blocking",
+          "hl": true
         },
         {
           "type": "tool",
@@ -643,8 +1181,8 @@
         },
         {
           "type": "status",
-          "hl": true,
-          "text": "CORRECTION: use --environment, not --env"
+          "text": "CORRECTION: use --environment, not --env",
+          "hl": true
         },
         {
           "type": "status",
@@ -652,13 +1190,87 @@
         },
         {
           "type": "status",
-          "hl": true,
-          "text": "[dejavu] BLOCKED - repeat offense"
+          "text": "[dejavu] BLOCKED - repeat offense",
+          "hl": true
+        },
+        {
+          "type": "prose",
+          "text": "Applying the correction: --environment, not --env"
         },
         {
           "type": "tool",
           "kind": "call",
           "text": "deploy --to dist --environment stg"
+        }
+      ]
+    },
+    "after": {
+      "surface": "terminal",
+      "blocks": []
+    }
+  },
+  {
+    "theme": "opencode",
+    "windowTitle": "deploy to staging",
+    "takeaway": "The corrected call succeeds - the gate starts to heal",
+    "delay": 0.1,
+    "before": {
+      "surface": "single",
+      "caption": "healing",
+      "sessionTitle": "# deploy to staging",
+      "blocks": [
+        {
+          "type": "status",
+          "text": "[dejavu] failure 1/3 - session 1"
+        },
+        {
+          "type": "status",
+          "text": "[dejavu] failure 2/3 - 2 sessions"
+        },
+        {
+          "type": "status",
+          "text": "[dejavu] failure 3/3 - 2 sessions"
+        },
+        {
+          "type": "status",
+          "text": "[dejavu] gate promoted - blocking",
+          "hl": true
+        },
+        {
+          "type": "tool",
+          "kind": "call",
+          "text": "deploy --to dist --env stg"
+        },
+        {
+          "type": "status",
+          "text": "[dejavu] REMINDER - call aborted"
+        },
+        {
+          "type": "status",
+          "text": "CORRECTION: use --environment, not --env",
+          "hl": true
+        },
+        {
+          "type": "status",
+          "text": "EVIDENCE: 3 failures across 2 sessions"
+        },
+        {
+          "type": "status",
+          "text": "[dejavu] BLOCKED - repeat offense",
+          "hl": true
+        },
+        {
+          "type": "prose",
+          "text": "Applying the correction: --environment, not --env"
+        },
+        {
+          "type": "tool",
+          "kind": "call",
+          "text": "deploy --to dist --environment stg"
+        },
+        {
+          "type": "done",
+          "text": "deployed to staging"
         }
       ]
     },
@@ -691,8 +1303,8 @@
         },
         {
           "type": "status",
-          "hl": true,
-          "text": "[dejavu] gate promoted - blocking"
+          "text": "[dejavu] gate promoted - blocking",
+          "hl": true
         },
         {
           "type": "tool",
@@ -705,8 +1317,8 @@
         },
         {
           "type": "status",
-          "hl": true,
-          "text": "CORRECTION: use --environment, not --env"
+          "text": "CORRECTION: use --environment, not --env",
+          "hl": true
         },
         {
           "type": "status",
@@ -714,8 +1326,148 @@
         },
         {
           "type": "status",
-          "hl": true,
-          "text": "[dejavu] BLOCKED - repeat offense"
+          "text": "[dejavu] BLOCKED - repeat offense",
+          "hl": true
+        },
+        {
+          "type": "prose",
+          "text": "Applying the correction: --environment, not --env"
+        },
+        {
+          "type": "tool",
+          "kind": "call",
+          "text": "deploy --to dist --environment stg"
+        },
+        {
+          "type": "done",
+          "text": "deployed to staging - exit 0"
+        }
+      ]
+    },
+    "after": {
+      "surface": "terminal",
+      "blocks": []
+    }
+  },
+  {
+    "theme": "opencode",
+    "windowTitle": "deploy to staging",
+    "takeaway": "The corrected call succeeds - the gate starts to heal",
+    "delay": 0.1,
+    "before": {
+      "surface": "single",
+      "caption": "healing",
+      "sessionTitle": "# deploy to staging",
+      "blocks": [
+        {
+          "type": "status",
+          "text": "[dejavu] failure 2/3 - 2 sessions"
+        },
+        {
+          "type": "status",
+          "text": "[dejavu] failure 3/3 - 2 sessions"
+        },
+        {
+          "type": "status",
+          "text": "[dejavu] gate promoted - blocking",
+          "hl": true
+        },
+        {
+          "type": "tool",
+          "kind": "call",
+          "text": "deploy --to dist --env stg"
+        },
+        {
+          "type": "status",
+          "text": "[dejavu] REMINDER - call aborted"
+        },
+        {
+          "type": "status",
+          "text": "CORRECTION: use --environment, not --env",
+          "hl": true
+        },
+        {
+          "type": "status",
+          "text": "EVIDENCE: 3 failures across 2 sessions"
+        },
+        {
+          "type": "status",
+          "text": "[dejavu] BLOCKED - repeat offense",
+          "hl": true
+        },
+        {
+          "type": "prose",
+          "text": "Applying the correction: --environment, not --env"
+        },
+        {
+          "type": "tool",
+          "kind": "call",
+          "text": "deploy --to dist --environment stg"
+        },
+        {
+          "type": "done",
+          "text": "deployed to staging - exit 0"
+        },
+        {
+          "type": "status",
+          "text": "[dejavu] success 1/3"
+        }
+      ]
+    },
+    "after": {
+      "surface": "terminal",
+      "blocks": []
+    }
+  },
+  {
+    "theme": "opencode",
+    "windowTitle": "deploy to staging",
+    "takeaway": "The corrected call succeeds - the gate starts to heal",
+    "delay": 1,
+    "before": {
+      "surface": "single",
+      "caption": "healing",
+      "sessionTitle": "# deploy to staging",
+      "blocks": [
+        {
+          "type": "status",
+          "text": "[dejavu] failure 2/3 - 2 sessions"
+        },
+        {
+          "type": "status",
+          "text": "[dejavu] failure 3/3 - 2 sessions"
+        },
+        {
+          "type": "status",
+          "text": "[dejavu] gate promoted - blocking",
+          "hl": true
+        },
+        {
+          "type": "tool",
+          "kind": "call",
+          "text": "deploy --to dist --env stg"
+        },
+        {
+          "type": "status",
+          "text": "[dejavu] REMINDER - call aborted"
+        },
+        {
+          "type": "status",
+          "text": "CORRECTION: use --environment, not --env",
+          "hl": true
+        },
+        {
+          "type": "status",
+          "text": "EVIDENCE: 3 failures across 2 sessions"
+        },
+        {
+          "type": "status",
+          "text": "[dejavu] BLOCKED - repeat offense",
+          "hl": true
+        },
+        {
+          "type": "prose",
+          "text": "Applying the correction: --environment, not --env"
         },
         {
           "type": "tool",
@@ -741,7 +1493,7 @@
     "theme": "opencode",
     "windowTitle": "deploy to staging",
     "takeaway": "Two successes - the gate is nearly retired",
-    "delay": 1,
+    "delay": 0.1,
     "before": {
       "surface": "single",
       "caption": "healing",
@@ -749,16 +1501,12 @@
       "blocks": [
         {
           "type": "status",
-          "text": "[dejavu] failure 2/3 - 2 sessions"
-        },
-        {
-          "type": "status",
           "text": "[dejavu] failure 3/3 - 2 sessions"
         },
         {
           "type": "status",
-          "hl": true,
-          "text": "[dejavu] gate promoted - blocking"
+          "text": "[dejavu] gate promoted - blocking",
+          "hl": true
         },
         {
           "type": "tool",
@@ -771,8 +1519,8 @@
         },
         {
           "type": "status",
-          "hl": true,
-          "text": "CORRECTION: use --environment, not --env"
+          "text": "CORRECTION: use --environment, not --env",
+          "hl": true
         },
         {
           "type": "status",
@@ -780,8 +1528,82 @@
         },
         {
           "type": "status",
-          "hl": true,
-          "text": "[dejavu] BLOCKED - repeat offense"
+          "text": "[dejavu] BLOCKED - repeat offense",
+          "hl": true
+        },
+        {
+          "type": "prose",
+          "text": "Applying the correction: --environment, not --env"
+        },
+        {
+          "type": "tool",
+          "kind": "call",
+          "text": "deploy --to dist --environment stg"
+        },
+        {
+          "type": "done",
+          "text": "deployed to staging - exit 0"
+        },
+        {
+          "type": "status",
+          "text": "[dejavu] success 1/3 toward healing"
+        },
+        {
+          "type": "status",
+          "text": "[dejavu] success 2/3"
+        }
+      ]
+    },
+    "after": {
+      "surface": "terminal",
+      "blocks": []
+    }
+  },
+  {
+    "theme": "opencode",
+    "windowTitle": "deploy to staging",
+    "takeaway": "Two successes - the gate is nearly retired",
+    "delay": 1,
+    "before": {
+      "surface": "single",
+      "caption": "healing",
+      "sessionTitle": "# deploy to staging",
+      "blocks": [
+        {
+          "type": "status",
+          "text": "[dejavu] failure 3/3 - 2 sessions"
+        },
+        {
+          "type": "status",
+          "text": "[dejavu] gate promoted - blocking",
+          "hl": true
+        },
+        {
+          "type": "tool",
+          "kind": "call",
+          "text": "deploy --to dist --env stg"
+        },
+        {
+          "type": "status",
+          "text": "[dejavu] REMINDER - call aborted"
+        },
+        {
+          "type": "status",
+          "text": "CORRECTION: use --environment, not --env",
+          "hl": true
+        },
+        {
+          "type": "status",
+          "text": "EVIDENCE: 3 failures across 2 sessions"
+        },
+        {
+          "type": "status",
+          "text": "[dejavu] BLOCKED - repeat offense",
+          "hl": true
+        },
+        {
+          "type": "prose",
+          "text": "Applying the correction: --environment, not --env"
         },
         {
           "type": "tool",
@@ -811,7 +1633,7 @@
     "theme": "opencode",
     "windowTitle": "deploy to staging",
     "takeaway": "Three successes - the gate heals back to watching",
-    "delay": 1.2,
+    "delay": 0.1,
     "before": {
       "surface": "single",
       "caption": "healed",
@@ -819,12 +1641,8 @@
       "blocks": [
         {
           "type": "status",
-          "text": "[dejavu] failure 3/3 - 2 sessions"
-        },
-        {
-          "type": "status",
-          "hl": true,
-          "text": "[dejavu] gate promoted - blocking"
+          "text": "[dejavu] gate promoted - blocking",
+          "hl": true
         },
         {
           "type": "tool",
@@ -837,8 +1655,8 @@
         },
         {
           "type": "status",
-          "hl": true,
-          "text": "CORRECTION: use --environment, not --env"
+          "text": "CORRECTION: use --environment, not --env",
+          "hl": true
         },
         {
           "type": "status",
@@ -846,8 +1664,12 @@
         },
         {
           "type": "status",
-          "hl": true,
-          "text": "[dejavu] BLOCKED - repeat offense"
+          "text": "[dejavu] BLOCKED - repeat offense",
+          "hl": true
+        },
+        {
+          "type": "prose",
+          "text": "Applying the correction: --environment, not --env"
         },
         {
           "type": "tool",
@@ -868,8 +1690,148 @@
         },
         {
           "type": "status",
-          "hl": true,
-          "text": "[dejavu] 3 successes - gate HEALS - watching"
+          "text": "[dejavu] 3 successes"
+        }
+      ]
+    },
+    "after": {
+      "surface": "terminal",
+      "blocks": []
+    }
+  },
+  {
+    "theme": "opencode",
+    "windowTitle": "deploy to staging",
+    "takeaway": "Three successes - the gate heals back to watching",
+    "delay": 0.1,
+    "before": {
+      "surface": "single",
+      "caption": "healed",
+      "sessionTitle": "# deploy to staging",
+      "blocks": [
+        {
+          "type": "status",
+          "text": "[dejavu] gate promoted - blocking",
+          "hl": true
+        },
+        {
+          "type": "tool",
+          "kind": "call",
+          "text": "deploy --to dist --env stg"
+        },
+        {
+          "type": "status",
+          "text": "[dejavu] REMINDER - call aborted"
+        },
+        {
+          "type": "status",
+          "text": "CORRECTION: use --environment, not --env",
+          "hl": true
+        },
+        {
+          "type": "status",
+          "text": "EVIDENCE: 3 failures across 2 sessions"
+        },
+        {
+          "type": "status",
+          "text": "[dejavu] BLOCKED - repeat offense",
+          "hl": true
+        },
+        {
+          "type": "prose",
+          "text": "Applying the correction: --environment, not --env"
+        },
+        {
+          "type": "tool",
+          "kind": "call",
+          "text": "deploy --to dist --environment stg"
+        },
+        {
+          "type": "done",
+          "text": "deployed to staging - exit 0"
+        },
+        {
+          "type": "status",
+          "text": "[dejavu] success 1/3 toward healing"
+        },
+        {
+          "type": "status",
+          "text": "[dejavu] success 2/3 toward healing"
+        },
+        {
+          "type": "status",
+          "text": "[dejavu] 3 successes - gate HEALS"
+        }
+      ]
+    },
+    "after": {
+      "surface": "terminal",
+      "blocks": []
+    }
+  },
+  {
+    "theme": "opencode",
+    "windowTitle": "deploy to staging",
+    "takeaway": "Three successes - the gate heals back to watching",
+    "delay": 1.2,
+    "before": {
+      "surface": "single",
+      "caption": "healed",
+      "sessionTitle": "# deploy to staging",
+      "blocks": [
+        {
+          "type": "status",
+          "text": "[dejavu] gate promoted - blocking",
+          "hl": true
+        },
+        {
+          "type": "tool",
+          "kind": "call",
+          "text": "deploy --to dist --env stg"
+        },
+        {
+          "type": "status",
+          "text": "[dejavu] REMINDER - call aborted"
+        },
+        {
+          "type": "status",
+          "text": "CORRECTION: use --environment, not --env",
+          "hl": true
+        },
+        {
+          "type": "status",
+          "text": "EVIDENCE: 3 failures across 2 sessions"
+        },
+        {
+          "type": "status",
+          "text": "[dejavu] BLOCKED - repeat offense",
+          "hl": true
+        },
+        {
+          "type": "prose",
+          "text": "Applying the correction: --environment, not --env"
+        },
+        {
+          "type": "tool",
+          "kind": "call",
+          "text": "deploy --to dist --environment stg"
+        },
+        {
+          "type": "done",
+          "text": "deployed to staging - exit 0"
+        },
+        {
+          "type": "status",
+          "text": "[dejavu] success 1/3 toward healing"
+        },
+        {
+          "type": "status",
+          "text": "[dejavu] success 2/3 toward healing"
+        },
+        {
+          "type": "status",
+          "text": "[dejavu] 3 successes - gate HEALS - watching",
+          "hl": true
         }
       ]
     },
@@ -890,12 +1852,8 @@
       "blocks": [
         {
           "type": "status",
-          "text": "[dejavu] failure 3/3 - 2 sessions"
-        },
-        {
-          "type": "status",
-          "hl": true,
-          "text": "[dejavu] gate promoted - blocking"
+          "text": "[dejavu] gate promoted - blocking",
+          "hl": true
         },
         {
           "type": "tool",
@@ -908,8 +1866,8 @@
         },
         {
           "type": "status",
-          "hl": true,
-          "text": "CORRECTION: use --environment, not --env"
+          "text": "CORRECTION: use --environment, not --env",
+          "hl": true
         },
         {
           "type": "status",
@@ -917,8 +1875,12 @@
         },
         {
           "type": "status",
-          "hl": true,
-          "text": "[dejavu] BLOCKED - repeat offense"
+          "text": "[dejavu] BLOCKED - repeat offense",
+          "hl": true
+        },
+        {
+          "type": "prose",
+          "text": "Applying the correction: --environment, not --env"
         },
         {
           "type": "tool",
@@ -939,8 +1901,8 @@
         },
         {
           "type": "status",
-          "hl": true,
-          "text": "[dejavu] 3 successes - gate HEALS - watching"
+          "text": "[dejavu] 3 successes - gate HEALS - watching",
+          "hl": true
         }
       ]
     },
