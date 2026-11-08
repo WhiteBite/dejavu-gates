@@ -8,6 +8,16 @@ import { mkdir, mkdtemp, readFile, readdir, rm, utimes, writeFile } from "node:f
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { fileURLToPath } from "node:url"
+
+// flags are module-load consts — re-exec once with them forced off so a machine-level opt-in env cannot flip the flag-off premises
+if (process.env.DEJAVU_TEST_GUARD !== "1") {
+  const guard = spawnSync(process.execPath, [fileURLToPath(import.meta.url)], {
+    env: { ...process.env, DEJAVU_LEAK_RECOVERY: "0", DEJAVU_LOOP_RECOVERY: "0", DEJAVU_TEST_GUARD: "1" },
+    stdio: "inherit",
+  })
+  process.exit(guard.status ?? 1)
+}
+
 import { Dejavu } from "../index"
 import {
   bashSegmentSignatures,
@@ -3420,6 +3430,7 @@ check("markers: the internal repeat marker never reaches the tool args", !(REPEA
 
 // --- 110. leaked tool-call recovery (opt-in; LEAK_RECOVERY is read at module load) ---
 const r110Leak = '<|DSL|calls>\n<|DSL|invoke name="compress">\n<|DSL|parameter name="content" string="false">{}</|DSL|parameter>\n</|DSL|invoke>\n</|DSL|calls>'
+const r110Tags = "Resyncing the manifest.\n<dc@bash>\ne\\nn\\nv\\n:\\nenv:CI='true'\\nnode scripts/version.mjs sync\\n</dc@bash>\nLet me run.\n<dc@bash>npm test</dc@bash>\nLet me stop.\n<dc@bash/>"
 const r110Dir = join(tmp, "r110-leak-project")
 await mkdir(r110Dir, { recursive: true })
 const r110Hooks = await Dejavu({ directory: r110Dir, client: { app: { log: async () => ({}) } } } as unknown as Ctx)
@@ -3434,6 +3445,7 @@ import { Dejavu } from ${JSON.stringify(new URL("../index.ts", import.meta.url).
 const hooks = await Dejavu({ directory: process.env.R110_PROJECT, client: { app: { log: async () => ({}) } } })
 const transform = hooks["experimental.chat.messages.transform"]
 const leak = ${JSON.stringify(r110Leak)}
+const tags = ${JSON.stringify(r110Tags)}
 const nl = String.fromCharCode(10)
 const fence = String.fromCharCode(96, 96, 96)
 const mk = (sessionID, text) => [
@@ -3443,25 +3455,29 @@ const mk = (sessionID, text) => [
 const leakMsgs = mk("r110p", leak)
 await transform({}, { messages: leakMsgs })
 await transform({}, { messages: leakMsgs })
+const tagMsgs = mk("r110t", tags)
+await transform({}, { messages: tagMsgs })
 const fencedMsgs = mk("r110f", fence + nl + leak + nl + fence)
 await transform({}, { messages: fencedMsgs })
 const bareMsgs = mk("r110b", "the marker <|DSL|calls> appears inline")
 await transform({}, { messages: bareMsgs })
 console.log(JSON.stringify({
   text: leakMsgs[1].parts[0].text,
-  injected: leakMsgs.filter((m) => m.info.role === "user" && m.parts[0] && m.parts[0].synthetic === true).map((m) => m.parts[0].text),
+  injected: [...leakMsgs, ...tagMsgs].filter((m) => m.info.role === "user" && m.parts[0] && m.parts[0].synthetic === true).map((m) => m.parts[0].text),
+  tags: tagMsgs[1].parts[0].text,
   fenced: fencedMsgs[1].parts[0].text,
   bare: bareMsgs[1].parts[0].text,
 }))
 `
-const r110 = runProbe(r110Probe, { DEJAVU_LEAK_RECOVERY: "1", DEJAVU_HOME: join(tmp, "r110-home"), R110_PROJECT: r110Dir }) as { text?: string; injected?: string[]; fenced?: string; bare?: string }
+const r110 = runProbe(r110Probe, { DEJAVU_LEAK_RECOVERY: "1", DEJAVU_HOME: join(tmp, "r110-home"), R110_PROJECT: r110Dir }) as { text?: string; injected?: string[]; tags?: string; fenced?: string; bare?: string }
 check("leak recovery: raw block replaced in the outgoing payload", typeof r110.text === "string" && r110.text.includes("[dejavu] (leaked tool-call serialization removed"))
 check("leak recovery: placeholder carries no raw markers", typeof r110.text === "string" && !r110.text.includes("<|DSL|") && !r110.text.includes("</|DSL|"))
-check("leak recovery: a synthetic recovery turn is appended", (r110.injected?.length ?? 0) === 1 && (r110.injected?.[0] ?? "").includes("Re-issue the intended call now"))
+check("leak recovery: malformed tool tags are scrubbed", typeof r110.tags === "string" && !r110.tags.includes("<dc@") && !r110.tags.includes("</dc") && r110.tags.includes("leaked tool-call serialization removed") && r110.tags.includes("Let me run."))
+check("leak recovery: a synthetic recovery turn is appended per leaking session", (r110.injected?.length ?? 0) === 2 && (r110.injected ?? []).every((t) => t.includes("Re-issue the intended call now")))
 check("leak recovery: a fenced block is left untouched", r110.fenced === "```\n" + r110Leak + "\n```")
 check("leak recovery: a bare marker mention is left untouched", r110.bare === "the marker <|DSL|calls> appears inline")
 const r110Log = await readFile(join(r110Dir, ".opencode", "dejavu", "log.jsonl"), "utf8").catch(() => "")
-check("leak recovery: exactly one leak-recovery log event per session", r110Log.split("\n").filter((l) => l.includes('"type":"leak-recovery"')).length === 1)
+check("leak recovery: one leak-recovery log event per leaking session", r110Log.split("\n").filter((l) => l.includes('"type":"leak-recovery"')).length === 2)
 
 const r111Stuck = "Hmm. ".repeat(100)
 const r111Dir = join(tmp, "r111-loop-project")

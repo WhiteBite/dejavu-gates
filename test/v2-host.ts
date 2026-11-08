@@ -2,9 +2,21 @@
  * Characterization test for the dual-export entrypoint.
  * Run: bun test/v2-host.ts
  */
-import { mkdtemp, readFile, rm } from "node:fs/promises"
+import { spawnSync } from "node:child_process"
 import { tmpdir } from "node:os"
+import { mkdtemp, readFile, rm } from "node:fs/promises"
 import { join } from "node:path"
+import { fileURLToPath } from "node:url"
+
+// flags are module-load consts — re-exec once with them forced off so a machine-level opt-in env cannot flip the flag-off premises
+if (process.env.DEJAVU_TEST_GUARD !== "1") {
+  const guard = spawnSync(process.execPath, [fileURLToPath(import.meta.url)], {
+    env: { ...process.env, DEJAVU_LEAK_RECOVERY: "0", DEJAVU_LOOP_RECOVERY: "0", DEJAVU_TEST_GUARD: "1" },
+    stdio: "inherit",
+  })
+  process.exit(guard.status ?? 1)
+}
+
 import type { Plugin } from "@opencode/plugin"
 import mod, { Dejavu } from "../index"
 import { v2Setup } from "../src/opencode-v2"

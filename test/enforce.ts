@@ -816,6 +816,27 @@ check("neutralizeLeakedToolCalls: a fenced example stays intact", mixedLeak.incl
 check("neutralizeLeakedToolCalls: an inline quote stays intact", mixedLeak.includes("`" + "<|DSL|calls>"))
 const truncatedScrubbed = neutralizeLeakedToolCalls('<|DSL|calls>\n<|DSL|invoke name="compress">\nunterminated onward')
 check("neutralizeLeakedToolCalls: a truncated tail is scrubbed", !truncatedScrubbed.includes("<|DSL|") && truncatedScrubbed.includes("serialization removed"))
+const tagFixture = [
+  "The manifest is stale, resyncing.",
+  "<dc@bash>",
+  "e\nn\nv\n:\nenv:CI='true'\nnode scripts/version.mjs sync\nnpm test",
+  "</dc@bash>",
+  "Let me run.",
+  "<dc@bash>npm test</dc@bash>",
+  "<dc@bash>echo ok</dc@bash>",
+  "Let me stop and produce the call.",
+  "<dc@bash/>",
+].join("\n")
+check("detectLeakedToolCall: malformed tool-tag emissions fire", detectLeakedToolCall(tagFixture) !== null)
+const tagScrubbed = neutralizeLeakedToolCalls(tagFixture)
+check("neutralizeLeakedToolCalls: malformed tag blocks are scrubbed", !tagScrubbed.includes("<dc@") && !tagScrubbed.includes("</dc@") && tagScrubbed.includes(NEUTRAL_PLACEHOLDER) && tagScrubbed.includes("Let me run."))
+check("detectLeakedToolCall: a single complete tag pair fires", detectLeakedToolCall("header\n<dc@bash>echo ok</dc@bash>\ntrailer") !== null)
+check("detectLeakedToolCall: two stray quoted tags are not a leak", detectLeakedToolCall("mentions `<dc@bash/>` and `<dc@read/>` inline") === null)
+check("detectLeakedToolCall: three raw stray tags fire", detectLeakedToolCall("x <dc@bash/> y <dc@read/> z <dc/write>") !== null)
+check("detectLeakedToolCall: three quoted example pairs are not a leak", detectLeakedToolCall("the `<dc@bash>a</dc@bash>` and `<dc@read>b</dc@read>` and `<dc@write>c</dc@write>` examples") === null)
+check("detectLeakedToolCall: a fenced tag pair is not a leak", detectLeakedToolCall("```\n<dc@bash>echo</dc@bash>\n```") === null)
+const taggedMixed = neutralizeLeakedToolCalls("raw <dc@bash>boom</dc@bash> plus quoted `<dc@bash>keep</dc@bash>` and fenced\n```\n<dc@bash>keep2</dc@bash>\n```")
+check("neutralizeLeakedToolCalls: quoted and fenced tag examples survive", taggedMixed.includes(NEUTRAL_PLACEHOLDER) && taggedMixed.includes("`<dc@bash>keep</dc@bash>`") && taggedMixed.includes("<dc@bash>keep2</dc@bash>"))
 
 const spamWall = "Hmm. ".repeat(100)
 const spamVerdict = detectStuckReasoning({ text: spamWall, acted: false })

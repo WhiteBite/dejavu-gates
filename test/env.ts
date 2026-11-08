@@ -9,6 +9,15 @@ import { join } from "node:path"
 import { fileURLToPath } from "node:url"
 import { makeChecker } from "./helpers"
 
+// flags are module-load consts — re-exec once with them forced off so a machine-level opt-in env cannot flip the flag-off premises
+if (process.env.DEJAVU_TEST_GUARD !== "1") {
+  const guard = spawnSync(process.execPath, [fileURLToPath(import.meta.url)], {
+    env: { ...process.env, DEJAVU_LEAK_RECOVERY: "0", DEJAVU_LOOP_RECOVERY: "0", DEJAVU_TEST_GUARD: "1" },
+    stdio: "inherit",
+  })
+  process.exit(guard.status ?? 1)
+}
+
 interface Probe {
   resolved: Record<string, number | boolean>
   status: string | null

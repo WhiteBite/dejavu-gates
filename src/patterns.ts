@@ -2042,6 +2042,11 @@ const LEAK_INVOKE = /<\|DSL\|invoke/i
 /** adjacency of the real DSL: the invoke tag follows the opener immediately; prose between them is a mention */
 const LEAK_OPENER_LEN = 12
 const LEAK_INVOKE_GAP = 4
+/** malformed tool-call tags a confused gateway/model emits as text: <dc@bash>...</dc@bash>, <dc@bash/>, </dc@bash> */
+const LEAK_TOOL_TAG = /<\/?dc[@\/][a-z][a-z0-9_-]*\/?>/gi
+const LEAK_TAG_BLOCK = /<dc[@\/]([a-z][a-z0-9_-]*)>[\s\S]*?<\/dc[@\/]\1>/gi
+/** below this many stray tags (with no complete pair) the shape is a mention, not an emission */
+const LEAK_TAG_STRAY_MIN = 3
 const FENCE_LINE = /(?:^|\n)[ \t]*(?:```|~~~)/g
 
 export const NEUTRAL_PLACEHOLDER = "[dejavu] (leaked tool-call serialization removed - re-issue the intended call as a proper tool call)"
@@ -2054,6 +2059,11 @@ function insideFence(text: string, index: number): boolean {
 /** an emitting leak starts at a raw position — a preceding backtick marks an inline code mention */
 function inlineMention(text: string, start: number): boolean {
   return text.charCodeAt(start - 1) === 96
+}
+
+/** a backtick-wrapped span on both ends is a quoted example, not an emission */
+function quotedSpan(text: string, start: number, end: number): boolean {
+  return text.charCodeAt(start - 1) === 96 && text.charCodeAt(end) === 96
 }
 
 function truncatedLeakSpan(text: string): { start: number; end: number } | null {
@@ -2070,7 +2080,32 @@ function truncatedLeakSpan(text: string): { start: number; end: number } | null 
   return { start: lastOpen, end: text.length }
 }
 
-/** Last tail-anchored block, fence/quotation-guarded — a stream cut inside the payload counts too */
+function malformedTagLeakSpan(text: string): { start: number; end: number } | null {
+  let m: RegExpExecArray | null
+  const quotedRanges: Array<[number, number]> = []
+  const pairs = new RegExp(LEAK_TAG_BLOCK.source, "gi")
+  while ((m = pairs.exec(text)) !== null) {
+    const end = m.index + m[0].length
+    if (insideFence(text, m.index) || quotedSpan(text, m.index, end)) {
+      quotedRanges.push([m.index, end])
+      continue
+    }
+    return { start: m.index, end }
+  }
+  let strays = 0
+  const tags = new RegExp(LEAK_TOOL_TAG.source, "gi")
+  while ((m = tags.exec(text)) !== null) {
+    const start = m.index
+    const end = m.index + m[0].length
+    if (insideFence(text, start) || inlineMention(text, start)) continue
+    if (quotedRanges.some(([s, e]) => start >= s && end <= e)) continue
+    strays += 1
+    if (strays >= LEAK_TAG_STRAY_MIN) return { start, end }
+  }
+  return null
+}
+
+/** Last tail-anchored DSL block, fence/quotation-guarded — a stream cut inside the payload and malformed tool-tag emissions count too */
 export function detectLeakedToolCall(text: string): { start: number; end: number } | null {
   let last: RegExpExecArray | null = null
   let m: RegExpExecArray | null
@@ -2084,24 +2119,47 @@ export function detectLeakedToolCall(text: string): { start: number; end: number
   ) {
     return { start: last.index, end: last.index + last[0].length }
   }
-  return truncatedLeakSpan(text)
+  const truncated = truncatedLeakSpan(text)
+  if (truncated !== null) return truncated
+  return malformedTagLeakSpan(text)
 }
 
 /** Scrubs every guard-passing block — fenced examples and inline mentions stay intact */
 export function neutralizeLeakedToolCalls(text: string): string {
-  let out = ""
-  let cursor = 0
-  const re = new RegExp(LEAK_BLOCK.source, "gi")
+  const ranges: Array<[number, number, string]> = []
   let m: RegExpExecArray | null
-  while ((m = re.exec(text)) !== null) {
-    if (insideFence(text, m.index) || inlineMention(text, m.index)) continue
-    out += text.slice(cursor, m.index) + NEUTRAL_PLACEHOLDER
-    cursor = m.index + m[0].length
+  const blocks = new RegExp(LEAK_BLOCK.source, "gi")
+  while ((m = blocks.exec(text)) !== null) {
+    if (!insideFence(text, m.index) && !inlineMention(text, m.index)) {
+      ranges.push([m.index, m.index + m[0].length, NEUTRAL_PLACEHOLDER])
+    }
+  }
+  const tagBlocks = new RegExp(LEAK_TAG_BLOCK.source, "gi")
+  const pairRanges: Array<[number, number]> = []
+  while ((m = tagBlocks.exec(text)) !== null) {
+    const end = m.index + m[0].length
+    pairRanges.push([m.index, end])
+    if (!insideFence(text, m.index) && !quotedSpan(text, m.index, end)) {
+      ranges.push([m.index, end, NEUTRAL_PLACEHOLDER])
+    }
   }
   const truncated = truncatedLeakSpan(text)
-  if (truncated !== null && truncated.start >= cursor) {
-    out += text.slice(cursor, truncated.start) + NEUTRAL_PLACEHOLDER
-    cursor = text.length
+  if (truncated !== null) ranges.push([truncated.start, truncated.end, NEUTRAL_PLACEHOLDER])
+  const tags = new RegExp(LEAK_TOOL_TAG.source, "gi")
+  while ((m = tags.exec(text)) !== null) {
+    const start = m.index
+    const end = start + m[0].length
+    if (insideFence(text, start) || inlineMention(text, start)) continue
+    if (pairRanges.some(([s, e]) => start >= s && end <= e)) continue
+    ranges.push([start, end, ""])
+  }
+  ranges.sort((a, b) => a[0] - b[0])
+  let out = ""
+  let cursor = 0
+  for (const [start, end, replacement] of ranges) {
+    if (start < cursor) continue
+    out += text.slice(cursor, start) + replacement
+    cursor = end
   }
   return cursor === 0 ? text : out + text.slice(cursor)
 }
