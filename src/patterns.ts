@@ -2042,9 +2042,10 @@ const LEAK_INVOKE = /<\|DSL\|invoke/i
 /** adjacency of the real DSL: the invoke tag follows the opener immediately; prose between them is a mention */
 const LEAK_OPENER_LEN = 12
 const LEAK_INVOKE_GAP = 4
-/** malformed tool-call tags a confused gateway/model emits as text: <dc@bash>...</dc@bash>, <dc@bash/>, </dc@bash> */
-const LEAK_TOOL_TAG = /<\/?dc[@\/][a-z][a-z0-9_-]*\/?>/gi
-const LEAK_TAG_BLOCK = /<dc[@\/]([a-z][a-z0-9_-]*)>[\s\S]*?<\/dc[@\/]\1>/gi
+/** a tool-call tag serialized as text: <dc@bash>…</dc@bash>, <dc@read filePath="…"></dc@read>, <dc@bash/>, any <junk@tool>/<junk/tool> — the known tool word anchors it, the separator keeps html and emails out */
+const LEAK_TOOL_WORD = "(?:bash|read|edit|write|glob|grep|list|todowrite|task|question|skill)"
+const LEAK_TOOL_TAG = new RegExp(`<\\/?[a-z0-9]{0,16}?[@\\/]${LEAK_TOOL_WORD}(?:[\\t ][^<>\\n]{0,1024})?\\/?>`, "gi")
+const LEAK_TAG_BLOCK = new RegExp(`<([a-z0-9]{0,16}?[@\\/]${LEAK_TOOL_WORD})(?:[\\t ][^<>\\n]{0,1024})?>[\\s\\S]*?<\\/\\1>`, "gi")
 /** below this many stray tags (with no complete pair) the shape is a mention, not an emission */
 const LEAK_TAG_STRAY_MIN = 3
 const FENCE_LINE = /(?:^|\n)[ \t]*(?:```|~~~)/g
