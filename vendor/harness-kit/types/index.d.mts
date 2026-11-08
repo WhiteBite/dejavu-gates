@@ -20,7 +20,7 @@ export interface RegistryMcp {
   typeValue?: string;
   tokenEnvSyntax?: string | null;
   authField?: string;
-  write?: 'merge' | 'print-only';
+  write?: 'merge' | 'merge-text' | 'print-only';
   source?: string;
   note?: string;
 }
@@ -97,6 +97,37 @@ export function mergeMcpServers(
   template: Record<string, unknown>,
   options: { container: string; isMine: (name: string, server: unknown) => boolean },
 ): Record<string, unknown>;
+
+export type JsoncTokenType = 'ws' | 'comment' | 'string' | 'punct' | 'literal';
+export interface JsoncToken {
+  type: JsoncTokenType;
+  start: number;
+  end: number;
+}
+export interface TextMergeResult {
+  text: string;
+  changed: boolean;
+}
+export function scanJsonc(text: string): JsoncToken[];
+export function parseJsonc(text: string): unknown;
+export function mergeJsoncContainer(
+  text: string,
+  template: Record<string, unknown>,
+  options: { container: string; isMine: (name: string, value: unknown) => boolean },
+): TextMergeResult;
+
+export interface TomlTable {
+  path: string[];
+  headerStart: number;
+  blockStart: number;
+  blockEnd: number;
+}
+export function scanTomlTables(text: string): TomlTable[];
+export function mergeTomlTable(
+  text: string,
+  template: Record<string, unknown>,
+  options: { container: string; isMine: (name: string, value: unknown) => boolean },
+): TextMergeResult;
 
 export type MarkerBlockAction = 'created' | 'replaced' | 'appended' | 'unchanged' | 'skipped-foreign';
 export interface MarkerBlockResult {
@@ -195,6 +226,7 @@ export declare class ConfigParseError extends Error {
 }
 export function readJsonConfig(path: string): Record<string, unknown> | null;
 export function writeJsonAtomic(path: string, data: unknown, opts?: { backup?: boolean }): void;
+export function writeTextAtomic(path: string, text: string, opts?: { backup?: boolean; validate?: (text: string) => void }): void;
 
 export function renderTemplate(text: string, vars?: Record<string, unknown>): string;
 export function renderPath(template: string, vars?: Record<string, string>): string;

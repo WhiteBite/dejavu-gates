@@ -86,7 +86,7 @@
                 "typeValue": { "type": "string" },
                 "tokenEnvSyntax": { "type": ["string", "null"] },
                 "authField": { "type": "string" },
-                "write": { "enum": ["merge", "print-only"] },
+                "write": { "enum": ["merge", "merge-text", "print-only"] },
                 "source": { "type": "string" },
                 "note": { "type": "string" }
               }

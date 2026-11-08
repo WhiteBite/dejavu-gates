@@ -52,7 +52,9 @@ export function assertNoSymlinkComponents(target) {
   }
 }
 
-export function writeJsonAtomic(path, data, { backup = true } = {}) {
+/** Writes `text` verbatim: no EOL or formatting normalization, so a comment-preserving editor's bytes reach disk unchanged. */
+export function writeTextAtomic(path, text, { backup = true, validate } = {}) {
+  if (typeof validate === 'function') validate(text);
   assertNoSymlinkComponents(path);
   let stat = null;
   try {
@@ -60,15 +62,13 @@ export function writeJsonAtomic(path, data, { backup = true } = {}) {
   } catch {
     stat = null;
   }
-  const serialized = `${JSON.stringify(data, null, 2).replace(/\r\n/g, '\n')}\n`;
-  JSON.parse(serialized);
-  if (stat !== null && readFileSync(path, 'utf8') === serialized) return;
+  if (stat !== null && readFileSync(path, 'utf8') === text) return;
   mkdirSync(dirname(path), { recursive: true });
   if (stat && backup) {
     copyFileSync(path, `${path}.harness-kit.bak`);
   }
   const tmp = join(dirname(path), `.${basename(path)}.${process.pid}.${randomBytes(6).toString('hex')}.tmp`);
-  writeFileSync(tmp, serialized, 'utf8');
+  writeFileSync(tmp, text, 'utf8');
   let renamed = false;
   for (let attempt = 0; attempt < RENAME_RETRIES && !renamed; attempt += 1) {
     try {
@@ -86,5 +86,10 @@ export function writeJsonAtomic(path, data, { backup = true } = {}) {
   if (stat && process.platform !== 'win32') {
     try { chmodSync(path, stat.mode & 0o7777); } catch { /* mode preservation is best effort */ }
   }
+}
+
+export function writeJsonAtomic(path, data, { backup = true } = {}) {
+  const serialized = `${JSON.stringify(data, null, 2).replace(/\r\n/g, '\n')}\n`;
+  writeTextAtomic(path, serialized, { backup, validate: (text) => JSON.parse(text) });
   JSON.parse(readFileSync(path, 'utf8'));
 }

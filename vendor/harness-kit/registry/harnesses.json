@@ -1,7 +1,7 @@
 {
   "$schema": "./harnesses.schema.json",
   "schemaVersion": 1,
-  "registryVersion": "0.10.0",
+  "registryVersion": "1.10.4",
   "conventions": {
     "ownership": {
       "sidecar": ".harness-kit/ownership.json",
@@ -76,7 +76,7 @@
         "urlField": "url",
         "tokenEnvSyntax": null,
         "authField": "bearer_token_env_var",
-        "write": "print-only",
+        "write": "merge-text",
         "source": "remote-devbox-mcp/home/rdm/prompt.py",
         "note": "TOML; literal tokens forbidden - only the env var NAME goes in the file; verify with `codex mcp list`"
       },
@@ -103,7 +103,7 @@
         "typeField": "type",
         "typeValue": "remote",
         "tokenEnvSyntax": "{env:VAR}",
-        "write": "print-only",
+        "write": "merge-text",
         "source": "remote-devbox-mcp/home/rdm/prompt.py",
         "note": "JSONC file; container is `mcp` not `mcpServers`; server object carries enabled/oauth booleans"
       },
@@ -507,7 +507,7 @@
         "container": "amp.mcpServers",
         "urlField": "url",
         "tokenEnvSyntax": "${VAR}",
-        "write": "print-only"
+        "write": "merge-text"
       },
       "skills": { "global": ["~/.config/amp/skills"] },
       "notes": "Closed-source (sourcegraph/amp repo is 404; docs at ampcode.com). No hook config - event-driven TS plugins. MCP lives under the literal top-level key `amp.mcpServers`; file may be .jsonc (kept print-only)."

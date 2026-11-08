@@ -4,6 +4,10 @@ Format: keep-a-changelog. From package 0.10.0, `registryVersion` mirrors the pac
 MAJOR removes/renames keys or changes their meaning (a structural break that breaks consumer code), MINOR adds harnesses, fields or additive blocks and also covers fact VALUE changes (a moved path or corrected container - consumer code does not change, the lockfile/`diff` surfaces it), PATCH is notes and typos.
 Keys are never deleted - they are deprecated in place (forward compatibility for vendored consumers).
 
+## 0.11.0
+
+- Enable comment-preserving MCP writes for the JSONC/TOML rows: new `mcp.write: "merge-text"`, and opencode, amp (jsonc) and codex (toml) move from `print-only` to it. `merge` stays JSON-only; `merge-text` requires a jsonc or toml format.
+
 ## 0.6.0
 
 - Add 2 experimental harness rows: `zcode` (ZCode - JSON config, 7 lifecycle hook events under `hooks.events`, skills roots, MCP under the nested `mcp.servers` key; hooks and MCP are print-only) and `deepseek` (DeepSeek Harness - Cordis YAML composition, no hook/MCP JSON file surface; skills roots only).

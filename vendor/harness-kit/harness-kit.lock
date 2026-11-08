@@ -1,11 +1,11 @@
 {
   "lockVersion": 1,
-  "kitVersion": "0.10.0",
-  "registryVersion": "0.10.0",
+  "kitVersion": "1.10.4",
+  "registryVersion": "1.10.4",
   "schemaVersion": 1,
-  "tag": "v0.10.0",
+  "tag": "v1.10.4",
   "files": {
-    "registry/harnesses.json": "ceb917213068faea4250cb0a8732c8cd736394db805cb4678ed6789f41a9b647",
-    "registry/harnesses.schema.json": "6952906533babe4d2323ad5924f82ca18e4aa0c8304133ff263aa0cdf88170dc"
+    "registry/harnesses.json": "07eb1da14151197bffde4f430b814b62942a81f56a6e4d4b787840921a4d98e4",
+    "registry/harnesses.schema.json": "124f335736f399f4c0807b083a558ccceea82676c82ecc1e6129f432107d0e24"
   }
 }

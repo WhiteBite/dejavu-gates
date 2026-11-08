@@ -1,10 +1,12 @@
 /** harness-kit public surface: registry facts + owner-scoped merge + ownership sidecar + atomic writes + templating. */
 export { mergeHooks } from './merge.mjs';
 export { mergeMcpServers } from './mcp.mjs';
+export { scanJsonc, parseJsonc, mergeJsoncContainer } from './jsonc.mjs';
+export { scanTomlTables, mergeTomlTable } from './toml.mjs';
 export { writeMarkerBlock, readMarkerBlock } from './marker.mjs';
 export { checkDrift, extractCliPath, collectCommands } from './drift.mjs';
 export { checkInstall, resolveHooksDir } from './doctor.mjs';
-export { ConfigParseError, readJsonConfig, writeJsonAtomic } from './atomic.mjs';
+export { ConfigParseError, readJsonConfig, writeJsonAtomic, writeTextAtomic } from './atomic.mjs';
 export { renderTemplate, renderPath, escapeForJsonString } from './template.mjs';
 export {
   SIDECAR_DIR,

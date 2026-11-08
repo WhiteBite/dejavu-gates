@@ -72,11 +72,14 @@ export function validateRegistry(registry) {
         if (!mcp.config || typeof mcp.config !== 'object' || Array.isArray(mcp.config)) problems.push(`${id}: mcp.config is required`);
         if (!MCP_FORMATS.includes(mcp.format)) problems.push(`${id}: mcp.format must be one of ${MCP_FORMATS.join(', ')}`);
         if (typeof mcp.container !== 'string' || mcp.container === '') problems.push(`${id}: mcp.container is required`);
-        if (mcp.write !== undefined && !['merge', 'print-only'].includes(mcp.write)) {
-          problems.push(`${id}: mcp.write must be one of merge, print-only`);
+        if (mcp.write !== undefined && !['merge', 'merge-text', 'print-only'].includes(mcp.write)) {
+          problems.push(`${id}: mcp.write must be one of merge, merge-text, print-only`);
         }
         if (mcp.write === 'merge' && mcp.format !== 'json') {
           problems.push(`${id}: mcp write=merge requires json format`);
+        }
+        if (mcp.write === 'merge-text' && !['jsonc', 'toml'].includes(mcp.format)) {
+          problems.push(`${id}: mcp write=merge-text requires jsonc or toml format`);
         }
       }
     }
