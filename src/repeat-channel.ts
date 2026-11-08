@@ -1,7 +1,7 @@
 import { detectLeakedToolCall, detectRepeatSeries, detectRepeatWindows, detectShapeLoops, looksLikeFailure, neutralizeLeakedToolCalls, parameterizeError, REPEAT_MARKER, sanitizeForStore } from "./patterns"
 import { REPEAT_STOP_AFTER } from "./repeat"
 import { envFlag } from "./store"
-import { LEAK_RECOVERY_SESSIONS_CAP, type EnforceContext } from "./context"
+import { evictMap, evictSet, LEAK_RECOVERY_SESSIONS_CAP, type EnforceContext } from "./context"
 
 // --- Tunables ---------------------------------------------------------------
 
@@ -132,19 +132,11 @@ async function recoverLeakedToolCall(messages: RepeatChannelMessage[], ctx: Enfo
   if (count < LEAK_INJECT_MAX) {
     injected.push({ sessionID, text: LEAK_INJECT_TEXT, logKey: "leaked-tool-call", tool: lastLeakTool, count: 1 })
     ephemeral.leakRecoveryInjected.set(sessionID, count + 1)
-    while (ephemeral.leakRecoveryInjected.size > LEAK_RECOVERY_SESSIONS_CAP) {
-      const oldest = ephemeral.leakRecoveryInjected.keys().next()
-      if (oldest.done) break
-      ephemeral.leakRecoveryInjected.delete(oldest.value)
-    }
+    evictMap(ephemeral.leakRecoveryInjected, LEAK_RECOVERY_SESSIONS_CAP)
   }
   if (!ephemeral.leakRecoveryLogged.has(sessionID)) {
     ephemeral.leakRecoveryLogged.add(sessionID)
-    while (ephemeral.leakRecoveryLogged.size > LEAK_RECOVERY_SESSIONS_CAP) {
-      const oldest = ephemeral.leakRecoveryLogged.keys().next()
-      if (oldest.done) break
-      ephemeral.leakRecoveryLogged.delete(oldest.value)
-    }
+    evictSet(ephemeral.leakRecoveryLogged, LEAK_RECOVERY_SESSIONS_CAP)
     await ctx.stores.logAll({ type: "leak-recovery", key: "leaked-tool-call", tool: sanitizeForStore(lastLeakTool).slice(0, 80), session: sessionID, project: ctx.projectDir, reaction: "inject", reason: "leaked-dsl", warned: 0, template: TEMPLATE_LEAK_RECOVERY })
   }
 }

@@ -2,14 +2,13 @@
  * Characterization test for the dual-export entrypoint.
  * Run: bun test/v2-host.ts
  */
-import { spawnSync } from "node:child_process"
 import { mkdtemp, readFile, rm } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import type { Plugin } from "@opencode/plugin"
 import mod, { Dejavu } from "../index"
 import { v2Setup } from "../src/opencode-v2"
-import { makeChecker } from "./helpers"
+import { makeChecker, runProbe } from "./helpers"
 
 type Ctx = Parameters<typeof Dejavu>[0]
 type Hooks = Awaited<ReturnType<typeof Dejavu>>
@@ -281,12 +280,7 @@ console.log(JSON.stringify({
   injected: messages.filter((m) => m.role === "user" && m.metadata && m.metadata.synthetic === true).map((m) => m.content[0].text),
 }))
 `
-  const r110Run = spawnSync(process.execPath, ["-e", r110Probe], {
-    env: { ...process.env, DEJAVU_LEAK_RECOVERY: "1", DEJAVU_HOME: join(tmp2, "leak-home"), R110_PROJECT: r110Dir },
-    encoding: "utf8",
-  })
-  const r110Line = (r110Run.stdout ?? "").trim().split("\n").filter((l) => l.startsWith("{")).pop()
-  const r110 = JSON.parse(r110Line ?? "{}") as { text?: string; injected?: string[] }
+  const r110 = runProbe(r110Probe, { DEJAVU_LEAK_RECOVERY: "1", DEJAVU_HOME: join(tmp2, "leak-home"), R110_PROJECT: r110Dir }) as { text?: string; injected?: string[] }
   check("generate: the leaked text part is neutralized in event.messages", typeof r110.text === "string" && r110.text.includes("[dejavu] (leaked tool-call serialization removed") && !r110.text.includes("<|DSL|"))
   check("generate: a synthetic recovery turn is appended", (r110.injected?.length ?? 0) === 1 && (r110.injected?.[0] ?? "").includes("Re-issue the intended call now"))
 
@@ -330,12 +324,7 @@ console.log(JSON.stringify({
   promptTexts: prompts.map((p) => p.text),
 }))
 `
-  const r111Run = spawnSync(process.execPath, ["-e", r111Probe], {
-    env: { ...process.env, DEJAVU_LOOP_RECOVERY: "1", DEJAVU_HOME: join(tmp2, "r111-home"), R111_PROJECT: join(tmp2, "r111-project") },
-    encoding: "utf8",
-  })
-  const r111Line = (r111Run.stdout ?? "").trim().split("\n").filter((l) => l.startsWith("{")).pop()
-  const r111 = JSON.parse(r111Line ?? "{}") as { interrupts?: number; prompts?: number; interruptSessions?: string[]; promptTexts?: string[] }
+  const r111 = runProbe(r111Probe, { DEJAVU_LOOP_RECOVERY: "1", DEJAVU_HOME: join(tmp2, "r111-home"), R111_PROJECT: join(tmp2, "r111-project") }) as { interrupts?: number; prompts?: number; interruptSessions?: string[]; promptTexts?: string[] }
   const r111SpamPrompt = (r111.promptTexts ?? []).find((_, i) => (r111.interruptSessions ?? [])[i] === "v2lr1") ?? ""
   check("v2 loop recovery: a confirmed stuck reasoning delta interrupts and injects", (r111.interruptSessions ?? []).filter((s) => s === "v2lr1").length === 1 && (r111.prompts ?? 0) === (r111.interrupts ?? 0))
   check("v2 loop recovery: the spam wall injects the spam correction", r111SpamPrompt.includes("repetition loop"))

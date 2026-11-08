@@ -43,7 +43,7 @@ import {
 } from "../src/patterns"
 import { DEMOTE_OVERRIDES, GLOBAL_PROJECTS, GateStore, MAX_SESSIONS, NOISE_TTL_DAYS, PLUGIN_VERSION, Stores, TTL_DAYS, mergeGate, type Gate } from "../src/store"
 import { repairGate } from "../src/validate"
-import { makeChecker } from "./helpers"
+import { makeChecker, runProbe } from "./helpers"
 
 type Ctx = Parameters<typeof Dejavu>[0]
 type Hooks = Awaited<ReturnType<typeof Dejavu>>
@@ -3454,12 +3454,7 @@ console.log(JSON.stringify({
   bare: bareMsgs[1].parts[0].text,
 }))
 `
-const r110Run = spawnSync(process.execPath, ["-e", r110Probe], {
-  env: { ...process.env, DEJAVU_LEAK_RECOVERY: "1", DEJAVU_HOME: join(tmp, "r110-home"), R110_PROJECT: r110Dir },
-  encoding: "utf8",
-})
-const r110Line = (r110Run.stdout ?? "").trim().split("\n").filter((l) => l.startsWith("{")).pop()
-const r110 = JSON.parse(r110Line ?? "{}") as { text?: string; injected?: string[]; fenced?: string; bare?: string }
+const r110 = runProbe(r110Probe, { DEJAVU_LEAK_RECOVERY: "1", DEJAVU_HOME: join(tmp, "r110-home"), R110_PROJECT: r110Dir }) as { text?: string; injected?: string[]; fenced?: string; bare?: string }
 check("leak recovery: raw block replaced in the outgoing payload", typeof r110.text === "string" && r110.text.includes("[dejavu] (leaked tool-call serialization removed"))
 check("leak recovery: placeholder carries no raw markers", typeof r110.text === "string" && !r110.text.includes("<|DSL|") && !r110.text.includes("</|DSL|"))
 check("leak recovery: a synthetic recovery turn is appended", (r110.injected?.length ?? 0) === 1 && (r110.injected?.[0] ?? "").includes("Re-issue the intended call now"))
@@ -3554,12 +3549,7 @@ console.log(JSON.stringify({
   promptTexts: prompts.map((p) => p.body.parts[0].text),
 }))
 `
-const r111Run = spawnSync(process.execPath, ["-e", r111Probe], {
-  env: { ...process.env, DEJAVU_LOOP_RECOVERY: "1", DEJAVU_HOME: join(tmp, "r111-home"), R111_PROJECT: r111Dir },
-  encoding: "utf8",
-})
-const r111Line = (r111Run.stdout ?? "").trim().split("\n").filter((l) => l.startsWith("{")).pop()
-const r111 = JSON.parse(r111Line ?? "{}") as { attempts?: number; aborts?: number; prompts?: number; abortSessions?: string[]; promptTexts?: string[] }
+const r111 = runProbe(r111Probe, { DEJAVU_LOOP_RECOVERY: "1", DEJAVU_HOME: join(tmp, "r111-home"), R111_PROJECT: r111Dir }) as { attempts?: number; aborts?: number; prompts?: number; abortSessions?: string[]; promptTexts?: string[] }
 check("loop recovery: a confirmed stuck reasoning part aborts and injects", (r111.abortSessions ?? []).filter((s) => s === "lr1").length === 1 && (r111.prompts ?? 0) === (r111.aborts ?? 0))
 check("loop recovery: a single unconfirmed spike does not fire", !(r111.abortSessions ?? []).includes("lr9"))
 check("loop recovery: the injected turn is the spam correction", (r111.promptTexts ?? []).every((t) => t.includes("repetition loop")))

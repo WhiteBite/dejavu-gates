@@ -78,16 +78,17 @@ export interface EphemeralState {
   stuckRecoveryLogged: Set<string>
   /** loop recovery: sessionID → last injection ts (cooldown) */
   stuckRecoveryLastAt: Map<string, number>
-  /** loop recovery: `${sessionID}:${messageID}` → last-checked text length (throttle) */
-  stuckReasoningChecked: Map<string, number>
-  /** loop recovery: `${sessionID}:${messageID}` → monotonic accumulated length (V2 buffer cap evades the throttle) */
-  stuckReasoningTotal: Map<string, number>
-  /** loop recovery: `${sessionID}:${messageID}` → turn acted (tool/text part seen) */
-  stuckReasoningActed: Set<string>
-  /** loop recovery: `${sessionID}:${messageID}` → accumulated delta buffer (V2) */
-  stuckReasoningText: Map<string, string>
-  /** loop recovery: `${sessionID}:${messageID}` → first positive seen (two-check confirmation) */
-  stuckReasoningPending: Set<string>
+  /** loop recovery: `${sessionID}:${messageID}` → per-message detector state */
+  stuckReasoning: Map<string, StuckMessageState>
+}
+
+/** Per-message loop-recovery detector state: acted flag, throttle mark, monotonic length, capped buffer, confirmation arm. */
+export interface StuckMessageState {
+  acted: boolean
+  checked: number
+  total: number
+  text: string
+  pending: boolean
 }
 
 /** Fresh in-process state. A long-lived host (the OpenCode plugin process)
@@ -121,11 +122,7 @@ export function createEphemeralState(): EphemeralState {
     stuckRecoveryInjected: new Map(),
     stuckRecoveryLogged: new Set(),
     stuckRecoveryLastAt: new Map(),
-    stuckReasoningChecked: new Map(),
-    stuckReasoningTotal: new Map(),
-    stuckReasoningActed: new Set(),
-    stuckReasoningText: new Map(),
-    stuckReasoningPending: new Set(),
+    stuckReasoning: new Map(),
   }
 }
 
@@ -185,14 +182,28 @@ export function isCrossChannelDuplicate(eph: EphemeralState, key: string, sessio
   return duplicate
 }
 
+/** FIFO trim of a capped map past its size limit */
+export function evictMap<K, V>(map: Map<K, V>, cap: number): void {
+  while (map.size > cap) {
+    const oldest = map.keys().next()
+    if (oldest.done) break
+    map.delete(oldest.value)
+  }
+}
+
+/** FIFO trim of a capped set past its size limit */
+export function evictSet(set: Set<string>, cap: number): void {
+  while (set.size > cap) {
+    const oldest = set.values().next()
+    if (oldest.done) break
+    set.delete(oldest.value)
+  }
+}
+
 /** Remember a call's signature for the after-hook args fallback (FIFO-capped). */
 export function trackPendingCall(eph: EphemeralState, callId: string, signature: string): void {
   eph.pendingCalls.set(callId, signature)
-  while (eph.pendingCalls.size > PENDING_CAP) {
-    const oldest = eph.pendingCalls.keys().next()
-    if (oldest.done) break
-    eph.pendingCalls.delete(oldest.value)
-  }
+  evictMap(eph.pendingCalls, PENDING_CAP)
 }
 
 const BASH_CHAIN_CAP = 100
@@ -214,11 +225,7 @@ export function commitBashChain(eph: EphemeralState, session: string, command: s
     command: command.slice(0, BASH_CHAIN_COMMAND_CAP),
     depth: extendsChain && prev !== undefined ? prev.depth + 1 : 1,
   })
-  while (eph.bashChain.size > BASH_CHAIN_CAP) {
-    const oldest = eph.bashChain.keys().next()
-    if (oldest.done) break
-    eph.bashChain.delete(oldest.value)
-  }
+  evictMap(eph.bashChain, BASH_CHAIN_CAP)
 }
 
 const VERSION_BUMP_CAP = 1000
@@ -226,11 +233,7 @@ const VERSION_BUMP_CAP = 1000
 /** Remember an edit/write that bumped the workspace version — a later error part for the same callId rolls it back. */
 export function trackVersionBump(eph: EphemeralState, callId: string): void {
   eph.versionBumpedCalls.add(callId)
-  while (eph.versionBumpedCalls.size > VERSION_BUMP_CAP) {
-    const oldest = eph.versionBumpedCalls.keys().next()
-    if (oldest.done) break
-    eph.versionBumpedCalls.delete(oldest.value)
-  }
+  evictSet(eph.versionBumpedCalls, VERSION_BUMP_CAP)
 }
 
 /** returns true when this part was already counted as a tool-level error */

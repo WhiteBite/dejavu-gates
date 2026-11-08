@@ -2150,7 +2150,6 @@ export interface StuckVerdict {
   kind: StuckKind
   signal: "token-dominance" | "line-duplication" | "hedge-density"
   score: number
-  size: number
 }
 
 function stuckTokens(text: string): string[] {
@@ -2198,7 +2197,7 @@ export function detectStuckReasoning(input: StuckReasoningInput): StuckVerdict |
   }
 
   if (topShare >= STUCK_TOP_SHARE && maxRun >= STUCK_MIN_RUN) {
-    return { kind: "spam", signal: "token-dominance", score: topShare, size: letters.length }
+    return { kind: "spam", signal: "token-dominance", score: topShare }
   }
 
   const sentences = window.split(STUCK_SENTENCE_SPLIT).map(stuckNormalizeSentence).filter((sentence) => sentence !== "")
@@ -2216,8 +2215,8 @@ export function detectStuckReasoning(input: StuckReasoningInput): StuckVerdict |
   for (const token of letters) if (STUCK_HEDGE_TOKENS.has(token)) hedgeCount += 1
   const hedgeRatio = hedgeCount / letters.length
 
-  if (dupRatio >= STUCK_DUP_SPAM) return { kind: "spam", signal: "line-duplication", score: dupRatio, size: sentences.length }
-  if (dupRatio >= STUCK_DUP_OSC && hedgeRatio >= STUCK_HEDGE_OSC) return { kind: "oscillation", signal: "hedge-density", score: hedgeRatio, size: sentences.length }
+  if (dupRatio >= STUCK_DUP_SPAM) return { kind: "spam", signal: "line-duplication", score: dupRatio }
+  if (dupRatio >= STUCK_DUP_OSC && hedgeRatio >= STUCK_HEDGE_OSC) return { kind: "oscillation", signal: "hedge-density", score: hedgeRatio }
   return null
 }
 
