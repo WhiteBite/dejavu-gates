@@ -1,0 +1,31 @@
+{
+  "kind": "hero",
+  "palette": "dark",
+  "mode": "split",
+
+  "eyebrow": "ERROR GATES",
+  "title": "Remind first,\nblock on repeat",
+  "subtitle": "Tool-call failures that recur across sessions become enforced gates.",
+  "meta": "10 harnesses · cross-session",
+
+  "cards": [
+    {
+      "heading": "Detect",
+      "body": "Recurring failures",
+      "tone": "accent1",
+      "rotate": -0.8
+    },
+    {
+      "heading": "Remind",
+      "body": "On the first repeat",
+      "tone": "accent2",
+      "rotate": 0.5
+    },
+    {
+      "heading": "Block",
+      "body": "On the next one, with the fix",
+      "tone": "accent3",
+      "rotate": -0.3
+    }
+  ]
+}

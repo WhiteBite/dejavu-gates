@@ -20,6 +20,8 @@
   <img src="https://github.com/WhiteBite/dejavu-gates/actions/workflows/ci.yml/badge.svg" alt="CI">
 </p>
 
+<p align="center"><img src="./assets/dejavu-gates-hero.png" width="100%" alt="превью dejavu-gates: повторяющиеся между сессиями ошибки становятся гейтами, которые сначала напоминают, потом блокируют"></p>
+
 ![dejavu-gates демо: агент перестаёт повторять падающий вызов после срабатывания гейта](assets/dejavu-gates.png)
 
 Агенты повторяют одни и те же ошибки, потому что забывают их между сессиями — и markdown-правила это не лечат. dejavu — **протез памяти с зубами** поверх сессий: механически детектирует повторяющиеся сбои вызовов инструментов (bash, read, edit, write, glob, grep), промоутит их в принудительные гейты, учит агента напоминанием, блокирует повторное нарушение в той же сессии — и **замыкает цикл**: команда починена и стабильно проходит → гейт лечится (heal) и уходит на пенсию. Один движок, много хостов: OpenCode (плагин), Claude Code, Codex CLI, Gemini CLI, Cursor, Copilot CLI, Crush, Devin CLI, Kiro (hook-handler CLI), Cline (встроенный плагин). TypeScript + Bun, поставляется как исходники, без шага сборки.
