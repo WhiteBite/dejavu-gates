@@ -1,31 +1,22 @@
 {
   "kind": "hero",
   "palette": "dark",
-  "mode": "split",
+  "mode": "rail",
 
   "eyebrow": "ERROR GATES",
   "title": "Remind first,\nblock on repeat",
-  "subtitle": "Tool-call failures that recur across sessions become enforced gates.",
-  "meta": "10 harnesses · cross-session",
+  "accentWord": "block",
+  "subtitle": "Tool-call failures that recur across sessions\nbecome enforced gates.",
+  "meta": "10 harnesses | cross-session | TypeScript + Bun",
 
-  "cards": [
-    {
-      "heading": "Detect",
-      "body": "Recurring failures",
-      "tone": "accent1",
-      "rotate": -0.8
-    },
-    {
-      "heading": "Remind",
-      "body": "On the first repeat",
-      "tone": "accent2",
-      "rotate": 0.5
-    },
-    {
-      "heading": "Block",
-      "body": "On the next one, with the fix",
-      "tone": "accent3",
-      "rotate": -0.3
-    }
+  "steps": [
+    { "label": "SESSION 1", "count": "×2", "unit": "failed calls", "note": "no gate yet" },
+    { "label": "SESSION 2", "count": "×3", "unit": "same calls", "note": "reminder fired" },
+    { "label": "GATE FIRED" }
+  ],
+
+  "artifact": [
+    { "title": "[dejavu] REMINDER", "lines": ["CORRECTION: use --environment, not --env"] },
+    { "title": "[dejavu] BLOCKED", "lines": ["the reminder was ignored once this session"] }
   ]
 }
